@@ -12,6 +12,8 @@ import {
   message
 } from 'antd'
 import { FullscreenOutlined, PlayCircleOutlined, SearchOutlined } from '@ant-design/icons'
+import CoverImage from '../components/CoverImage'
+import SessionTimerBar from '../components/SessionTimerBar'
 import type { BiliOrder, BiliVideoItem } from '../../../shared/bili'
 
 /**
@@ -133,6 +135,9 @@ function BiliModePage(): JSX.Element {
         输入学习主题 → WBI 签名搜索 → 结果网格 → 点击视频自动全屏；全屏时右侧悬浮 AI 助手与记事本（可折叠）。
       </p>
 
+      {/* 学习会话计时（倒计时 + 进度 + 到点自动关视频休息） */}
+      <SessionTimerBar mode="bili" />
+
       {/* 搜索区 */}
       <div className="bili-search-bar">
         <Input
@@ -190,8 +195,8 @@ function BiliModePage(): JSX.Element {
                 if (e.key === 'Enter' || e.key === ' ') handleOpenVideo(item)
               }}
             >
-              <div className="bili-card-cover">
-                <img src={item.pic} alt={item.title} loading="lazy" />
+              <div className="bili-card-cover-wrap">
+                <CoverImage src={item.picProxied || item.pic} fallbackSrc={item.pic} alt={item.title} />
                 {item.duration && <span className="bili-card-duration">{item.duration}</span>}
                 <span className="bili-card-play">
                   <PlayCircleOutlined /> {formatCount(item.play)}
