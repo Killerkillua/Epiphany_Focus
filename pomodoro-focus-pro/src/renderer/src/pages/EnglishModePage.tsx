@@ -6,7 +6,6 @@ import {
   Empty,
   Input,
   List,
-  Popover,
   Segmented,
   Space,
   Tag,
@@ -18,11 +17,11 @@ import {
   DeleteOutlined,
   BookOutlined,
   BulbOutlined,
-  SettingOutlined,
   FileImageOutlined
 } from '@ant-design/icons'
 import MarkdownView from '../components/MarkdownView'
 import SourcesPanel from '../components/SourcesPanel'
+import SessionTimerBar from '../components/SessionTimerBar'
 import { useEnglishStore, type ChatMessage } from '../store/englishStore'
 import type { AiScenario } from '../../../shared/ai'
 
@@ -135,50 +134,6 @@ function MessageItem({ msg }: { msg: ChatMessage }): JSX.Element {
   )
 }
 
-function AiSettings(): JSX.Element {
-  const { config, saveConfig } = useEnglishStore()
-  const [baseURL, setBaseURL] = useState(config.baseURL)
-  const [apiKey, setApiKey] = useState(config.apiKey)
-  const [model, setModel] = useState(config.model)
-  const [ocrModel, setOcrModel] = useState(config.ocrModel)
-
-  const handleSave = async (): Promise<void> => {
-    await saveConfig({
-      baseURL: baseURL.trim() || 'https://api.siliconflow.cn/v1',
-      apiKey: apiKey.trim(),
-      model: model.trim() || 'deepseek-ai/DeepSeek-V3',
-      ocrModel: ocrModel.trim() || 'deepseek-ai/DeepSeek-OCR'
-    })
-    message.success('AI 配置已保存')
-  }
-
-  return (
-    <div className="ai-settings">
-      <Space direction="vertical" size={10} style={{ width: '100%' }}>
-        <div>
-          <div className="field-label">API 端点（OpenAI 兼容）</div>
-          <Input value={baseURL} onChange={(e) => setBaseURL(e.target.value)} placeholder="https://api.siliconflow.cn/v1" />
-        </div>
-        <div>
-          <div className="field-label">API Key（BYOK，留空 = 演示模式）</div>
-          <Input.Password value={apiKey} onChange={(e) => setApiKey(e.target.value)} placeholder="sk-..." />
-        </div>
-        <div>
-          <div className="field-label">对话模型</div>
-          <Input value={model} onChange={(e) => setModel(e.target.value)} placeholder="deepseek-ai/DeepSeek-V3" />
-        </div>
-        <div>
-          <div className="field-label">OCR 模型（图片文字识别）</div>
-          <Input value={ocrModel} onChange={(e) => setOcrModel(e.target.value)} placeholder="deepseek-ai/DeepSeek-OCR" />
-        </div>
-        <Button type="primary" size="small" onClick={() => void handleSave()}>
-          保存配置
-        </Button>
-      </Space>
-    </div>
-  )
-}
-
 function EnglishModePage(): JSX.Element {
   const { messages, isStreaming, config, usage, vocab, grammar, init, ask, refreshLists, deleteVocab, deleteGrammar } =
     useEnglishStore()
@@ -245,8 +200,11 @@ function EnglishModePage(): JSX.Element {
       <h1 className="page-title">英语学习模式</h1>
       <p className="page-sub">
         AI 母语者陪练 · 分层 Prompt · RAG 权威词典增强
-        {config.apiKey ? ` · 模型 ${config.model}` : ' · 演示模式（未配置 API Key）'}
+        {config.apiKey ? ` · 模型 ${config.model}` : ' · 演示模式（未配置 API Key，请到 设置 → AI 设置 配置后生效）'}
       </p>
+
+      {/* 学习会话计时（倒计时 + 进度 + 学习时长统计） */}
+      <SessionTimerBar mode="english" />
 
       <div className="english-layout">
         {/* ===== 对话区 ===== */}
@@ -286,7 +244,7 @@ function EnglishModePage(): JSX.Element {
                 icon={<FileImageOutlined />}
                 disabled={isStreaming || ocrBusy}
                 loading={ocrBusy}
-                title="识别图片文字并填入输入框（DeepSeek-OCR）"
+                title="识别图片文字并填入输入框（OCR）"
                 onClick={() => ocrFileRef.current?.click()}
               />
               <Button
@@ -300,11 +258,11 @@ function EnglishModePage(): JSX.Element {
             </div>
             <div className="chat-usage">
               本会话提问 {usage.used}/{usage.limit} · 剩余 {remaining}
-              <Popover content={<AiSettings />} title="AI 设置（BYOK）" trigger="click">
-                <Button size="small" type="text" icon={<SettingOutlined />} style={{ marginLeft: 8 }}>
-                  设置
-                </Button>
-              </Popover>
+              {!config.apiKey && (
+                <Typography.Text type="secondary" style={{ fontSize: 12, marginLeft: 8 }}>
+                  AI 配置请到「设置 → AI 设置」
+                </Typography.Text>
+              )}
             </div>
           </div>
         </div>

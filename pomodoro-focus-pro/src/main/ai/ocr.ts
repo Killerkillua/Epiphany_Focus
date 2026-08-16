@@ -2,11 +2,11 @@ import OpenAI from 'openai'
 import type { AiConfig, OcrRequest, OcrResult } from '../../shared/ai'
 
 /**
- * 图片文字识别（OCR）网关 —— 硅基流动 deepseek-ai/DeepSeek-OCR。
+ * 图片文字识别（OCR）网关（OpenAI 兼容接口）。
  *
- * DeepSeek-OCR 是多模态文档解析模型（OpenAI 兼容接口）：
  * - 输入：messages 中 content 携带 image_url（dataURL 或 http(s) URL）
- * - 输出：带布局标记（<|title|> / <|text|> / <|table|> 等）的 Markdown 结构化文本
+ * - 输出：模型返回的 Markdown 结构化文本
+ * - 默认模型 Qwen/Qwen3.5-4B，可在 设置 → AI 设置 → OCR 模型 调整
  *
  * 配置复用 AI 设置的 baseURL / apiKey / ocrModel，随设置即时生效。
  */
@@ -18,7 +18,7 @@ export class OcrGateway {
   private getClient(): OpenAI | null {
     const cfg = this.getConfig()
     if (!cfg.apiKey) return null
-    if (!this.client || this.client.baseURL !== cfg.baseURL) {
+    if (!this.client || this.client.baseURL !== cfg.baseURL || this.client.apiKey !== cfg.apiKey) {
       this.client = new OpenAI({
         apiKey: cfg.apiKey,
         baseURL: cfg.baseURL || undefined
@@ -55,7 +55,7 @@ export class OcrGateway {
 
     try {
       const completion = await client.chat.completions.create({
-        model: cfg.ocrModel || 'deepseek-ai/DeepSeek-OCR',
+        model: cfg.ocrModel || 'Qwen/Qwen3.5-4B',
         messages: [{ role: 'user', content }],
         max_tokens: 4096
       })

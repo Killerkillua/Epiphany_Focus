@@ -52,8 +52,8 @@ const EMPTY: LocalForm = {
   autoFullscreen: true,
   baseURL: 'https://api.siliconflow.cn/v1',
   apiKey: '',
-  model: 'deepseek-ai/DeepSeek-V3',
-  ocrModel: 'deepseek-ai/DeepSeek-OCR',
+  model: 'Qwen/Qwen3.5-4B',
+  ocrModel: 'Qwen/Qwen3.5-4B',
   maxQuestionsPerSession: 50,
   noisePreset: 'rain',
   hasCode: false
@@ -260,9 +260,17 @@ function SettingsPage(): JSX.Element {
               style={{ width: 320 }}
               value={form.apiKey}
               disabled={saving}
-              placeholder="留空 = 演示模式"
+              placeholder="留空 = 保留已保存 Key（不回显）"
               onChange={(e) => setForm((f) => ({ ...f, apiKey: e.target.value }))}
-              onBlur={(e) => void update({ 'ai.apiKey': e.target.value.trim() })}
+              onBlur={(e) => {
+                const v = e.target.value.trim()
+                if (v) {
+                  void update({ 'ai.apiKey': v }, 'API Key 已更新')
+                } else {
+                  // 空输入：保留已保存的 Key，回填显示（避免误清空默认配置）
+                  void load()
+                }
+              }}
             />
           </div>
           <div className="settings-row">
@@ -271,7 +279,7 @@ function SettingsPage(): JSX.Element {
               style={{ width: 200 }}
               value={form.model}
               disabled={saving}
-              placeholder="deepseek-ai/DeepSeek-V3"
+              placeholder="Qwen/Qwen3.5-4B"
               onChange={(e) => setForm((f) => ({ ...f, model: e.target.value }))}
               onBlur={(e) => void update({ 'ai.model': e.target.value.trim() }, '对话模型已更新')}
             />
@@ -282,7 +290,7 @@ function SettingsPage(): JSX.Element {
               style={{ width: 200 }}
               value={form.ocrModel}
               disabled={saving}
-              placeholder="deepseek-ai/DeepSeek-OCR"
+              placeholder="Qwen/Qwen3.5-4B"
               onChange={(e) => setForm((f) => ({ ...f, ocrModel: e.target.value }))}
               onBlur={(e) => void update({ 'ai.ocrModel': e.target.value.trim() }, 'OCR 模型已更新')}
             />
