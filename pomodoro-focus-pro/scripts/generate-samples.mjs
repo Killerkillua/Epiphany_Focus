@@ -129,15 +129,16 @@ function writeWav(name, samples) {
     const s = Math.max(-1, Math.min(1, samples[i]))
     if (Math.abs(s) > peak) peak = Math.abs(s)
   }
-  // 归一化到 -3dB（0.707 倍）
-  const scale = peak > 0 ? 0.707 / peak : 1
+  // 归一化到 -6dB（0.5 倍），OGG 转码后峰值 ≤ -3dB
+  const scale = peak > 0 ? 0.5 / peak : 1
   for (let i = 0; i < num; i++) {
     const s = Math.max(-1, Math.min(1, samples[i] * scale))
     buf.writeInt16LE(Math.round(s * 32767), 44 + i * 2)
   }
   const outPath = join(OUT, name + '.wav')
   writeFileSync(outPath, buf)
-  console.log(`  ✓ ${name}.wav (${(dataSize / 1024 / 1024).toFixed(1)}MB, peak ${(peak * scale * -1).toFixed(1)}dB)`)
+  const peakDb = 20 * Math.log10(Math.max(peak * scale, 0.0001))
+  console.log(`  ✓ ${name}.wav (${(dataSize / 1024 / 1024).toFixed(1)}MB, peak ${peakDb.toFixed(1)}dB)`)
   return peak * scale
 }
 
@@ -340,7 +341,7 @@ const RECIPES = {
 }
 
 console.log('白噪音采样素材生成器')
-console.log(`规格: ${SR / 1000}kHz / 16-bit / ${DUR}s / 峰值 -3dB`)
+console.log(`规格: ${SR / 1000}kHz / 16-bit / ${DUR}s / WAV 峰值 -6dB（OGG 后 ≤ -3dB）`)
 console.log(`输出: ${OUT}\n`)
 
 mkdirSync(OUT, { recursive: true })
