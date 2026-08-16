@@ -12,6 +12,40 @@
   --yellow: #ffc94a;
   --font: 'WorkSans', 'Noto Sans CJK SC', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrainsMono', ui-monospace, SFMono-Regular, Consolas, 'Courier New', monospace;
+  --scrollbar-thumb: rgba(128, 128, 128, 0.3);
+  --scrollbar-thumb-hover: rgba(128, 128, 128, 0.6);
+}
+
+/* ===== 悬浮式滚动条 ===== */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+  border: 1px solid transparent;
+  transition: background-color 0.2s ease;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Firefox 兼容 */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
 }
 
 * {
@@ -292,12 +326,100 @@ body {
   margin-top: 2px;
 }
 
+/* ===== 学习会话计时条（B 站 / 英语模式） ===== */
+.session-bar {
+  margin-bottom: 16px;
+  background: var(--bg2);
+  border-color: var(--rule);
+}
+
+.session-bar .ant-card-body {
+  padding: 12px 16px;
+}
+
+.session-bar-inner {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.session-bar-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  min-width: 128px;
+}
+
+.session-bar-icon {
+  font-size: 16px;
+}
+
+.session-bar-idle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.session-bar-custom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.session-bar-custom-label {
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.session-bar-timer {
+  font-family: var(--font-mono);
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+  min-width: 132px;
+}
+
+.session-bar-timer.active {
+  text-shadow: 0 0 24px rgba(77, 163, 255, 0.3);
+}
+
+.session-bar-progress {
+  flex: 1;
+  min-width: 180px;
+}
+
+.session-bar-status {
+  color: var(--muted);
+  font-size: 12px;
+  margin-top: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.session-bar-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
 /* ===== 英语学习模式 ===== */
 .english-layout {
   display: flex;
   gap: 16px;
-  height: calc(100vh - 140px);
-  min-height: 480px;
+  height: calc(100vh - 200px);
+  min-height: 440px;
 }
 
 .english-chat {
@@ -620,6 +742,44 @@ body {
   display: block;
 }
 
+/* 封面加载中：骨架屏微光 */
+.bili-card-cover.is-loading {
+  background: linear-gradient(110deg, #12151b 30%, #1c212a 50%, #12151b 70%);
+  background-size: 200% 100%;
+  animation: bili-cover-shimmer 1.2s linear infinite;
+}
+
+@keyframes bili-cover-shimmer {
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/* 封面加载失败：渐变占位 + 播放图标（不再显示破损 <img>） */
+.bili-card-cover.is-error {
+  background: linear-gradient(135deg, #1b2028, #0d1016);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bili-cover-placeholder {
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 36px;
+}
+
+/* 封面 + 角标（时长 / 播放量）的定位容器 */
+.bili-card-cover-wrap {
+  position: relative;
+  aspect-ratio: 16 / 10;
+  overflow: hidden;
+}
+
+.bili-card-cover-wrap .bili-card-cover {
+  width: 100%;
+  height: 100%;
+}
+
 .bili-card-duration {
   position: absolute;
   right: 6px;
@@ -760,6 +920,13 @@ body,
 .overlay-header-actions {
   display: inline-flex;
   align-items: center;
+  gap: 2px;
+}
+
+/* minimized / hidden 态：窗口不可见，无需样式（占位根节点） */
+.overlay-invisible {
+  background: transparent;
+  border: none;
 }
 
 .overlay-body {
@@ -944,6 +1111,12 @@ body,
   background: rgba(0, 0, 0, 0.22);
   border: 1px solid var(--rule);
   border-radius: 8px;
+  overflow-y: overlay;
+}
+
+/* antd Select 下拉列表悬浮滚动（白噪音音频选择等） */
+.ant-select-dropdown .rc-virtual-list-holder {
+  overflow-y: overlay !important;
 }
 
 .noise-tracks-title {
