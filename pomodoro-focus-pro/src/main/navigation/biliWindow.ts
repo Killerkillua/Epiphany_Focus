@@ -1,4 +1,4 @@
-import { BrowserWindow, screen } from 'electron'
+import { BrowserWindow, globalShortcut, screen } from 'electron'
 import { join } from 'node:path'
 import { IPC_CHANNELS, IPC_EVENTS } from '../ipc'
 import { attachNavigationGuard, buildBlockPageHtml, isAllowedBiliUrl } from './guard'
@@ -10,9 +10,11 @@ import type {
   NavVerdict,
   OpenVideoPayload,
   OverlaySize,
+  OverlaySnapshot,
+  OverlayState,
   VideoState
 } from '../../shared/bili'
-import { OVERLAY_COLLAPSED_SIZE, OVERLAY_EXPANDED_SIZE } from '../../shared/bili'
+import { OVERLAY_COLLAPSED_SIZE, OVERLAY_EXPANDED_SIZE, OVERLAY_STATES } from '../../shared/bili'
 
 /**
  * B 站播放窗口管理（接入强制引擎 + 四层导航守卫 + 全屏锁定）：
@@ -50,6 +52,34 @@ let allowedBvs: string[] = []
 /** 事件回调 */
 let onOpenCallback: ((video: BrowserWindow, payload: OpenVideoPayload) => void) | undefined
 let onCloseCallback: (() => void) | undefined
+
+/* ===== 悬浮面板状态机（4 态：expanded / collapsed / minimized / hidden） ===== */
+let overlayState: OverlayState = 'expanded'
+/** 窗口能力（按锁定档解耦：L0 可拖动+任务栏 / L1 可最小化 / L2 安全档全禁用） */
+let overlayOptions: OverlayOptions = { allowMinimize: false, allowMove: false, showInTaskbar: false }
+/** 进入 hidden / minimized 前的可见态（呼出时恢复） */
+let previousVisibleState: OverlayState = 'expanded'
+/** 进入全屏时是否由我们自动折叠（离开全屏时恢复展开） */
+let autoCollapsedOnFullscreen = false
+
+interface OverlayOptions {
+  allowMinimize: boolean
+  allowMove: boolean
+  showInTaskbar: boolean
+}
+
+/** 悬浮面板全局呼出快捷键（主键 Ctrl+Shift+O；Ctrl+` 尽力注册，部分输入法环境不可用） */
+const OVERLAY_HOTKEYS = ['CommandOrControl+Shift+O', 'CommandOrControl+`'] as const
+
+/** 按锁定档解耦悬浮面板窗口能力 */
+function buildOverlayOptions(): OverlayOptions {
+  const level = getSettings().lockLevel
+  return {
+    allowMinimize: level !== 'L2',
+    allowMove: level === 'L0',
+    showInTaskbar: level === 'L0'
+  }
+}
 
 export function registerVideoEvents(opts: VideoEventCallbacks): void {
   getMainWindow = opts.getMainWindow
@@ -89,17 +119,17 @@ function dockOverlay(): void {
   overlay.setPosition(Math.round(x), Math.round(y))
 }
 
-function createOverlay(video: BrowserWindow): BrowserWindow {
+function createOverlay(video: BrowserWindow, opts: OverlayOptions): BrowserWindow {
   const overlay = new BrowserWindow({
     ...OVERLAY_EXPANDED_SIZE,
     frame: false,
     transparent: true,
     resizable: false,
-    movable: false,
-    minimizable: false,
+    movable: opts.allowMove,
+    minimizable: opts.allowMinimize,
     maximizable: false,
     alwaysOnTop: true,
-    skipTaskbar: true,
+    skipTaskbar: !opts.showInTaskbar,
     show: false,
     hasShadow: false,
     backgroundColor: '#00000000',
@@ -122,7 +152,15 @@ function createOverlay(video: BrowserWindow): BrowserWindow {
     overlay.showInactive()
   })
 
-  // 视频窗口移动 / 缩放 / 进出全屏时跟随停靠
+  // 任务栏恢复（L0）时回到之前的可见态
+  overlay.on('restore', () => {
+    if (overlayState === 'minimized') {
+      applyOverlayState(previousVisibleState === 'collapsed' ? 'collapsed' : 'expanded')
+    }
+    dockOverlay()
+  })
+
+  // 视频窗口移动 / 缩放 / 进出全屏时跟随停靠（全屏状态协同见 fullscreenLock 回调）
   video.on('move', dockOverlay)
   video.on('resize', dockOverlay)
   video.on('enter-full-screen', dockOverlay)
@@ -157,6 +195,12 @@ export function openVideo(payload: OpenVideoPayload): void {
   // 幂等：先关闭旧窗口再开新窗口
   closeVideo()
 
+  // 重置悬浮面板状态机（新会话从展开态开始）
+  overlayState = 'expanded'
+  previousVisibleState = 'expanded'
+  autoCollapsedOnFullscreen = false
+  overlayOptions = buildOverlayOptions()
+
   const video = new BrowserWindow({
     width: 1280,
     height: 760,
@@ -189,10 +233,22 @@ export function openVideo(payload: OpenVideoPayload): void {
 
   attachNavigationGuard(video.webContents, currentCtx, { onBlocked: handleBlocked, onIrrelevant: handleIrrelevant })
 
-  // 全屏锁定（Esc/F11/缩小 均拉回）
+  // 全屏锁定（Esc/F11/缩小 均拉回）+ 全屏协同 Overlay 状态
   attachFullscreenLock(video, {
     autoFullscreen,
-    active: () => !video.isDestroyed()
+    active: () => !video.isDestroyed(),
+    onEnterFullscreen: () => {
+      // 展开态默认自动折叠为竖条（不挡视频）；用户手动展开后取消该默认
+      if (!active || active.overlay.isDestroyed() || overlayState !== 'expanded') return
+      autoCollapsedOnFullscreen = true
+      applyOverlayState('collapsed')
+    },
+    onLeaveFullscreen: () => {
+      if (autoCollapsedOnFullscreen) {
+        autoCollapsedOnFullscreen = false
+        applyOverlayState('expanded')
+      }
+    }
   })
 
   video.loadURL(`https://www.bilibili.com/video/${bvid}`).catch((err) => {
@@ -207,14 +263,18 @@ export function openVideo(payload: OpenVideoPayload): void {
     } satisfies NavVerdict)
   })
 
-  const overlay = createOverlay(video)
+  const overlay = createOverlay(video, overlayOptions)
   active = { video, overlay, bvid, autoFullscreen }
+
+  // 全局呼出热键（会话期间生效）
+  registerOverlayHotkey()
 
   video.once('ready-to-show', () => {
     video.show()
   })
 
   video.on('closed', () => {
+    unregisterOverlayHotkey()
     if (!overlay.isDestroyed()) overlay.destroy()
     active = null
     onCloseCallback?.()
@@ -260,13 +320,127 @@ export function getContext(): BiliContext | null {
   }
 }
 
-/** 悬浮面板折叠 / 展开时调整窗口尺寸并重新停靠 */
+/** 悬浮面板折叠 / 展开时调整窗口尺寸并重新停靠（旧版兼容入口，新 UI 走 overlaySetState） */
 export function resizeOverlay(size: OverlaySize): void {
   if (!active || active.overlay.isDestroyed()) return
   const width = Math.max(48, Math.round(size.width))
   const height = Math.max(48, Math.round(size.height))
   active.overlay.setSize(width, height)
   dockOverlay()
+}
+
+/* ===== 悬浮面板状态机 API（4 态） ===== */
+
+/** 广播状态快照给 overlay 与主窗口（外部事件驱动时同步渲染层 UI） */
+function broadcastOverlayState(): void {
+  const snapshot = getOverlaySnapshot()
+  const overlay = active?.overlay
+  if (overlay && !overlay.isDestroyed()) {
+    overlay.webContents.send(IPC_EVENTS.bili.overlayStateChanged, snapshot)
+  }
+  sendToMainWindow(IPC_EVENTS.bili.overlayStateChanged, snapshot)
+}
+
+/** 内部应用状态：改尺寸 / 显隐 / 最小化，并广播快照 */
+function applyOverlayState(next: OverlayState): void {
+  const overlay = active?.overlay
+  if (!overlay || overlay.isDestroyed()) return
+  const prev = overlayState
+  overlayState = next
+
+  switch (next) {
+    case 'expanded':
+    case 'collapsed': {
+      if (next === 'expanded') autoCollapsedOnFullscreen = false
+      const size = OVERLAY_STATES[next].size
+      overlay.setSize(size.width, size.height)
+      if (prev === 'minimized' && overlay.isMinimized()) overlay.restore()
+      if (prev === 'hidden' || !overlay.isVisible()) overlay.showInactive()
+      dockOverlay()
+      break
+    }
+    case 'minimized': {
+      if (prev === 'expanded' || prev === 'collapsed') previousVisibleState = prev
+      overlay.minimize()
+      break
+    }
+    case 'hidden': {
+      if (prev === 'expanded' || prev === 'collapsed') previousVisibleState = prev
+      overlay.hide()
+      break
+    }
+  }
+  broadcastOverlayState()
+}
+
+/** 切换悬浮面板状态（渲染层按钮 / IPC 调用入口） */
+export function setOverlayState(next: OverlayState): OverlaySnapshot {
+  if (!active || active.overlay.isDestroyed()) {
+    throw new Error('没有正在播放的视频，悬浮面板不可用')
+  }
+  if (next === 'minimized' && !overlayOptions.allowMinimize) {
+    // L2 安全档不允许最小化：降级为隐藏并提示用户
+    applyOverlayState('hidden')
+    return {
+      ...getOverlaySnapshot(),
+      notice: '当前锁定等级 L2 不允许最小化学习助手，已自动隐藏面板（Ctrl+Shift+O 呼出）'
+    }
+  }
+  applyOverlayState(next)
+  return getOverlaySnapshot()
+}
+
+/** 获取悬浮面板当前状态快照 */
+export function getOverlaySnapshot(): OverlaySnapshot {
+  if (!active || active.overlay.isDestroyed()) {
+    return { state: 'hidden', size: OVERLAY_EXPANDED_SIZE, canMinimize: false }
+  }
+  return {
+    state: overlayState,
+    size: OVERLAY_STATES[overlayState].size,
+    canMinimize: overlayOptions.allowMinimize
+  }
+}
+
+/** 隐藏 ⇄ 呼出（全局热键回调 / IPC 入口）：呼出时恢复进入隐藏前的可见态 */
+export function toggleOverlayHide(): OverlaySnapshot {
+  if (!active || active.overlay.isDestroyed()) {
+    throw new Error('没有正在播放的视频，悬浮面板不可用')
+  }
+  if (overlayState === 'hidden') {
+    applyOverlayState(previousVisibleState === 'collapsed' ? 'collapsed' : 'expanded')
+  } else {
+    applyOverlayState('hidden')
+  }
+  return getOverlaySnapshot()
+}
+
+/* ===== 全局呼出热键（会话期间注册，退出注销） ===== */
+
+function registerOverlayHotkey(): void {
+  for (const acc of OVERLAY_HOTKEYS) {
+    try {
+      globalShortcut.register(acc, () => {
+        try {
+          toggleOverlayHide()
+        } catch {
+          /* 会话已结束，忽略 */
+        }
+      })
+    } catch {
+      // Ctrl+` 在部分输入法 / 系统下不可注册，忽略（Ctrl+Shift+O 为主键）
+    }
+  }
+}
+
+function unregisterOverlayHotkey(): void {
+  for (const acc of OVERLAY_HOTKEYS) {
+    try {
+      globalShortcut.unregister(acc)
+    } catch {
+      /* 忽略 */
+    }
+  }
 }
 
 /** 把 BV 加入当前会话放行集合（渲染层"标记为相关"调用） */

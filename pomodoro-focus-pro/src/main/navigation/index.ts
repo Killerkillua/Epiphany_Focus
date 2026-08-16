@@ -7,11 +7,14 @@ import { isAllowedBiliUrl } from './guard'
 import {
   closeVideo,
   getContext,
+  getOverlaySnapshot,
   getVideoState,
   markRelevant,
   openVideo,
   registerVideoEvents,
-  resizeOverlay
+  resizeOverlay,
+  setOverlayState,
+  toggleOverlayHide
 } from './biliWindow'
 import { loadNotesAll, saveNotesAll } from '../storage/db'
 import type { EnforcementHandle } from '../enforcement'
@@ -22,6 +25,8 @@ import type {
   NavVerdict,
   OpenVideoPayload,
   OverlaySize,
+  OverlaySnapshot,
+  OverlayState,
   VideoState,
   NoteEntry,
   MarkRelevantPayload
@@ -73,6 +78,13 @@ export function registerNavigationModule(
   ipcMain.handle(IPC_CHANNELS.bili.overlaySetSize, (_event, size: OverlaySize): void => {
     resizeOverlay(size)
   })
+  // 状态机：expanded / collapsed / minimized / hidden
+  ipcMain.handle(
+    IPC_CHANNELS.bili.overlaySetState,
+    (_event, state: OverlayState): OverlaySnapshot => setOverlayState(state)
+  )
+  ipcMain.handle(IPC_CHANNELS.bili.overlayGetState, (): OverlaySnapshot => getOverlaySnapshot())
+  ipcMain.handle(IPC_CHANNELS.bili.overlayToggleHide, (): OverlaySnapshot => toggleOverlayHide())
 
   /* ===== 导航判定 ===== */
   const navCheck = (_event: unknown, url: string): NavVerdict => isAllowedBiliUrl(url)

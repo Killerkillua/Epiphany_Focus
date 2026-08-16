@@ -12,6 +12,10 @@ export interface FullscreenLockOpts {
   autoFullscreen: boolean
   /** 是否仍处于强制会话（结束时置 false 解除锁定） */
   active: () => boolean
+  /** 视频进入全屏时的回调（biliWindow 协同悬浮面板状态） */
+  onEnterFullscreen?: () => void
+  /** 视频离开全屏时的回调（biliWindow 协同悬浮面板状态） */
+  onLeaveFullscreen?: () => void
 }
 
 export function attachFullscreenLock(win: BrowserWindow, opts: FullscreenLockOpts): void {
@@ -22,7 +26,13 @@ export function attachFullscreenLock(win: BrowserWindow, opts: FullscreenLockOpt
       win.setFullScreen(true)   // 兜底拉回：Esc / 缩小 / F11 之后立即恢复
     }
   }
-  win.on('leave-full-screen', assertFullscreen)
+  win.on('enter-full-screen', () => {
+    opts.onEnterFullscreen?.()
+  })
+  win.on('leave-full-screen', () => {
+    opts.onLeaveFullscreen?.()
+    assertFullscreen()
+  })
   win.on('resize', assertFullscreen)
 
   // 可选加固：在渲染层消费 Escape 键，避免触发一次"退出→拉回"的闪烁
