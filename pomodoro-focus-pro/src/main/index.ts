@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow } from 'electron'
+import { app, shell, BrowserWindow, protocol } from 'electron'
 import { join } from 'path'
 import { registerEnforcementModule } from './enforcement'
 import { registerNavigationModule } from './navigation'
@@ -13,9 +13,14 @@ import { getDb } from './storage/db'
  * - enforcement：强制引擎（锁定分级 / 计时联动 / 紧急退出 / 重启恢复 / 学习统计落库）
  * - navigation：B 站模式（WBI 搜索 / 播放窗口 / 导航管控 / 悬浮面板 / 记事本）
  * - ai：英语模式（分层 Prompt + RAG + BYOK + 生词本/语法要点）
- * - audio：白噪音（全局热键 / 采样素材解析）
+ * - audio：白噪音（全局热键 / 采样素材解析 / tomato-audio:// 自定义协议）
  * - settings / stats：全局设置（electron-store）与学习统计聚合
  */
+
+// 自定义协议：必须在 app.ready 前声明特权（方案 2.8 §3 落地设计）
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'tomato-audio', privileges: { standard: true, secure: true, stream: true } }
+])
 
 const isDev = !app.isPackaged
 
