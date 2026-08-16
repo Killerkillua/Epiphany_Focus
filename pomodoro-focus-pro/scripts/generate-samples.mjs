@@ -99,6 +99,15 @@ function placeEvents(out, count, make, seed = 1) {
 }
 
 /** 在 1.6s ~ DUR-1.6s 区间随机放置瞬态（避开首尾接缝） */
+function placeEvents(out, count, make, seed = 1) {
+  const rand = makeRng(seed)
+  for (let i = 0; i < count; i++) {
+    const t = 1.6 + rand() * (DUR - 3.2)
+    make(out, Math.floor(t * SR), rand)
+  }
+}
+
+/* ---- 写出 WAV（16-bit PCM，峰值 -3dB） ---- */
 
 function writeWav(name, samples) {
   const num = samples.length
