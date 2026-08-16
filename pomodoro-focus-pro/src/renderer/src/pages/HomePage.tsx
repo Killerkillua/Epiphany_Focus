@@ -3,6 +3,7 @@ import StatsBar from '../components/StatsBar'
 import ModeCard from '../components/ModeCard'
 import DurationConfigModal, { type ModeTarget } from '../components/DurationConfigModal'
 import { useFocusStore } from '../store/focusStore'
+import { useSessionStore } from '../store/sessionStore'
 import { useHomeStore } from '../store/homeStore'
 
 interface Props {
@@ -12,13 +13,21 @@ interface Props {
 function HomePage({ onNavigate }: Props): JSX.Element {
   const [target, setTarget] = useState<ModeTarget | null>(null)
   const focusStart = useFocusStore((s) => s.start)
+  const sessionStart = useSessionStore((s) => s.start)
   const { load } = useHomeStore()
 
-  // 订阅 timer:complete 事件，番茄结束后即时刷新统计条
+  // 订阅 timer:complete / session:complete，番茄或学习会话结束后即时刷新统计条
   useEffect(() => {
-    return window.api.on('timer:complete', () => {
+    const offTimer = window.api.on('timer:complete', () => {
       void load()
     })
+    const offSession = window.api.on('session:complete', () => {
+      void load()
+    })
+    return () => {
+      offTimer()
+      offSession()
+    }
   }, [load])
 
   const handleConfirm = async (minutes: number): Promise<void> => {
@@ -27,6 +36,9 @@ function HomePage({ onNavigate }: Props): JSX.Element {
     if (!t) return
     if (t === 'focus') {
       await focusStart('countdown', minutes * 60_000)
+    } else {
+      // B 站 / 英语模式：进入页面即启动学习会话计时（与强制引擎解耦）
+      await sessionStart(t, minutes * 60_000)
     }
     onNavigate(t)
   }

@@ -1,13 +1,25 @@
 import OpenAI from 'openai'
 import type { AiConfig, AiQuestion, AiReply, AiSource } from '../../shared/ai'
-import { buildMessages, SCENARIO_TEMPLATES, SYSTEM_PROMPT } from './prompts'
+import type { AiAskRequest } from '../../shared/bili'
+import { buildBiliMessages, buildMessages, SCENARIO_TEMPLATES, SYSTEM_PROMPT } from './prompts'
 
 /**
- * 英语教学网关（OpenAI 兼容 SDK）。
- * - 配置了 API Key：走真实模型流式输出
- * - 未配置（BYOK 为空）：进入演示模式，内置 TESOL 结构模拟回复，
+ * AI 网关（OpenAI 兼容 SDK，双档位）：
+ * - 英语教学档位（profile='english'）：TESOL 分层 Prompt + CoT + RAG，temperature 0.7
+ * - B 站学习助手档位（profile='bili'）：跨学科学习教练，注入 topic/bvid 上下文 + 多轮历史，temperature 0.5
+ * - 未配置 API Key：进入演示模式，双档位各有结构化模拟回复，
  *   保证无 Key 时 UI/流式/来源面板全链路可验证
  */
+
+/** 对话档位 */
+export type AiProfile = 'english' | 'bili'
+
+export interface ChatOptions {
+  /** 档位：英语教学（默认）/ B 站学习助手 */
+  profile?: AiProfile
+  /** B 站档位时用于组装学习上下文与多轮历史 */
+  biliRequest?: AiAskRequest
+}
 
 interface MockEntry {
   scenario: AiQuestion['scenario']
@@ -31,7 +43,13 @@ const MOCK_REPLIES: MockEntry[] = [
       '',
       '**常见错误**：`suggest sb. to do` ❌ → `suggest (that) sb. do` ✅',
       '',
-      '**练习**：把 *He suggested me to study harder.* 改写为正确形式（答案：*He suggested that I study harder.*）',
+      '**练习**：把 *He suggested me to study harder.* 改写为正确形式',
+      '',
+      '<details><summary>📝 查看答案</summary>',
+      '',
+      '*He suggested that I study harder.*',
+      '',
+      '</details>',
       ...(sources.length ? ['', '**参考来源**：', ...sources.map((s) => `- [${s.title}](${s.url})`)] : []),
       '',
       `> 📚 演示模式（未配置 API Key）${q ? `，问题：${q}` : ''}。`
@@ -87,6 +105,26 @@ const MOCK_REPLIES: MockEntry[] = [
       '',
       `> 📚 演示模式（未配置 API Key）${q ? `，原文：${q}` : ''}。`
     ].join('\n')
+  },
+  {
+    scenario: 'free',
+    reply: (q, sources) => [
+      '**自由问答（演示回复）**',
+      '',
+      `你问：「${q || '（未输入内容）'}」`,
+      '',
+      '演示模式下，我先按通用框架回应：',
+      '',
+      '**要点**：',
+      '1. 先明确问题的核心概念或场景',
+      '2. 拆解关键要素，逐条解释',
+      '3. 给出 1–2 个可直接套用的例子',
+      '',
+      '配置硅基流动 API Key（BYOK）后，我会针对你的具体问题给出完整、深入的解答。',
+      ...(sources.length ? ['', '**参考来源**：', ...sources.map((s) => `- [${s.title}](${s.url})`)] : []),
+      '',
+      '> 📚 演示模式（未配置 API Key）。'
+    ].join('\n')
   }
 ]
 
@@ -98,7 +136,7 @@ export class EnglishGateway {
   private getClient(): OpenAI | null {
     const cfg = this.getConfig()
     if (!cfg.apiKey) return null
-    if (!this.client || this.client.baseURL !== cfg.baseURL) {
+    if (!this.client || this.client.baseURL !== cfg.baseURL || this.client.apiKey !== cfg.apiKey) {
       this.client = new OpenAI({
         apiKey: cfg.apiKey,
         baseURL: cfg.baseURL || undefined
@@ -109,24 +147,31 @@ export class EnglishGateway {
 
   /**
    * 流式问答：onDelta 逐段回调；resolve 时携带完整回复与 RAG 来源。
+   * @param options.profile 档位（english / bili），决定提示词体系与 temperature
+   * @param options.biliRequest B 站档位请求（学习上下文 + 多轮历史）
    */
   async chat(
     question: AiQuestion,
     sources: AiSource[],
-    onDelta: (delta: string) => void
+    onDelta: (delta: string) => void,
+    options: ChatOptions = {}
   ): Promise<AiReply> {
     const client = this.getClient()
     if (!client) {
-      return this.mockReply(question, sources, onDelta)
+      return this.mockReply(question, sources, onDelta, options)
     }
 
     const cfg = this.getConfig()
-    const messages = buildMessages(question, sources)
+    const profile: AiProfile = options.profile ?? 'english'
+    const messages =
+      profile === 'bili' && options.biliRequest
+        ? buildBiliMessages(options.biliRequest)
+        : buildMessages(question, sources)
     const stream = await client.chat.completions.create({
       model: cfg.model,
       messages,
       stream: true,
-      temperature: 0.7
+      temperature: profile === 'bili' ? 0.5 : 0.7
     })
 
     let content = ''
@@ -140,24 +185,17 @@ export class EnglishGateway {
     return { content, sources }
   }
 
-  /** 演示模式：按场景输出结构化模拟回复，按词块异步流式推送 */
+  /** 演示模式：按档位输出结构化模拟回复，按词块异步流式推送 */
   private mockReply(
     question: AiQuestion,
     sources: AiSource[],
-    onDelta: (delta: string) => void
+    onDelta: (delta: string) => void,
+    options: ChatOptions = {}
   ): Promise<AiReply> {
-    const entry = MOCK_REPLIES.find((m) => m.scenario === question.scenario)
-    const query = question.word ?? extractQueryWord(question.message)
     const content =
-      entry?.reply(query, sources) ??
-      [
-        '**自由问答（演示模式）**',
-        '',
-        `你问：「${question.message}」`,
-        '',
-        '配置 API Key（BYOK）后由真实模型回答。',
-        ...(sources.length ? ['', '**参考来源**：', ...sources.map((s) => `- [${s.title}](${s.url})`)] : [])
-      ].join('\n')
+      options.profile === 'bili'
+        ? this.mockBiliReply(options.biliRequest)
+        : this.mockEnglishReply(question, sources)
 
     return new Promise((resolve) => {
       const parts = content.split(/(?<=[\s。！？])/)
@@ -172,6 +210,41 @@ export class EnglishGateway {
         }
       }, 16)
     })
+  }
+
+  /** B 站学习助手演示回复：展示学习主题、能力清单与配置入口 */
+  private mockBiliReply(request?: AiAskRequest): string {
+    const topic = request?.context?.topic?.trim()
+    return [
+      '**学习助手（演示模式）** 📺',
+      '',
+      topic ? `> 当前学习主题：「${topic}」` : '> 当前未设置学习主题',
+      '',
+      '我可以帮你：',
+      '1. **概念讲解** —— 看不懂的点，用通俗语言讲明白',
+      '2. **要点总结** —— 把视频内容归纳成结构化笔记',
+      '3. **随堂测验** —— 出 1–3 道自测题检验理解',
+      '4. **学习规划** —— 给出下一步 15 分钟粒度建议',
+      '',
+      '在「设置 → AI 设置」填写硅基流动 API Key 后，将由真实模型基于视频内容答疑。'
+    ].join('\n')
+  }
+
+  /** 英语教学演示回复：按场景输出结构化模拟回复 */
+  private mockEnglishReply(question: AiQuestion, sources: AiSource[]): string {
+    const entry = MOCK_REPLIES.find((m) => m.scenario === question.scenario)
+    const query = question.word ?? extractQueryWord(question.message)
+    return (
+      entry?.reply(query, sources) ??
+      [
+        '**自由问答（演示模式）**',
+        '',
+        `你问：「${question.message}」`,
+        '',
+        '配置 API Key（BYOK）后由真实模型回答。',
+        ...(sources.length ? ['', '**参考来源**：', ...sources.map((s) => `- [${s.title}](${s.url})`)] : [])
+      ].join('\n')
+    )
   }
 }
 

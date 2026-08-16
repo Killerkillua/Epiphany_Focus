@@ -2,11 +2,13 @@ import { app, shell, BrowserWindow, protocol } from 'electron'
 import { join } from 'path'
 import { registerEnforcementModule } from './enforcement'
 import { registerNavigationModule } from './navigation'
+import { installBiliImageProxy } from './navigation/biliImageProxy'
 import { registerAiIpc } from './ai'
 import { registerAudioModule } from './audio'
 import { registerSettingsIpc } from './storage/settings'
 import { registerStatsIpc } from './storage/stats'
 import { getDb } from './storage/db'
+import { registerSessionModule } from './session'
 
 /**
  * 主进程入口：窗口管理 + 模块装配（方案 3.3 进程模型）。
@@ -18,8 +20,22 @@ import { getDb } from './storage/db'
  */
 
 // 自定义协议：必须在 app.ready 前声明特权（方案 2.8 §3 落地设计）
+// supportFetchAPI：允许渲染层 fetch() 该协议（缺省则 fetch 直接失败 → 采样轨全部跳过）
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'tomato-audio', privileges: { standard: true, secure: true, stream: true } }
+  {
+    scheme: 'tomato-audio',
+    privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true }
+  },
+  {
+    scheme: 'bili-image',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      bypassCSP: true
+    }
+  }
 ])
 
 const isDev = !app.isPackaged
@@ -72,6 +88,9 @@ function createMainWindow(): BrowserWindow {
 app.whenReady().then(() => {
   createMainWindow()
 
+  // B 站封面图代理（bili-image:// 协议 + Referer 注入 + 磁盘缓存），修复 CDN 防盗链 403
+  installBiliImageProxy()
+
   // 预打开中央 SQLite（创建规约 6 张表，方案 3.4）
   getDb()
 
@@ -87,6 +106,9 @@ app.whenReady().then(() => {
 
   // AI 网关（英语模式）
   registerAiIpc()
+
+  // 学习会话计时（B 站 / 英语模式，与强制引擎解耦）
+  registerSessionModule(getMainWindow)
 
   // 白噪音（全局热键 + 采样素材解析）
   registerAudioModule(getMainWindow)
