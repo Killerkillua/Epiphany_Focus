@@ -34,7 +34,8 @@ class NoiseEngine {
   private settings: NoiseSettings = loadSettings()
   private volume = this.settings.volume
   private listeners = new Set<Listener>()
-  private assetsCache: Record<string, boolean> | null = null
+  private assetsCache: Record<string, { exists: boolean; url?: string }> | null = null
+  private bufferCache = new Map<string, AudioBuffer>()
 
   /* ===== 只读状态 ===== */
 
@@ -199,26 +200,46 @@ class NoiseEngine {
 
   /* ===== 采样层（M1 留接口） ===== */
 
-  /** 采样素材可用性（主进程解析路径 + exists），进程内缓存 */
+  /** 采样素材可用性（主进程解析路径 + exists + url），进程内缓存 */
   private async getSampleAvailability(): Promise<Record<string, boolean>> {
-    if (this.assetsCache) return this.assetsCache
+    if (this.assetsCache) {
+      return Object.fromEntries(
+        Object.entries(this.assetsCache).map(([k, v]) => [k, v.exists])
+      )
+    }
     try {
       const assets = await window.api.audio.getAssets()
-      this.assetsCache = Object.fromEntries(assets.map((asset) => [asset.key, asset.exists]))
+      this.assetsCache = Object.fromEntries(
+        assets.map((asset) => [asset.key, { exists: asset.exists, url: asset.url }])
+      )
     } catch {
       this.assetsCache = {}
     }
-    return this.assetsCache
+    return Object.fromEntries(
+      Object.entries(this.assetsCache).map(([k, v]) => [k, v.exists])
+    )
   }
 
   /**
-   * 解码采样素材（M1 接口占位）。
-   * 素材按规格（OGG 44.1kHz/16bit、30–60s、-3dB、≤5MB）放于 resources/audio/，
-   * 打包后 exists=true，本方法即被启用；当前返回 null 由调用方跳过。
+   * 解码采样素材。经 tomato-audio:// 协议 fetch → decodeAudioData，按 key 缓存。
+   * 素材不可用时返回 null，调用方自动跳过采样轨（降级逻辑）。
    */
-  private async decodeSample(_ctx: AudioContext, _key: SampleKind): Promise<AudioBuffer | null> {
-    console.warn('[audio] 采样素材未打包或无法加载，已跳过（resources/audio/ 规格见 README）')
-    return null
+  private async decodeSample(ctx: AudioContext, key: SampleKind): Promise<AudioBuffer | null> {
+    if (this.bufferCache.has(key)) return this.bufferCache.get(key)!
+    // 确保 assetsCache 已初始化
+    await this.getSampleAvailability()
+    const info = this.assetsCache?.[key]
+    if (!info || !info.exists || !info.url) return null
+    try {
+      const res = await fetch(info.url)
+      if (!res.ok) return null
+      const buf = await ctx.decodeAudioData(await res.arrayBuffer())
+      this.bufferCache.set(key, buf)
+      return buf
+    } catch (err) {
+      console.warn(`[audio] 采样素材解码失败 (${key}):`, err)
+      return null
+    }
   }
 }
 
