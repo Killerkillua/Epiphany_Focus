@@ -17,31 +17,27 @@ import { EnglishGateway } from './gateway'
 import { OcrGateway } from './ocr'
 import { runRag } from './rag'
 import { AiStore } from './store'
-
 /**
- * AI 网关（英语教学模式核心版）。
+ * AI 网关（英语教学模式 + B 站学习助手）。
  * - 流式问答：ai:english-ask（增量经 ai:chunk 事件推送，requestId 关联）
  * - 分层 Prompt + CoT + RAG（prompts.ts / rag.ts）
+ * - B 站学习助手：ai:ask / ai:stream（bili 档位，注入学习上下文 topic/bvid + 多轮历史）
+ * - 图片文字识别：ai:ocr（OCR 模型）
  * - BYOK 配置与 SQLite 生词本 / 语法要点（store.ts）
- * - 兼容保留 ai:ask / ai:stream（B 站悬浮助手契约）
  */
 export function registerAiIpc(): void {
   const store = new AiStore()
   const gateway = new EnglishGateway(() => store.getConfig())
   const ocr = new OcrGateway(() => store.getConfig())
 
-  // ================= B 站 overlay 兼容 =================
+  // ================= B 站学习助手（悬浮面板） =================
 
   ipcMain.handle(IPC_CHANNELS.ai.ask, async (_event, request: AiAskRequest): Promise<AiReply> => {
-    const sources = await runRag({
-      scenario: 'free',
-      message: request.message,
-      word: request.context?.topic?.trim() || undefined
-    })
     const reply = await gateway.chat(
       { scenario: 'free', message: request.message },
-      sources,
-      () => undefined
+      [],
+      () => undefined,
+      { profile: 'bili', biliRequest: request }
     )
     return {
       role: 'assistant',
@@ -51,7 +47,12 @@ export function registerAiIpc(): void {
   })
 
   ipcMain.handle(IPC_CHANNELS.ai.stream, async (_event, request: AiAskRequest): Promise<string> => {
-    const reply = await gateway.chat({ scenario: 'free', message: request.message }, [], () => undefined)
+    const reply = await gateway.chat(
+      { scenario: 'free', message: request.message },
+      [],
+      () => undefined,
+      { profile: 'bili', biliRequest: request }
+    )
     return reply.content
   })
 
@@ -84,14 +85,9 @@ export function registerAiIpc(): void {
 
   ipcMain.handle(IPC_CHANNELS.ai.getConfig, (): AiConfig => store.getConfig())
 
-  ipcMain.handle(
-    IPC_CHANNELS.ai.setConfig,
-    (_event, patch: Partial<AiConfig>): AiConfig => store.setConfig(patch)
-  )
-
   ipcMain.handle(IPC_CHANNELS.ai.usage, (): AiUsage => store.getUsage())
 
-  // ================= 图片文字识别（硅基流动 DeepSeek-OCR） =================
+  // ================= 图片文字识别（OCR 模型） =================
 
   ipcMain.handle(
     IPC_CHANNELS.ai.ocr,

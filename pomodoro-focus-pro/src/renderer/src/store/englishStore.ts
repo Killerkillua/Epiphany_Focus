@@ -27,13 +27,21 @@ export interface ChatMessage {
   queryWord?: string
 }
 
+/**
+ * 渲染层 AI 配置初始占位（仅 init() 完成前的类型默认值）。
+ * 真实配置（含默认 API Key）由 init() 从主进程 electron-store 拉取后覆盖，
+ * 此处 apiKey 保持空字符串，避免在渲染层 bundle 中明文携带密钥。
+ */
 const DEFAULT_CONFIG: AiConfig = {
   baseURL: 'https://api.siliconflow.cn/v1',
   apiKey: '',
-  model: 'deepseek-ai/DeepSeek-V3',
+  model: 'Qwen/Qwen3.5-4B',
   maxQuestionsPerSession: 50,
-  ocrModel: 'deepseek-ai/DeepSeek-OCR'
+  ocrModel: 'Qwen/Qwen3.5-4B'
 }
+
+/** 需要携带多轮上下文的场景（对话练习 / 自由提问） */
+const HISTORY_SCENARIOS: AiScenario[] = ['conversation', 'free']
 
 interface EnglishStore {
   messages: ChatMessage[]
@@ -44,7 +52,7 @@ interface EnglishStore {
   grammar: GrammarPoint[]
   init: () => Promise<void>
   ask: (scenario: AiScenario, message: string, word?: string) => Promise<void>
-  saveConfig: (patch: Partial<AiConfig>) => Promise<void>
+  refreshConfig: () => Promise<void>
   refreshLists: () => Promise<void>
   addVocab: (payload: AddVocabPayload) => Promise<void>
   deleteVocab: (id: number) => Promise<void>
@@ -53,6 +61,7 @@ interface EnglishStore {
 }
 
 let chunkSubscribed = false
+let settingsSubscribed = false
 
 export const useEnglishStore = create<EnglishStore>((set, get) => ({
   messages: [],
@@ -93,6 +102,13 @@ export const useEnglishStore = create<EnglishStore>((set, get) => ({
         })
       })
     }
+    // 设置变更广播：设置页（或主进程任何 ai 配置写入）保存后实时刷新，无需重进页面
+    if (!settingsSubscribed) {
+      settingsSubscribed = true
+      window.api.on(window.api.events.settings.changed, () => {
+        void get().refreshConfig()
+      })
+    }
     const [config, usage, vocab, grammar] = await Promise.all([
       window.api.ai.getConfig(),
       window.api.ai.usage(),
@@ -107,7 +123,15 @@ export const useEnglishStore = create<EnglishStore>((set, get) => ({
     if (!trimmed || get().isStreaming) return
 
     const requestId = crypto.randomUUID()
-    const question: AiQuestion = { scenario, message: trimmed, word }
+    // 需要多轮上下文的场景：从已完成消息取最近 8 轮（过滤 streaming 中的本轮占位）
+    const history =
+      HISTORY_SCENARIOS.includes(scenario)
+        ? get()
+            .messages.filter((m) => !m.streaming && (m.role === 'user' || m.role === 'assistant') && m.content.trim())
+            .slice(-8)
+            .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
+        : undefined
+    const question: AiQuestion = { scenario, message: trimmed, word, history }
 
     const userMsg: ChatMessage = { id: crypto.randomUUID(), role: 'user', content: trimmed, sources: [] }
     const assistantMsg: ChatMessage = {
@@ -149,9 +173,9 @@ export const useEnglishStore = create<EnglishStore>((set, get) => ({
     }
   },
 
-  saveConfig: async (patch) => {
-    const config = await window.api.ai.setConfig(patch)
-    set({ config })
+  refreshConfig: async () => {
+    const [config, usage] = await Promise.all([window.api.ai.getConfig(), window.api.ai.usage()])
+    set({ config, usage })
   },
 
   refreshLists: async () => {

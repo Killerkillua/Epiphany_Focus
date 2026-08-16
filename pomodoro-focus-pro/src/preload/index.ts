@@ -13,6 +13,8 @@ import type {
   NoteEntry,
   OpenVideoPayload,
   OverlaySize,
+  OverlaySnapshot,
+  OverlayState,
   VideoState
 } from '../shared/bili'
 import type {
@@ -30,6 +32,7 @@ import type {
 import type { AssetInfo } from '../shared/audio'
 import type { AppSettings, EmergencyExitResult } from '../shared/settings'
 import type { DayTrendPoint, HeatmapCell, HomeSummary, ModeStat } from '../shared/stats'
+import type { SessionStartOptions, SessionState, TimerSnapshot } from '../shared/types'
 
 /**
  * preload：通过 contextBridge 向渲染层暴露受限 API。
@@ -90,11 +93,31 @@ const api: RendererApi = {
       ipcRenderer.invoke(IPC_CHANNELS.bili.getContext) as Promise<BiliContext | null>,
     overlaySetSize: (size: OverlaySize): Promise<void> =>
       ipcRenderer.invoke(IPC_CHANNELS.bili.overlaySetSize, size) as Promise<void>,
+    overlaySetState: (state: OverlayState): Promise<OverlaySnapshot> =>
+      ipcRenderer.invoke(IPC_CHANNELS.bili.overlaySetState, state) as Promise<OverlaySnapshot>,
+    overlayGetState: (): Promise<OverlaySnapshot> =>
+      ipcRenderer.invoke(IPC_CHANNELS.bili.overlayGetState) as Promise<OverlaySnapshot>,
+    overlayToggleHide: (): Promise<OverlaySnapshot> =>
+      ipcRenderer.invoke(IPC_CHANNELS.bili.overlayToggleHide) as Promise<OverlaySnapshot>,
     navCheck: (url: string): Promise<NavVerdict> =>
       ipcRenderer.invoke(IPC_CHANNELS.bili.navCheck, url) as Promise<NavVerdict>,
     resetWbi: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.bili.resetWbi) as Promise<void>,
     markRelevant: (payload: MarkRelevantPayload): Promise<boolean> =>
       ipcRenderer.invoke(IPC_CHANNELS.bili.markRelevant, payload) as Promise<boolean>
+  },
+
+  /* ===== 学习会话计时（B 站 / 英语模式） ===== */
+  session: {
+    start: (options: SessionStartOptions): Promise<SessionState> =>
+      ipcRenderer.invoke(IPC_CHANNELS.session.start, options) as Promise<SessionState>,
+    stop: (): Promise<SessionState> =>
+      ipcRenderer.invoke(IPC_CHANNELS.session.stop) as Promise<SessionState>,
+    pause: (): Promise<SessionState> =>
+      ipcRenderer.invoke(IPC_CHANNELS.session.pause) as Promise<SessionState>,
+    resume: (): Promise<SessionState> =>
+      ipcRenderer.invoke(IPC_CHANNELS.session.resume) as Promise<SessionState>,
+    getState: (): Promise<SessionState> =>
+      ipcRenderer.invoke(IPC_CHANNELS.session.getState) as Promise<SessionState>
   },
 
   /* ===== 记事本 ===== */
@@ -149,12 +172,9 @@ const api: RendererApi = {
     getConfig: (): Promise<AiConfig> =>
       ipcRenderer.invoke(IPC_CHANNELS.ai.getConfig) as Promise<AiConfig>,
 
-    setConfig: (patch: Partial<AiConfig>): Promise<AiConfig> =>
-      ipcRenderer.invoke(IPC_CHANNELS.ai.setConfig, patch) as Promise<AiConfig>,
-
     usage: (): Promise<AiUsage> => ipcRenderer.invoke(IPC_CHANNELS.ai.usage) as Promise<AiUsage>,
 
-    /* 图片文字识别（硅基流动 DeepSeek-OCR） */
+    /* 图片文字识别（OCR 模型） */
     ocr: (req: OcrRequest): Promise<OcrResult> =>
       ipcRenderer.invoke(IPC_CHANNELS.ai.ocr, req) as Promise<OcrResult>,
 

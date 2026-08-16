@@ -10,6 +10,8 @@ import type {
   NoteEntry,
   OpenVideoPayload,
   OverlaySize,
+  OverlaySnapshot,
+  OverlayState,
   VideoState
 } from '../shared/bili'
 import type {
@@ -27,6 +29,7 @@ import type {
 import type { AssetInfo } from '../shared/audio'
 import type { AppSettings, EmergencyExitResult } from '../shared/settings'
 import type { DayTrendPoint, HeatmapCell, HomeSummary, ModeStat } from '../shared/stats'
+import type { SessionStartOptions, SessionState } from '../shared/types'
 
 /** preload 暴露给渲染层的受限 API 类型定义 */
 export interface RendererApi {
@@ -55,6 +58,9 @@ export interface RendererApi {
     videoState(): Promise<VideoState>
     getContext(): Promise<BiliContext | null>
     overlaySetSize(size: OverlaySize): Promise<void>
+    overlaySetState(state: OverlayState): Promise<OverlaySnapshot>
+    overlayGetState(): Promise<OverlaySnapshot>
+    overlayToggleHide(): Promise<OverlaySnapshot>
     navCheck(url: string): Promise<NavVerdict>
     resetWbi(): Promise<void>
     markRelevant(payload: MarkRelevantPayload): Promise<boolean>
@@ -64,6 +70,15 @@ export interface RendererApi {
   notes: {
     save(entries: NoteEntry[]): Promise<void>
     load(): Promise<NoteEntry[]>
+  }
+
+  /** 学习会话计时（B 站学习 / 英语学习模式） */
+  session: {
+    start(options: SessionStartOptions): Promise<SessionState>
+    stop(): Promise<SessionState>
+    pause(): Promise<SessionState>
+    resume(): Promise<SessionState>
+    getState(): Promise<SessionState>
   }
 
   /** 白噪音（主进程侧：素材信息） */
@@ -93,16 +108,15 @@ export interface RendererApi {
 
   /** AI 网关 */
   ai: {
-    /** B 站 overlay 兼容：单轮完整回复 */
+    /** B 站学习助手：完整回复（携带学习上下文与多轮历史） */
     ask(request: AiAskRequest): Promise<AiReply>
     /** 英语模式：流式问答（增量经 ai:chunk 事件推送） */
     englishAsk(question: AiQuestion): Promise<EnglishAiReply>
-    /** LLM 配置（BYOK） */
+    /** LLM 配置（BYOK，只读；写入走 设置页 settings:set） */
     getConfig(): Promise<AiConfig>
-    setConfig(patch: Partial<AiConfig>): Promise<AiConfig>
     /** 会话提问用量 */
     usage(): Promise<AiUsage>
-    /** 图片文字识别（硅基流动 DeepSeek-OCR） */
+    /** 图片文字识别（OCR 模型） */
     ocr(req: OcrRequest): Promise<OcrResult>
     /** 生词本 */
     addVocab(payload: AddVocabPayload): Promise<VocabEntry>

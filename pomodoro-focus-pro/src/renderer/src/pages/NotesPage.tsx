@@ -13,7 +13,7 @@ const { TextArea } = Input
 
 /**
  * 记事本：编辑 / 保存（SQLite notes 表，整份覆盖语义）/ 导出 Markdown /
- * 图片文字识别（硅基流动 DeepSeek-OCR）：选择图片或直接粘贴剪贴板截图。
+ * 图片文字识别（OCR 模型）：选择图片或直接粘贴剪贴板截图。
  */
 
 function NotesPage(): JSX.Element {
@@ -127,7 +127,7 @@ function NotesPage(): JSX.Element {
     <div>
       <h1 className="page-title">记事本</h1>
       <p className="page-sub">
-        学习笔记 · 自动保存 · 图片 OCR 识别（硅基流动 DeepSeek-OCR）· Markdown 导出
+        学习笔记 · 自动保存 · 图片 OCR 识别 · Markdown 导出
       </p>
 
       <Card size="small" className="notes-card">
@@ -184,7 +184,7 @@ function NotesPage(): JSX.Element {
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={() => void save(false)}
-          placeholder={'记录学习要点…\n\n提示：复制任意截图/图片后直接 Ctrl+V，将自动调用 DeepSeek-OCR 识别并插入文字。'}
+          placeholder={'记录学习要点…\n\n提示：复制任意截图/图片后直接 Ctrl+V，将自动调用 OCR 识别并插入文字。'}
           autoSize={{ minRows: 14, maxRows: 26 }}
           className="notes-editor"
         />

@@ -38,7 +38,7 @@ export interface AiSettings {
   model: string
   /** 单会话提问上限 */
   maxQuestionsPerSession: number
-  /** OCR 模型名（deepseek-ai/DeepSeek-OCR） */
+  /** OCR 模型名（如 Qwen/Qwen3.5-4B） */
   ocrModel: string
 }
 
@@ -86,9 +86,9 @@ export const SETTINGS_DEFAULTS: AppSettings = {
   ai: {
     baseURL: 'https://api.siliconflow.cn/v1',
     apiKey: '***REMOVED***',
-    model: 'deepseek-ai/DeepSeek-V3',
+    model: 'Qwen/Qwen3.5-4B',
     maxQuestionsPerSession: 50,
-    ocrModel: 'deepseek-ai/DeepSeek-OCR'
+    ocrModel: 'Qwen/Qwen3.5-4B'
   },
   noisePreset: 'rain',
   recoveryCodeHash: null,
