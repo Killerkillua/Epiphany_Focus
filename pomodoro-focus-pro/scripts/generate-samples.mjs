@@ -7,7 +7,7 @@
  * 用法：node scripts/generate-samples.mjs
  */
 
-import { writeFileSync, mkdirSync, existsSync } from 'node:fs'
+import { writeFileSync, mkdirSync, existsSync, unlinkSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -367,8 +367,8 @@ console.log(`ffmpeg: ${hasFfmpeg ? '已检测到，将输出 OGG' : '未检测�
 const results = []
 for (const [name, fn] of Object.entries(RECIPES)) {
   console.log(`[${name}] 合成中...`)
-  fn()
-  writeWav(name, fn())
+  const samples = fn()
+  writeWav(name, samples)
   const asOgg = hasFfmpeg ? maybeToOgg(name) : false
   results.push({ name, format: asOgg ? 'ogg' : 'wav' })
 }
