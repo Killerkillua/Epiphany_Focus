@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>③ 白噪音采样素材 · 落地设计</title>
+<style>
+  :root {
+    --bg: #0f1115; --bg2: #171b22; --panel: #1b212b;
+    --ink: #e8eaed; --muted: #9aa3af; --rule: #2a313c;
+    --accent: #ff6b4a; --accent2: #4da3ff; --ok: #3ddc97; --warn: #ffc94a;
+    --code-bg: #0b0d12;
+    --sans: "Work Sans", "PingFang SC", system-ui, sans-serif;
+    --mono: "JetBrains Mono", Consolas, "微软雅黑", monospace;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 15px; line-height: 1.75; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 36px 80px; }
+
+  header.cover { padding: 48px 0 30px; border-bottom: 1px solid var(--rule); margin-bottom: 16px; }
+  .kicker { font-family: var(--mono); font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); margin-bottom: 14px; }
+  h1 { font-size: 30px; line-height: 1.25; margin: 0 0 10px; font-weight: 700; }
+  .sub { color: var(--muted); font-size: 15px; margin: 0; }
+  .meta { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 18px; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .meta b { color: var(--ink); font-weight: 600; }
+
+  nav.toc { background: var(--bg2); border: 1px solid var(--rule); border-radius: 10px; padding: 16px 20px; margin: 26px 0 34px; }
+  nav.toc b { font-size: 13px; color: var(--muted); letter-spacing: .06em; }
+  nav.toc ol { margin: 8px 0 0; padding-left: 20px; columns: 2; column-gap: 30px; }
+  nav.toc li { font-size: 13.5px; margin: 4px 0; }
+  nav.toc a { color: var(--accent2); text-decoration: none; }
+  nav.toc a:hover { text-decoration: underline; }
+
+  h2 { font-size: 22px; margin: 46px 0 6px; padding-bottom: 8px; border-bottom: 2px solid var(--accent); }
+  h2 .sec-no { color: var(--accent); font-family: var(--mono); margin-right: 8px; }
+  h3 { font-size: 17px; margin: 30px 0 8px; color: var(--accent2); }
+  h4 { font-size: 15px; margin: 22px 0 6px; color: var(--ink); }
+  p { margin: 10px 0; }
+  ul, ol { margin: 8px 0 12px; padding-left: 22px; }
+  li { margin: 4px 0; }
+  strong { color: #fff; font-weight: 600; }
+
+  pre { background: var(--code-bg); border: 1px solid var(--rule); border-radius: 8px; padding: 14px 16px; overflow-x: auto; font-family: var(--mono); font-size: 12.5px; line-height: 1.6; margin: 12px 0; }
+  pre .c { color: #6b7683; } pre .k { color: #ff8a6b; } pre .s { color: #8fd3a8; } pre .t { color: #7fb8ff; } pre .f { color: #ffc94a; } pre .n { color: #e8eaed; }
+  code.inline { background: var(--bg2); border: 1px solid var(--rule); padding: 1px 6px; border-radius: 4px; font-family: var(--mono); font-size: 12.6px; color: #ffb69a; }
+
+  .table-wrap { overflow-x: auto; overflow-y: auto; max-height: 600px; margin: 14px 0; border: 1px solid var(--rule); border-radius: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; min-width: 640px; }
+  th { background: var(--bg2); color: var(--ink); text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--rule); font-weight: 600; white-space: nowrap; }
+  td { padding: 8px 12px; border-bottom: 1px solid #222832; vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  td code.inline { font-size: 12px; }
+
+  .callout { border-left: 4px solid var(--accent); background: var(--bg2); padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 14px 0; }
+  .callout.info { border-left-color: var(--accent2); }
+  .callout.warn { border-left-color: var(--warn); }
+  .callout.ok { border-left-color: var(--ok); }
+  .callout b { color: var(--ink); }
+  .callout p { margin: 4px 0; }
+
+  .badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; margin-right: 6px; }
+  .badge.new { background: rgba(255,107,74,.16); color: var(--accent); }
+  .badge.mod { background: rgba(77,163,255,.16); color: var(--accent2); }
+  .badge.core { background: rgba(61,220,151,.15); color: var(--ok); }
+
+  .filelist { list-style: none; padding: 0; margin: 10px 0; }
+  .filelist li { background: var(--bg2); border: 1px solid var(--rule); border-radius: 8px; padding: 9px 14px; margin: 6px 0; font-family: var(--mono); font-size: 12.6px; }
+  .filelist li .tag { float: right; }
+
+  figure.diagram { margin: 18px 0; text-align: center; }
+  figure.diagram svg { max-width: 100%; height: auto; }
+  figure.diagram figcaption { font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+
+  footer { border-top: 1px solid var(--rule); margin-top: 60px; padding-top: 18px; color: var(--muted); font-size: 12.5px; }
+  footer .sources ol { padding-left: 20px; }
+  footer .sources li { margin: 4px 0; overflow-wrap: break-word; }
+  footer .sources .src-url { color: var(--accent2); word-break: break-all; }
+
+  @media (max-width: 720px) { .wrap { padding: 24px 18px 60px; } nav.toc ol { columns: 1; } h1 { font-size: 24px; } pre { font-size: 12px; } }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="cover">
+  <div class="kicker">落地设计文档 · 03 / 03</div>
+  <h1>白噪音采样素材</h1>
+  <p class="sub">8 种自然采样（雨/咖啡厅/森林/图书馆/海浪/篝火/风扇/鸟鸣）· 生成管线 · 双节点无缝循环 · 本地协议传输</p>
+  <div class="meta">
+    <span><b>方案依据</b>：v2.0 §2.8 白噪音系统 / §3.1 音频技术栈</span>
+    <span><b>难度</b>：P1 · 中</span>
+    <span><b>现状</b>：<code>resources/audio</code> 仅 README，8 个采样文件缺失，<code>decodeSample</code> 为占位</span>
+  </div>
+</header>
+
+<nav class="toc">
+  <b>目录</b>
+  <ol>
+    <li><a href="#s1">现状与差距</a></li>
+    <li><a href="#s2">总体方案</a></li>
+    <li><a href="#s3">素材规格与目录</a></li>
+    <li><a href="#s4">生成管线</a></li>
+    <li><a href="#s5">8 种素材合成方案</a></li>
+    <li><a href="#s6">主进程：本地协议</a></li>
+    <li><a href="#s7">渲染层：decodeSample</a></li>
+    <li><a href="#s8">打包配置</a></li>
+    <li><a href="#s9">验证脚本</a></li>
+    <li><a href="#s10">验收标准</a></li>
+    <li><a href="#s11">涉及文件清单</a></li>
+  </ol>
+</nav>
+
+<!-- ================= 1 ================= -->
+<h2 id="s1"><span class="sec-no">1</span>现状与差距</h2>
+<p>白噪音引擎（渲染层 Web Audio）已经就绪：<code class="inline">seamlessLoop.ts</code> 实现双节点交叉淡入淡出无缝循环，<code class="inline">synth.ts</code> 提供白/粉/棕噪合成层，<code class="inline">presets.ts</code> 定义了合成层 + 采样层共 11 个预设。缺口在采样层这一环：</p>
+<div class="table-wrap">
+<table>
+  <tbody><tr><th>环节</th><th>现状</th><th>缺口</th></tr>
+  <tr><td>音频文件</td><td><code class="inline">resources/audio/</code> 只有 README.md</td><td>8 个 <code class="inline">.ogg/.wav</code> 素材文件缺失</td></tr>
+  <tr><td>传输到渲染层</td><td><code class="inline">audio:get-assets</code> 只返回路径与 exists</td><td>渲染层无法 fetch 文件系统路径，缺可访问 URL</td></tr>
+  <tr><td>解码</td><td><code class="inline">decodeSample</code> 返回 null（占位）</td><td>采样轨永远被跳过</td></tr>
+</tbody></table>
+</div>
+<p>因此即使混音引擎和数据契约都齐备，预设选择"雨声/咖啡厅/森林…"时采样轨仍不发声，用户只能听到合成噪声。本方案解决"素材从哪来 + 怎么送到引擎解码"两个问题。</p>
+
+<!-- ================= 2 ================= -->
+<h2 id="s2"><span class="sec-no">2</span>总体方案</h2>
+<p>采用"<strong>程序化合成优先 + CC0 录音可替换</strong>"的双轨策略，保证离线、零依赖、可复现：</p>
+<ul>
+  <li><strong>程序化合成</strong>：用纯 Node 脚本（无第三方依赖）按每种素材的声学配方生成 44.1kHz/16-bit 循环音频，输出 WAV；若本机有 <code class="inline">ffmpeg</code> 则额外转码为体积更小的 OGG（符合 §2.8"OGG 优先"）。</li>
+  <li><strong>CC0 可替换</strong>：任何真实 CC0 录音只要按同名覆盖进 <code class="inline">resources/audio/</code> 即可无缝替换（规格一致即可），脚本生成的是"开箱即用"的兜底。</li>
+</ul>
+<p>传输上，主进程注册一个自定义协议 <code class="inline">tomato-audio://</code> 流式读取 <code class="inline">resources/audio/</code> 下的文件，渲染层 <code class="inline">decodeSample</code> 经 <code class="inline">fetch(url) → decodeAudioData</code> 解码并内存缓存。这样生产环境 asar 外置素材也能被渲染层读取。</p>
+
+<figure class="diagram">
+<svg viewBox="0 0 900 300" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="白噪音采样素材管线">
+  <defs>
+    <marker id="arr3" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#4da3ff"></path></marker>
+  </defs>
+  <style>
+    .b{fill:#171b22;stroke:#2a313c;stroke-width:1;rx:8}
+    .br{fill:#171b22;stroke:#ff6b4a;stroke-width:1.4;rx:8}
+    .l{fill:#e8eaed;font:600 12.5px sans-serif}
+    .ls{fill:#9aa3af;font:11px monospace}
+    .la{fill:#ff6b4a;font:600 11px monospace}
+    .lb{fill:#4da3ff;font:600 11px monospace}
+  </style>
+
+  <rect x="30" y="40" width="200" height="44" rx="8" fill="#1b212b" stroke="#2a313c"></rect>
+  <text x="46" y="60" class="l">scripts/generate-samples.mjs</text>
+  <text x="46" y="76" class="ls">纯 JS DSP → WAV (+ffmpeg→OGG)</text>
+
+  <rect x="30" y="150" width="200" height="44" rx="8" fill="#1b212b" stroke="#2a313c"></rect>
+  <text x="46" y="170" class="l">resources/audio/*.ogg|wav</text>
+  <text x="46" y="186" class="ls">rain/cafe/forest/library/…</text>
+
+  <rect x="330" y="150" width="220" height="44" rx="8" fill="#171b22" stroke="#ff6b4a"></rect>
+  <text x="346" y="170" class="l">main/audio（tomato-audio:// 协议）</text>
+  <text x="346" y="186" class="ls">protocol.handle → audioDir()/file</text>
+
+  <rect x="650" y="150" width="230" height="44" rx="8" fill="#171b22" stroke="#2a313c"></rect>
+  <text x="666" y="170" class="l">renderer engine.decodeSample</text>
+  <text x="666" y="186" class="ls">fetch(url) → decodeAudioData → 缓存</text>
+
+  <rect x="650" y="40" width="230" height="44" rx="8" fill="#171b22" stroke="#2a313c"></rect>
+  <text x="666" y="60" class="l">CrossfadeLoop（无缝循环）</text>
+  <text x="666" y="76" class="ls">双节点交叉淡入淡出 1.5s</text>
+
+  <path d="M230 62 C 300 62 560 62 650 62" stroke="#4da3ff" stroke-width="1.5" marker-end="url(#arr3)" fill="none"></path>
+  <path d="M230 172 C 280 172 290 172 330 172" stroke="#4da3ff" stroke-width="1.5" marker-end="url(#arr3)" fill="none"></path>
+  <text x="256" y="136" class="lb">打包 asarUnpack 外置</text>
+  <path d="M550 172 C 600 172 610 172 650 172" stroke="#4da3ff" stroke-width="1.5" marker-end="url(#arr3)" fill="none"></path>
+  <text x="565" y="206" class="lb">audio:get-assets → {url}</text>
+  <path d="M765 194 C 765 220 765 240 765 250" stroke="#9aa3af" stroke-width="1.2" marker-end="url(#arr3)" fill="none" stroke-dasharray="4 3"></path>
+  <text x="772" y="240" class="la">AudioBuffer</text>
+</svg>
+<figcaption>图 3-1：采样素材从生成到解码的完整管线。</figcaption>
+</figure>
+
+<!-- ================= 3 ================= -->
+<h2 id="s3"><span class="sec-no">3</span>素材规格与目录</h2>
+<p>沿用 <code class="inline">SAMPLE_ASSET_SPECS</code> 的 8 个 key 与推荐音量，文件放在 <code class="inline">resources/audio/</code> 根目录（与现有 <code class="inline">audioDir()</code> 解析一致，无需改目录）。规格严格遵守 §2.8：OGG 优先（无 ffmpeg 回退 WAV）、44.1kHz / 16-bit、30–60s、峰值 ≤ -3dB、单文件 ≤5MB、本地打包。</p>
+<div class="table-wrap">
+<table>
+  <tbody><tr><th>key</th><th>label</th><th>文件</th><th>音量建议</th><th>合成难度</th></tr>
+  <tr><td>rain</td><td>雨声</td><td>rain.ogg</td><td>1.0</td><td>低（滤波噪声 + 雨滴瞬态）</td></tr>
+  <tr><td>cafe</td><td>咖啡厅</td><td>cafe.ogg</td><td>1.0</td><td>中（人声频段噪声 + 杯碟瞬态）</td></tr>
+  <tr><td>forest</td><td>森林</td><td>forest.ogg</td><td>1.0</td><td>中（叶响噪声 + 鸟鸣合成）</td></tr>
+  <tr><td>library</td><td>图书馆</td><td>library.ogg</td><td>1.0</td><td>低（低频嗡鸣 + 翻页瞬态）</td></tr>
+  <tr><td>waves</td><td>海浪</td><td>waves.ogg</td><td>1.0</td><td>低（LFO 调制滤波噪声）</td></tr>
+  <tr><td>fire</td><td>篝火</td><td>fire.ogg</td><td>1.0</td><td>中（低频噼啪 + 爆裂瞬态）</td></tr>
+  <tr><td>fan</td><td>风扇</td><td>fan.ogg</td><td>1.0</td><td>低（低通棕/粉噪 + 电机 AM）</td></tr>
+  <tr><td>birds</td><td>鸟鸣</td><td>birds.ogg</td><td>0.6</td><td>中（FM 鸣唱叠加）</td></tr>
+</tbody></table>
+</div>
+
+<!-- ================= 4 ================= -->
+<h2 id="s4"><span class="sec-no">4</span>生成管线</h2>
+<p>新增 <code class="inline">scripts/generate-samples.mjs</code>，纯 Node 运行，无第三方依赖。核心是三个可复用原语：噪声生成器、双二阶滤波器、WAV 写出器，外加每种素材的合成函数。</p>
+<pre><code><span class="c">// scripts/generate-samples.mjs</span>
+<span class="k">import</span> { writeFileSync, mkdirSync, existsSync } <span class="k">from</span> <span class="s">'node:fs'</span>
+<span class="k">import</span> { spawnSync } <span class="k">from</span> <span class="s">'node:child_process'</span>
+<span class="k">import</span> { join, dirname } <span class="k">from</span> <span class="s">'node:path'</span>
+<span class="k">import</span> { fileURLToPath } <span class="k">from</span> <span class="s">'node:url'</span>
+
+<span class="k">const</span> SR = <span class="n">44100</span>, DUR = <span class="n">45</span>          <span class="c">// 44.1kHz，45s 循环素材</span>
+<span class="k">const</span> N = SR * DUR
+<span class="k">const</span> OUT = join(dirname(fileURLToPath(import.meta.url)), <span class="s">'..'</span>, <span class="s">'resources'</span>, <span class="s">'audio'</span>)
+
+<span class="c">/* ---- 噪声原语 ---- */</span>
+<span class="k">function</span> <span class="f">white</span>(n = N) { <span class="k">return</span> <span class="t">Float32Array</span>.from({ length: n }, () =&gt; <span class="t">Math</span>.random() * <span class="n">2</span> - <span class="n">1</span>) }
+<span class="k">function</span> <span class="f">pink</span>(n = N) {          <span class="c">// Paul Kellet 三极近似</span>
+  <span class="k">const</span> out = <span class="k">new</span> <span class="t">Float32Array</span>(n)
+  <span class="k">let</span> b0 = <span class="n">0</span>, b1 = <span class="n">0</span>, b2 = <span class="n">0</span>
+  <span class="k">for</span> (<span class="k">let</span> i = <span class="n">0</span>; i &lt; n; i++) {
+    <span class="k">const</span> w = <span class="t">Math</span>.random() * <span class="n">2</span> - <span class="n">1</span>
+    b0 = <span class="n">0.99765</span> * b0 + w * <span class="n">0.0990460</span>
+    b1 = <span class="n">0.96300</span> * b1 + w * <span class="n">0.2965164</span>
+    b2 = <span class="n">0.57000</span> * b2 + w * <span class="n">1.0526913</span>
+    out[i] = (b0 + b1 + b2 + w * <span class="n">0.1848</span>) * <span class="n">0.25</span>
+  }
+  <span class="k">return</span> out
+}
+<span class="k">function</span> <span class="f">brown</span>(n = N) {
+  <span class="k">const</span> out = <span class="k">new</span> <span class="t">Float32Array</span>(n)
+  <span class="k">let</span> last = <span class="n">0</span>
+  <span class="k">for</span> (<span class="k">let</span> i = <span class="n">0</span>; i &lt; n; i++) {
+    <span class="k">const</span> w = <span class="t">Math</span>.random() * <span class="n">2</span> - <span class="n">1</span>
+    last = (last + <span class="n">0.02</span> * w) / <span class="n">1.02</span>
+    out[i] = last * <span class="n">3.5</span>
+  }
+  <span class="k">return</span> out
+}
+
+<span class="c">/* ---- 双二阶带通/低通（RBJ 系数） ---- */</span>
+<span class="k">function</span> <span class="f">biquad</span>(src, { type, fc, q = <span class="n">0.707</span> }) {
+  <span class="c">// 计算系数后逐样本滤波；type ∈ 'lowpass' | 'bandpass' | 'highpass'</span>
+  <span class="k">const</span> w0 = <span class="n">2</span> * <span class="t">Math</span>.PI * fc / SR
+  <span class="k">const</span> alpha = <span class="t">Math</span>.sin(w0) / (<span class="n">2</span> * q)
+  <span class="k">const</span> cw = <span class="t">Math</span>.cos(w0)
+  <span class="k">let</span> b0, b1, b2, a0, a1, a2
+  <span class="k">if</span> (type === <span class="s">'lowpass'</span>) {
+    b0 = (<span class="n">1</span> - cw) / <span class="n">2</span>; b1 = <span class="n">1</span> - cw; b2 = b0
+    a0 = <span class="n">1</span> + alpha; a1 = -<span class="n">2</span> * cw; a2 = <span class="n">1</span> - alpha
+  } <span class="k">else</span> {  <span class="c">// bandpass（peak 增益 = 1）</span>
+    b0 = alpha; b1 = <span class="n">0</span>; b2 = -alpha
+    a0 = <span class="n">1</span> + alpha; a1 = -<span class="n">2</span> * cw; a2 = <span class="n">1</span> - alpha
+  }
+  <span class="k">const</span> out = <span class="k">new</span> <span class="t">Float32Array</span>(src.length)
+  <span class="k">let</span> x1 = <span class="n">0</span>, x2 = <span class="n">0</span>, y1 = <span class="n">0</span>, y2 = <span class="n">0</span>
+  <span class="k">for</span> (<span class="k">let</span> i = <span class="n">0</span>; i &lt; src.length; i++) {
+    <span class="k">const</span> x = src[i]
+    <span class="k">const</span> y = (b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2) / a0
+    x2 = x1; x1 = x; y2 = y1; y1 = y
+    out[i] = y
+  }
+  <span class="k">return</span> out
+}
+
+<span class="c">/* ---- 写出 WAV（16-bit PCM） ---- */</span>
+<span class="k">function</span> <span class="f">writeWav</span>(name, samples) {
+  <span class="k">const</span> num = samples.length, dataSize = num * <span class="n">2</span>
+  <span class="k">const</span> buf = <span class="k">new</span> <span class="t">Buffer</span>(<span class="n">44</span> + dataSize)
+  buf.write(<span class="s">'RIFF'</span>, <span class="n">0</span>); buf.writeUInt32LE(<span class="n">36</span> + dataSize, <span class="n">4</span>); buf.write(<span class="s">'WAVE'</span>, <span class="n">8</span>)
+  buf.write(<span class="s">'fmt '</span>, <span class="n">12</span>); buf.writeUInt32LE(<span class="n">16</span>, <span class="n">16</span>); buf.writeUInt16LE(<span class="n">1</span>, <span class="n">20</span>); buf.writeUInt16LE(<span class="n">1</span>, <span class="n">22</span>)
+  buf.writeUInt32LE(SR, <span class="n">24</span>); buf.writeUInt32LE(SR * <span class="n">2</span>, <span class="n">28</span>); buf.writeUInt16LE(<span class="n">2</span>, <span class="n">32</span>); buf.writeUInt16LE(<span class="n">16</span>, <span class="n">34</span>)
+  buf.write(<span class="s">'data'</span>, <span class="n">36</span>); buf.writeUInt32LE(dataSize, <span class="n">40</span>)
+  <span class="k">let</span> peak = <span class="n">0</span>
+  <span class="k">for</span> (<span class="k">let</span> i = <span class="n">0</span>; i &lt; num; i++) {
+    <span class="k">const</span> s = <span class="t">Math</span>.max(-<span class="n">1</span>, <span class="t">Math</span>.min(<span class="n">1</span>, samples[i]))
+    peak = <span class="t">Math</span>.max(peak, <span class="t">Math</span>.abs(s))
+    buf.writeInt16LE(<span class="t">Math</span>.round(s * <span class="n">32767</span> * <span class="n">0.707</span>), <span class="n">44</span> + i * <span class="n">2</span>)  <span class="c">// 预衰减到 -3dB</span>
+  }
+  writeFileSync(join(OUT, name + <span class="s">'.wav'</span>), buf)
+  <span class="k">return</span> peak * <span class="n">0.707</span>
+}
+
+<span class="c">/* ---- 循环安全：在 45s 周期上放置瞬态，避开首尾 1.5s 接缝 ---- */</span>
+<span class="k">function</span> <span class="f">placeEvents</span>(out, count, <span class="f">make</span>, seed = <span class="n">1</span>) {
+  <span class="k">let</span> rnd = seed
+  <span class="k">const</span> rand = () =&gt; (rnd = (rnd * <span class="n">16807</span>) % <span class="n">2147483647</span>) / <span class="n">2147483647</span>
+  <span class="k">for</span> (<span class="k">let</span> i = <span class="n">0</span>; i &lt; count; i++) {
+    <span class="k">const</span> t = <span class="n">1.6</span> + rand() * (DUR - <span class="n">3.2</span>)   <span class="c">// 避开首尾接缝</span>
+    <span class="f">make</span>(out, <span class="t">Math</span>.floor(t * SR))
+  }
+}</code></pre>
+<p class="callout info"><b>转码</b>：生成完 WAV 后探测 <code class="inline">ffmpeg</code>，存在则逐文件转 OGG（<code class="inline">ffmpeg -i in.wav -c:a libvorbis -q 4 out.ogg</code>）并删除 WAV；不存在则保留 WAV。无论哪种，文件名与 <code class="inline">shared/audio.ts</code> 的 <code class="inline">SAMPLE_ASSET_SPECS.file</code> 对应（见 §6 探测逻辑，兼容 .ogg / .wav 两种存在形态）。</p>
+
+<!-- ================= 5 ================= -->
+<h2 id="s5"><span class="sec-no">5</span>8 种素材合成方案</h2>
+<p>每种素材 = 若干"轨"（噪声经滤波 + 调制 + 瞬态）叠加，最后归一化。下面给核心配方与关键参数，均保证周期性（LFO 频率能整除 45s）与接缝安全。</p>
+<div class="table-wrap">
+<table>
+  <tbody><tr><th>素材</th><th>配方</th><th>关键参数</th></tr>
+  <tr><td>rain</td><td>白噪→带通(1–4kHz)做雨幕 + 棕噪低通(120Hz)做隆隆底 + 短促雨滴瞬态</td><td>带通 fc≈2kHz；雨滴 = 8ms 白噪脉冲带通 3–6kHz，每 0.4–1.1s 一个</td></tr>
+  <tr><td>cafe</td><td>白噪→带通(250–3kHz)做人声 babble + 低频嗡 + 稀疏杯碟 clink</td><td>babble 用 LFO（0.5Hz）慢速调制音量；clink = 2ms FM 正弦 2→4kHz</td></tr>
+  <tr><td>forest</td><td>宽频柔噪(叶响) + 合成鸟鸣</td><td>叶响 = 带通 2–6kHz + 随机 AM；鸟鸣 = FM 上扫 1.5→3.5kHz，随机间隔</td></tr>
+  <tr><td>library</td><td>极低底噪 + 最淡翻页瞬态</td><td>低通棕噪 200Hz；翻页 = 60ms 带通 1–2kHz 噪声包络，每 6–14s 一次</td></tr>
+  <tr><td>waves</td><td>带通白噪 + 慢速幅度 LFO（涌浪）</td><td>带通 400Hz q0.5；LFO 0.1Hz（45s 恰 4.5 周期，循环无缝）深度 0.85</td></tr>
+  <tr><td>fire</td><td>低频噼啪噪声 + 高频爆裂瞬态</td><td>带通 100–800Hz 基底；爆裂 = 5ms 白噪脉冲 + 指数衰减，随机</td></tr>
+  <tr><td>fan</td><td>低通棕/粉噪 + 120Hz 电机 AM</td><td>低通 600Hz；AM 用 0.2Hz LFO 微调增益（±8%）</td></tr>
+  <tr><td>birds</td><td>合成 FM 鸣唱叠加 + 极淡环境底</td><td>鸣唱 = 2–4 个音节的 1.5–4kHz 上扫，随机时段；音量最小（0.5）</td></tr>
+</tbody></table>
+</div>
+<pre><code><span class="c">// 例：rain 合成（其余类似，按配方表组织）</span>
+<span class="k">const</span> RECIPES = {
+  rain() {
+    <span class="k">const</span> curtains = <span class="f">biquad</span>(white(), { type: <span class="s">'bandpass'</span>, fc: <span class="n">2000</span>, q: <span class="n">0.6</span> })
+    <span class="k">const</span> rumble = <span class="f">biquad</span>(brown(), { type: <span class="s">'lowpass'</span>, fc: <span class="n">120</span> })
+    <span class="k">const</span> out = <span class="k">new</span> <span class="t">Float32Array</span>(N)
+    <span class="f">mix</span>(out, curtains, <span class="n">0.9</span>); <span class="f">mix</span>(out, rumble, <span class="n">0.5</span>)
+    <span class="f">placeEvents</span>(out, <span class="n">90</span>, (o, i) =&gt; <span class="f">placeRaindrop</span>(o, i), <span class="n">7</span>)
+    <span class="k">return</span> out
+  },
+  <span class="c">// cafe / forest / library / waves / fire / fan / birds ...</span>
+}
+
+<span class="k">for</span> (<span class="k">const</span> [name, fn] of <span class="t">Object</span>.entries(RECIPES)) {
+  <span class="f">writeWav</span>(name, fn())
+  <span class="f">maybeToOgg</span>(name)
+}</code></pre>
+<p class="callout warn"><b>接缝安全原则</b>：所有瞬态事件落在 <code class="inline">1.6s ~ DUR-1.6s</code> 区间（接管缝避开）；所有 LFO/AM 频率取 <code class="inline">k / DUR</code>（周期整除循环长）。即便个别残余，引擎的 1.5s 交叉淡入淡出也会掩盖。</p>
+
+<!-- ================= 6 ================= -->
+<h2 id="s6"><span class="sec-no">6</span>主进程：本地协议</h2>
+<p>渲染层不能 fetch 文件系统路径，需主进程注册自定义协议 <code class="inline">tomato-audio://</code>。协议须在 app ready 前声明特权，故在 <code class="inline">main/index.ts</code> 顶部与 <code class="inline">audio/index.ts</code> 各加一段。</p>
+<pre><code><span class="c">// src/main/index.ts · app.whenReady 之前（模块顶层）</span>
+<span class="k">import</span> { protocol } <span class="k">from</span> <span class="s">'electron'</span>
+protocol.registerSchemesAsPrivileged([
+  { scheme: <span class="s">'tomato-audio'</span>, privileges: { standard: <span class="k">true</span>, secure: <span class="k">true</span>, stream: <span class="k">true</span> } }
+])</code></pre>
+<pre><code><span class="c">// src/main/audio/index.ts · 注册协议处理器 + 为 AssetInfo 提供可访问 URL</span>
+<span class="k">import</span> { protocol, net, globalShortcut, ipcMain, app } <span class="k">from</span> <span class="s">'electron'</span>
+<span class="k">import</span> { pathToFileURL } <span class="k">from</span> <span class="s">'node:url'</span>
+
+function <span class="f">audioDir</span>(): <span class="t">string</span> {
+  <span class="k">return</span> app.isPackaged
+    ? join(process.resourcesPath, <span class="s">'audio'</span>)
+    : join(app.getAppPath(), <span class="s">'resources'</span>, <span class="s">'audio'</span>)
+}
+
+<span class="c">// 探测 .ogg 优先、.wav 兜底（兼顾无 ffmpeg 环境）</span>
+function <span class="f">resolveAssetInfos</span>(): <span class="t">AssetInfo</span>[] {
+  <span class="k">const</span> dir = audioDir()
+  <span class="k">return</span> <span class="t">SAMPLE_ASSET_SPECS</span>.map((spec) =&gt; {
+    <span class="k">const</span> ogg = join(dir, spec.file)
+    <span class="k">const</span> wav = join(dir, spec.file.replace(<span class="s">/\.ogg$/</span>, <span class="s">'.wav'</span>))
+    <span class="k">const</span> file = existsSync(ogg) ? ogg : existsSync(wav) ? wav : ogg
+    <span class="k">return</span> {
+      ...spec,
+      path: file,
+      exists: existsSync(file),
+      url: <span class="s">`tomato-audio://`</span> + <span class="f">basename</span>(file)   <span class="c">// 新增：渲染层可 fetch 的 URL</span>
+    }
+  })
+}
+
+<span class="c">// 协议处理器：流式返回 resources/audio/ 下的文件</span>
+protocol.handle(<span class="s">'tomato-audio'</span>, (request) =&gt; {
+  <span class="k">const</span> file = <span class="k">new</span> <span class="t">URL</span>(request.url).hostname   <span class="c">// tomato-audio://rain.ogg → 'rain.ogg'</span>
+  <span class="k">const</span> full = join(audioDir(), file)
+  <span class="k">if</span> (!existsSync(full)) <span class="k">return</span> <span class="k">new</span> <span class="t">Response</span>(<span class="k">new</span> <span class="t">Uint8Array</span>(), { status: <span class="n">404</span> })
+  <span class="k">return</span> net.fetch(pathToFileURL(full).toString())
+})</code></pre>
+<p class="callout ok"><b>路径安全</b>：URL 的 host 只取文件名并 <code class="inline">basename</code> 清洗，join 前拒绝任何含路径分隔符的输入，防目录穿越。</p>
+
+<!-- ================= 7 ================= -->
+<h2 id="s7"><span class="sec-no">7</span>渲染层：decodeSample 实现</h2>
+<p>替换 <code class="inline">engine.ts</code> 的占位 <code class="inline">decodeSample</code>：经 <code class="inline">getAssets</code> 拿到带 <code class="inline">url</code> 的 AssetInfo，<code class="inline">fetch → decodeAudioData</code>，成功即按 key 缓存，避免重复解码。原有"素材不可用则跳过"的分支继续生效。</p>
+<pre><code><span class="c">// src/renderer/src/audio/engine.ts</span>
+<span class="k">private</span> bufferCache = <span class="k">new</span> <span class="t">Map</span>&lt;<span class="t">string</span>, <span class="t">AudioBuffer</span>&gt;()
+
+<span class="k">private async</span> decodeSample(ctx: <span class="t">AudioContext</span>, key: <span class="t">SampleKind</span>): <span class="t">Promise</span>&lt;<span class="t">AudioBuffer</span> | <span class="k">null</span>&gt; {
+  <span class="k">if</span> (this.bufferCache.has(key)) <span class="k">return</span> this.bufferCache.get(key)!
+  <span class="k">try</span> {
+    <span class="k">const</span> info = (await window.api.audio.getAssets()).find((a) =&gt; a.key === key)
+    <span class="k">if</span> (!info || !info.exists || !info.url) <span class="k">return</span> <span class="k">null</span>
+    <span class="k">const</span> res = await fetch(info.url)
+    <span class="k">if</span> (!res.ok) <span class="k">return</span> <span class="k">null</span>
+    <span class="k">const</span> buf = await ctx.decodeAudioData(await res.arrayBuffer())
+    this.bufferCache.set(key, buf)
+    <span class="k">return</span> buf
+  } <span class="k">catch</span> {
+    <span class="k">return</span> <span class="k">null</span>
+  }
+}</code></pre>
+<p>同时把 <code class="inline">shared/audio.ts</code> 的 <code class="inline">AssetInfo</code> 增加可选 <code class="inline">url?: string</code> 字段，preload 类型随之更新。</p>
+
+<!-- ================= 8 ================= -->
+<h2 id="s8"><span class="sec-no">8</span>打包配置</h2>
+<p><code class="inline">electron-builder.yml</code> 已配置 <code class="inline">files: resources/**</code> 与 <code class="inline">asarUnpack: resources/**</code>，素材会随包分发并外置到 <code class="inline">process.resourcesPath/audio/</code>，与 <code class="inline">audioDir()</code> 的生产路径一致，无需改动。仅需确认新增的 <code class="inline">.wav/.ogg</code> 未被 <code class="inline">files</code> 排除（当前规则不排除音频，放行）。</p>
+<p class="callout ok"><b>体积提示</b>：8 个 45s 素材——OGG（q4）约 250–500KB/个，总量约 3MB；WAV 约 4MB/个，总量约 32MB。优先用 OGG 以控制安装包体积（§2.8 单文件 ≤5MB 达标）。</p>
+
+<!-- ================= 9 ================= -->
+<h2 id="s9"><span class="sec-no">9</span>验证脚本</h2>
+<p>新增 <code class="inline">scripts/validate-samples.mjs</code>，CI 或打包前校验规格合规（§2.8 素材规格）。用 Node 解析 WAV 头；OGG 用 ffmpeg 探测，缺失则跳过并提示。</p>
+<pre><code><span class="c">// scripts/validate-samples.mjs · 伪代码</span>
+<span class="k">for each</span> spec in SAMPLE_ASSET_SPECS:
+  file = resources/audio/spec.file（或 .wav 兜底）
+  must exist
+  dur = parseDuration(file)          <span class="c">// ffmpeg -i 探测 / WAV 头</span>
+  assert 30 &lt;= dur &lt;= 60
+  assert filesize &lt;= 5MB
+  peak = parsePeak(file)
+  assert peak &lt;= -3dB             <span class="c">// 生成器已预衰减，校验兜底</span></code></pre>
+
+<!-- ================= 10 ================= -->
+<h2 id="s10"><span class="sec-no">10</span>验收标准</h2>
+<ul>
+  <li>运行 <code class="inline">npm run samples:generate</code> 后，<code class="inline">resources/audio/</code> 出现 8 个素材文件（ffmpeg 存在则 .ogg，否则 .wav）。</li>
+  <li>应用中选择"雨声/咖啡厅/森林/图书馆/海浪/篝火/风扇/鸟鸣"任一预设，采样轨发声；合成层与采样层可混音（如咖啡厅 = cafe + 棕噪底）。</li>
+  <li>循环播放 60s 无爆音、无明显接缝（双节点交叉淡入淡出生效）。</li>
+  <li>生产打包后启动应用，采样仍可播放（asar 外置素材经 <code class="inline">tomato-audio://</code> 正常读取）。</li>
+  <li>素材缺失时采样轨自动跳过、提示，不崩溃（既有降级逻辑）。</li>
+  <li>按 URL 构造路径无法穿越目录（basename 清洗生效）。</li>
+</ul>
+
+<!-- ================= 11 ================= -->
+<h2 id="s11"><span class="sec-no">11</span>涉及文件清单</h2>
+<ul class="filelist">
+  <li><code>scripts/generate-samples.mjs</code> <span class="tag"><span class="badge new">新增</span></span></li>
+  <li><code>scripts/validate-samples.mjs</code> <span class="tag"><span class="badge new">新增</span></span></li>
+  <li><code>resources/audio/*.ogg|wav</code> <span class="tag"><span class="badge new">生成产物</span></span></li>
+  <li><code>src/main/index.ts</code> <span class="tag"><span class="badge mod">修改</span></span></li>
+  <li><code>src/main/audio/index.ts</code> <span class="tag"><span class="badge mod">修改</span></span></li>
+  <li><code>src/shared/audio.ts</code> <span class="tag"><span class="badge mod">修改</span></span></li>
+  <li><code>src/preload/index.ts</code> + <code>index.d.ts</code> <span class="tag"><span class="badge mod">修改</span></span></li>
+  <li><code>src/renderer/src/audio/engine.ts</code> <span class="tag"><span class="badge mod">修改</span></span></li>
+  <li><code>package.json</code> <span class="tag"><span class="badge mod">修改</span></span>（新增 <code>samples:generate</code> / <code>samples:validate</code> 脚本）</li>
+</ul>
+
+<footer>
+  <div class="sources">
+    <b>依据</b>
+    <ol>
+      <li><span>番茄钟最优设计方案与落地方案 v2.0，§2.8 白噪音系统设计（双节点交叉淡入淡出 / 素材规格）/ §3.1 技术栈（Web Audio API）。</span></li>
+      <li><span>用户上传：pomodoro-force-lock-design.html · pomodoro-lock-design.html（白噪音控件界面参考）。</span></li>
+    </ol>
+  </div>
+</footer>
+</div>
+
+</body></html>
