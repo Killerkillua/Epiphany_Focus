@@ -21,6 +21,8 @@ export interface ActiveTrack {
 }
 
 export interface PlayResult {
+  /** 本次动作：启动播放（start）或停止（stop） */
+  action: 'start' | 'stop'
   started: number
   skipped: string[]
 }
@@ -148,14 +150,14 @@ class NoiseEngine {
       })
     }
     this.emit()
-    return { started: this.tracks.size, skipped }
+    return { action: 'start', started: this.tracks.size, skipped }
   }
 
   /** 播放/停止切换（默认用当前设置的预设） */
   async togglePlay(): Promise<PlayResult> {
     if (this.playing) {
       this.stopAll()
-      return { started: 0, skipped: [] }
+      return { action: 'stop', started: 0, skipped: [] }
     }
     return this.playPreset(getNoisePreset(this.settings.preset))
   }

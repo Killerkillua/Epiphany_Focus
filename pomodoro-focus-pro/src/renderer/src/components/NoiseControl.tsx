@@ -53,7 +53,7 @@ function NoiseControl(): JSX.Element {
   const handleTogglePlay = async (): Promise<void> => {
     try {
       const result = await noiseEngine.togglePlay()
-      if (result.started === 0 && !noiseEngine.playing) {
+      if (result.action === 'start' && result.started === 0) {
         message.warning('所选预设暂无可用音轨：采样素材未打包（resources/audio/），请改用白/粉/棕噪')
       } else if (result.skipped.length > 0) {
         message.info(`已跳过未打包的采样轨：${result.skipped.join('、')}`)
