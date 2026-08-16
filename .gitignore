@@ -1,0 +1,23 @@
+# ============================================
+# 项目根目录 .gitignore
+# 排除根级别缓存、日志及其他不应提交的文件
+# 子项目 pomodoro-focus-pro 有自己的 .gitignore
+# ============================================
+
+# ---- npm 缓存与日志 ----
+# 通过 --cache 参数重定向到本地的 npm 包缓存
+.npm-cache/
+
+# ---- Electron 缓存 ----
+# electron-download 下载的 Electron 二进制包缓存
+.electron-cache/
+
+# ---- Trae IDE 工具缓存 ----
+# Trae HTML 共享包缓存
+.trae-html-share-packages/
+
+# ---- 系统文件 ----
+# macOS 目录元数据
+.DS_Store
+# Windows 缩略图缓存
+Thumbs.db
