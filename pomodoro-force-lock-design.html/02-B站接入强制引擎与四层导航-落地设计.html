@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="zh-CN"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>② B 站接入强制引擎 + 四层导航 · 落地设计</title>
+<style>
+  :root {
+    --bg: #0f1115; --bg2: #171b22; --panel: #1b212b;
+    --ink: #e8eaed; --muted: #9aa3af; --rule: #2a313c;
+    --accent: #ff6b4a; --accent2: #4da3ff; --ok: #3ddc97; --warn: #ffc94a;
+    --code-bg: #0b0d12;
+    --sans: "Work Sans", "PingFang SC", system-ui, sans-serif;
+    --mono: "JetBrains Mono", Consolas, "微软雅黑", monospace;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 15px; line-height: 1.75; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 40px 36px 80px; }
+
+  header.cover { padding: 48px 0 30px; border-bottom: 1px solid var(--rule); margin-bottom: 16px; }
+  .kicker { font-family: var(--mono); font-size: 12px; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); margin-bottom: 14px; }
+  h1 { font-size: 30px; line-height: 1.25; margin: 0 0 10px; font-weight: 700; }
+  .sub { color: var(--muted); font-size: 15px; margin: 0; }
+  .meta { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 18px; font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .meta b { color: var(--ink); font-weight: 600; }
+
+  nav.toc { background: var(--bg2); border: 1px solid var(--rule); border-radius: 10px; padding: 16px 20px; margin: 26px 0 34px; }
+  nav.toc b { font-size: 13px; color: var(--muted); letter-spacing: .06em; }
+  nav.toc ol { margin: 8px 0 0; padding-left: 20px; columns: 2; column-gap: 30px; }
+  nav.toc li { font-size: 13.5px; margin: 4px 0; }
+  nav.toc a { color: var(--accent2); text-decoration: none; }
+  nav.toc a:hover { text-decoration: underline; }
+
+  h2 { font-size: 22px; margin: 46px 0 6px; padding-bottom: 8px; border-bottom: 2px solid var(--accent); }
+  h2 .sec-no { color: var(--accent); font-family: var(--mono); margin-right: 8px; }
+  h3 { font-size: 17px; margin: 30px 0 8px; color: var(--accent2); }
+  h4 { font-size: 15px; margin: 22px 0 6px; color: var(--ink); }
+  p { margin: 10px 0; }
+  ul, ol { margin: 8px 0 12px; padding-left: 22px; }
+  li { margin: 4px 0; }
+  strong { color: #fff; font-weight: 600; }
+
+  pre { background: var(--code-bg); border: 1px solid var(--rule); border-radius: 8px; padding: 14px 16px; overflow-x: auto; font-family: var(--mono); font-size: 12.6px; line-height: 1.6; margin: 12px 0; }
+  pre .c { color: #6b7683; } pre .k { color: #ff8a6b; } pre .s { color: #8fd3a8; } pre .t { color: #7fb8ff; } pre .f { color: #ffc94a; } pre .n { color: #e8eaed; }
+  code.inline { background: var(--bg2); border: 1px solid var(--rule); padding: 1px 6px; border-radius: 4px; font-family: var(--mono); font-size: 12.6px; color: #ffb69a; }
+
+  .table-wrap { overflow-x: auto; overflow-y: auto; max-height: 600px; margin: 14px 0; border: 1px solid var(--rule); border-radius: 8px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; min-width: 640px; }
+  th { background: var(--bg2); color: var(--ink); text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--rule); font-weight: 600; white-space: nowrap; }
+  td { padding: 8px 12px; border-bottom: 1px solid #222832; vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  td code.inline { font-size: 12px; }
+
+  .callout { border-left: 4px solid var(--accent); background: var(--bg2); padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 14px 0; }
+  .callout.info { border-left-color: var(--accent2); }
+  .callout.warn { border-left-color: var(--warn); }
+  .callout.ok { border-left-color: var(--ok); }
+  .callout b { color: var(--ink); }
+  .callout p { margin: 4px 0; }
+
+  .badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 600; margin-right: 6px; }
+  .badge.new { background: rgba(255,107,74,.16); color: var(--accent); }
+  .badge.mod { background: rgba(77,163,255,.16); color: var(--accent2); }
+  .badge.core { background: rgba(61,220,151,.15); color: var(--ok); }
+  .badge.p1 { background: rgba(255,201,74,.15); color: var(--warn); }
+
+  .filelist { list-style: none; padding: 0; margin: 10px 0; }
+  .filelist li { background: var(--bg2); border: 1px solid var(--rule); border-radius: 8px; padding: 9px 14px; margin: 6px 0; font-family: var(--mono); font-size: 12.6px; }
+  .filelist li .tag { float: right; }
+
+  figure.diagram { margin: 18px 0; text-align: center; }
+  figure.diagram svg { max-width: 100%; height: auto; }
+  figure.diagram figcaption { font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+
+  footer { border-top: 1px solid var(--rule); margin-top: 60px; padding-top: 18px; color: var(--muted); font-size: 12.5px; }
+  footer .sources ol { padding-left: 20px; }
+  footer .sources li { margin: 4px 0; overflow-wrap: break-word; }
+  footer .sources .src-url { color: var(--accent2); word-break: break-all; }
+
+  @media (max-width: 720px) { .wrap { padding: 24px 18px 60px; } nav.toc ol { columns: 1; } h1 { font-size: 24px; } pre { font-size: 12px; } }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="cover">
+  <div class="kicker">落地设计文档 · 02 / 03</div>
+  <h1>B 站接入强制引擎 + 四层导航判定</h1>
+  <p class="sub">全屏锁定 · 防绕过 · L1 域名 / L2 路径 / L3 历史 / L4 内容相关性 · 严格/标准/宽松档位 · 强制会话联动</p>
+  <div class="meta">
+    <span><b>方案依据</b>：v2.0 §2.5 分级锁定 / §2.6 B 站模式 / §3.5 IPC</span>
+    <span><b>难度</b>：P0 · 高</span>
+    <span><b>现状</b>：仅 L1+L2 两层，<code>strictness</code> 未消费，未接强制引擎</span>
+  </div>
+</header>
+
+<nav class="toc">
+  <b>目录</b>
+  <ol>
+    <li><a href="#s1">现状与差距</a></li>
+    <li><a href="#s2">总体架构</a></li>
+    <li><a href="#s3">强制引擎接入</a></li>
+    <li><a href="#s4">全屏锁定</a></li>
+    <li><a href="#s5">四层导航判定</a></li>
+    <li><a href="#s6">类型与 IPC 扩展</a></li>
+    <li><a href="#s7">关键代码</a></li>
+    <li><a href="#s8">严格/标准/宽松档位</a></li>
+    <li><a href="#s9">测试与回归</a></li>
+    <li><a href="#s10">涉及文件清单</a></li>
+  </ol>
+</nav>
+
+<!-- ================= 1 ================= -->
+<h2 id="s1"><span class="sec-no">1</span>现状与差距</h2>
+<p>对照 v2.0 §2.6，当前 B 站模式距设计有三个明确的缺口：</p>
+<div class="table-wrap">
+<table>
+  <tbody><tr><th>设计要求</th><th>现状</th><th>差距</th></tr>
+  <tr><td>点击视频自动全屏并<strong>锁定</strong>全屏（Esc/F11/缩小均无效）</td><td>仅以 <code class="inline">fullscreen: autoFullscreen</code> 创建窗口，可随意 Esc 退出</td><td>缺全屏锁定守卫</td></tr>
+  <tr><td>四层导航判定（域名→路径→历史→内容）+ 严格/宽松档</td><td><code class="inline">guard.ts</code> 只有 L1 域名 + L2 路径</td><td>缺 L3 历史锁定、L4 内容相关性；<code class="inline">strictness</code> 未消费</td></tr>
+  <tr><td>B 站模式受强制引擎守护（L1/L2 分级）</td><td><code class="inline">biliWindow.ts</code> 明确"核心版，不接强制引擎"</td><td>缺强制会话联动</td></tr>
+</tbody></table>
+</div>
+<p>工程的既有能力可以复用：强制引擎 <code class="inline">beginEnforcement / endEnforcement</code>（锁定分级、快捷键守卫、窗口拉回、守护进程、紧急退出、统计落库）、<code class="inline">shortcutGuard</code>（已全局拦截 F11/Ctrl+W/T/R/F5）、<code class="inline">LEVEL_CAPS</code>、<code class="inline">settings.lockLevel / bili.strictness / bili.autoFullscreen</code>。本方案的核心工作是把这些能力"接到 B 站播放窗口上"，并补全 L3/L4 判定。</p>
+
+<!-- ================= 2 ================= -->
+<h2 id="s2"><span class="sec-no">2</span>总体架构</h2>
+<p>新增两个能力模块，并让既有模块互通：<strong>fullscreenLock</strong>（全屏锁定守卫）与 <strong>guard 四层判定</strong>；把 <code class="inline">enforcement</code> 从"只锁主窗口"泛化为"可锁任意目标窗口"，B 站播放窗口成为受控目标。编排责任放在 <code class="inline">navigation</code> 模块——它持有 enforcement 句柄，在打开视频时启动强制会话，在关闭时结束。</p>
+
+<figure class="diagram">
+<svg viewBox="0 0 920 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="B站强制引擎与四层导航架构">
+  <defs>
+    <marker id="arr2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#4da3ff"></path></marker>
+  </defs>
+  <style>
+    .b{fill:#171b22;stroke:#2a313c;stroke-width:1;rx:8}
+    .br{fill:#171b22;stroke:#ff6b4a;stroke-width:1.4;rx:8}
+    .l{fill:#e8eaed;font:600 12.5px sans-serif}
+    .ls{fill:#9aa3af;font:11px monospace}
+    .la{fill:#ff6b4a;font:600 11px monospace}
+    .lb{fill:#4da3ff;font:600 11px monospace}
+  </style>
+  <!-- 渲染层 -->
+  <rect x="30" y="30" width="255" height="42" rx="8" fill="#1b212b" stroke="#2a313c"></rect>
+  <text x="46" y="56" class="l">BiliModePage（搜索结果）</text>
+  <rect x="30" y="90" width="255" height="42" rx="8" fill="#1b212b" stroke="#2a313c"></rect>
+  <text x="46" y="116" class="l">OverlayApp（AI/记事本）</text>
+  <text x="46" y="150" class="ls">window.api.bili.*</text>
+
+  <!-- 主进程 -->
+  <rect x="400" y="30" width="250" height="42" rx="8" fill="#171b22" stroke="#ff6b4a"></rect>
+  <text x="416" y="56" class="l">navigation/index.ts（编排）</text>
+
+  <rect x="400" y="140" width="250" height="42" rx="8" fill="#1b212b" stroke="#2a313c"></rect>
+  <text x="416" y="166" class="l">biliWindow.ts（播放窗口）</text>
+
+  <rect x="400" y="252" width="250" height="42" rx="8" fill="#1b212b" stroke="#2a313c"></rect>
+  <text x="416" y="278" class="l">guard.ts（L1–L4 判定）</text>
+  <text x="416" y="306" class="ls">shared/bili.ts 类型</text>
+
+  <rect x="700" y="30" width="190" height="42" rx="8" fill="#171b22" stroke="#2a313c"></rect>
+  <text x="716" y="56" class="l">enforcement</text>
+  <text x="716" y="74" class="ls">enterBiliSession</text>
+
+  <rect x="700" y="140" width="190" height="42" rx="8" fill="#171b22" stroke="#2a313c"></rect>
+  <text x="716" y="166" class="l">fullscreenLock.ts</text>
+
+  <rect x="700" y="252" width="190" height="42" rx="8" fill="#171b22" stroke="#2a313c"></rect>
+  <text x="716" y="278" class="l">shortcutGuard /</text>
+  <text x="716" y="296" class="l">windowGuard / level</text>
+
+  <path d="M285 51 C 340 51 360 51 400 51" stroke="#4da3ff" stroke-width="1.5" marker-end="url(#arr2)" fill="none"></path>
+  <text x="300" y="42" class="lb">bili:search / open-video</text>
+  <path d="M525 72 C 525 100 525 120 525 140" stroke="#4da3ff" stroke-width="1.5" marker-end="url(#arr2)" fill="none"></path>
+  <path d="M525 51 C 600 51 660 51 700 51" stroke="#4da3ff" stroke-width="1.5" marker-end="url(#arr2)" fill="none"></path>
+  <text x="560" y="42" class="lb">onOpen → enterBiliSession(video)</text>
+  <path d="M525 182 C 580 182 640 182 700 182" stroke="#4da3ff" stroke-width="1.5" marker-end="url(#arr2)" fill="none"></path>
+  <text x="560" y="172" class="lb">attach fullscreenLock</text>
+  <path d="M525 294 C 580 294 640 294 700 294" stroke="#4da3ff" stroke-width="1.5" marker-end="url(#arr2)" fill="none" stroke-dasharray="4 3"></path>
+  <path d="M285 116 C 340 116 360 130 400 140" stroke="#9aa3af" stroke-width="1.2" marker-end="url(#arr2)" fill="none" stroke-dasharray="4 3"></path>
+</svg>
+<figcaption>图 2-1：B 站模式接入强制引擎后的模块关系。实线为强制控制流，虚线为只读/事件流。</figcaption>
+</figure>
+
+<!-- ================= 3 ================= -->
+<h2 id="s3"><span class="sec-no">3</span>强制引擎接入</h2>
+<p>把 <code class="inline">enforcement/index.ts</code> 的会话生命周期泛化为可指定目标窗口。改动最小化：<code class="inline">begin/endEnforcement</code> 增加可选 <code class="inline">target</code> 参数，缺省仍回落到主窗口（不动专注模式既有行为）。</p>
+
+<h3>3.1 begin/endEnforcement 泛化</h3>
+<pre><code><span class="c">// src/main/enforcement/index.ts</span>
+<span class="k">function</span> <span class="f">beginEnforcement</span>(
+  mode: <span class="t">string</span>,
+  plannedMs: <span class="t">number</span>,
+  target?: <span class="t">BrowserWindow</span>   <span class="c">// 新增：B 站会话传播放窗口</span>
+): <span class="t">void</span> {
+  <span class="k">const</span> level = getSettings().lockLevel
+  emergency.assertExitSafety(level)
+  <span class="k">const</span> win = target ?? getWindow()
+  <span class="k">if</span> (!win) <span class="k">return</span>
+  <span class="k">const</span> sessionId = recordSessionStart({ mode, level, startedAt: <span class="t">Date</span>.now(), durationPlanned: plannedMs }) ?? <span class="n">0</span>
+
+  applyLevelWindow(win)                       <span class="c">// 锁定作用于目标窗口</span>
+  <span class="k">if</span> (<span class="t">LEVEL_CAPS</span>[level].globalShortcuts) registerShortcutGuard()
+  windowGuard.start(win, level, currentPolicy) <span class="c">// 失焦拉回目标窗口</span>
+  <span class="k">if</span> (<span class="t">LEVEL_CAPS</span>[level].killTaskmgr) startTaskmgrKill()
+  <span class="k">if</span> (<span class="t">LEVEL_CAPS</span>[level].guardian) spawnGuardian()
+
+  active = { level, mode, startedAt: <span class="t">Date</span>.now(), sessionId }
+  setSettings({ enforced: { active: <span class="k">true</span>, level, mode, startedAt: active.startedAt, plannedMs, sessionId } })
+}</code></pre>
+<p><code class="inline">endEnforcement(reason, target?)</code> 同理：<code class="inline">releaseLevelWindow(win)</code> 用 target 或主窗口，其余释放逻辑复用。</p>
+
+<h3>3.2 暴露 B 站专属句柄</h3>
+<pre><code><span class="c">// 返回句柄（registerEnforcementModule 现有返回对象扩展）</span>
+<span class="k">export interface</span> <span class="t">EnforcementHandle</span> {
+  restoreAfterRestart: () =&gt; <span class="t">void</span>
+  <span class="c">/** 打开 B 站视频时启动强制会话（正向计时 + 会话上限） */</span>
+  enterBiliSession: (videoWin: <span class="t">BrowserWindow</span>, opts: { plannedMs: <span class="t">number</span>; topic: <span class="t">string</span> }) =&gt; <span class="t">void</span>
+  <span class="c">/** 关闭 B 站视频时结束强制会话并落库 */</span>
+  exitBiliSession: (reason: <span class="s">'manual'</span> | <span class="s">'completed'</span> | <span class="s">'emergency'</span>) =&gt; <span class="t">void</span>
+}
+
+<span class="k">function</span> <span class="f">enterBiliSession</span>(videoWin: <span class="t">BrowserWindow</span>, opts): <span class="t">void</span> {
+  <span class="c">// 正向计时，会话上限 = min(用户选择, sessionMaxHours)</span>
+  <span class="k">const</span> cap = <span class="t">Math</span>.min(
+    opts.plannedMs,
+    getSettings().sessionMaxHours * <span class="n">3600_000</span>
+  )
+  beginEnforcement(<span class="s">'bili'</span>, cap, videoWin)
+  timer.start({ mode: <span class="s">'countup'</span>, durationMs: cap })
+}</code></pre>
+<p>同时把 <code class="inline">onTimerComplete</code> 里硬编码的 <code class="inline">'focus'</code> 改为按当前会话 <code class="inline">active.mode</code> 落库，使 B 站会话也能正确写入 <code class="inline">study_stats</code> 与模式对比。</p>
+
+<h3>3.3 编排接线（navigation/index.ts）</h3>
+<pre><code><span class="c">// registerNavigationModule 签名增加 enforcement 句柄</span>
+<span class="k">import type</span> { EnforcementHandle } <span class="k">from</span> <span class="s">'../enforcement'</span>
+
+<span class="k">export function</span> <span class="f">registerNavigationModule</span>(
+  getWindow: () =&gt; <span class="t">BrowserWindow</span> | <span class="k">null</span>,
+  enforcement: <span class="t">EnforcementHandle</span>
+): <span class="t">void</span> {
+  registerVideoEvents({
+    getMainWindow: getWindow,
+    <span class="c">// 打开视频 → 启动强制会话 + 全屏锁定（autoFullscreen 由 payload 决定）</span>
+    onOpen: (video, payload) =&gt; {
+      enforcement.enterBiliSession(video, { plannedMs: payload.plannedMs ?? <span class="n">0</span>, topic: payload.topic ?? <span class="s">''</span> })
+      attachFullscreenLock(video, {
+        autoFullscreen: payload.autoFullscreen,
+        active: () =&gt; !video.isDestroyed()
+      })
+    },
+    <span class="c">// 视频关闭 → 结束强制会话</span>
+    onClose: () =&gt; enforcement.exitBiliSession(<span class="s">'manual'</span>)
+  })
+  <span class="c">// ...既有搜索 / navCheck / notes IPC...</span>
+}</code></pre>
+<p>主进程装配处把 enforcement 句柄传入导航模块：</p>
+<pre><code><span class="c">// src/main/index.ts</span>
+<span class="k">const</span> enforcement = registerEnforcementModule(getMainWindow)
+registerNavigationModule(getMainWindow, enforcement)</code></pre>
+
+<!-- ================= 4 ================= -->
+<h2 id="s4"><span class="sec-no">4</span>全屏锁定</h2>
+<p>新增 <code class="inline">navigation/fullscreenLock.ts</code>。核心思路：<strong>Esc 不全局拦截</strong>（需留给渲染层"连按 5 次 Esc"紧急退出），而是用 <code class="inline">leave-full-screen / exit-full-screen / resize</code> 三个事件的兜底拉回来"重新进全屏"，形成"怎么退都退不出"的效果。F11 / Ctrl+W/T/R/F5 已由 <code class="inline">shortcutGuard</code> 全局消费。</p>
+<pre><code><span class="c">// src/main/navigation/fullscreenLock.ts</span>
+<span class="k">import type</span> { BrowserWindow } <span class="k">from</span> <span class="s">'electron'</span>
+
+<span class="k">export interface</span> <span class="t">FullscreenLockOpts</span> {
+  autoFullscreen: <span class="t">boolean</span>
+  <span class="c">/** 是否仍处于强制会话（结束时置 false 解除锁定） */</span>
+  active: () =&gt; <span class="t">boolean</span>
+}
+
+<span class="k">export function</span> <span class="f">attachFullscreenLock</span>(win: <span class="t">BrowserWindow</span>, opts: <span class="t">FullscreenLockOpts</span>): <span class="t">void</span> {
+  <span class="k">if</span> (opts.autoFullscreen) win.setFullScreen(<span class="k">true</span>)
+
+  <span class="k">const</span> assertFullscreen = (): <span class="t">void</span> =&gt; {
+    <span class="k">if</span> (opts.active() &amp;&amp; !win.isFullScreen()) {
+      win.setFullScreen(<span class="k">true</span>)   <span class="c">// 兜底拉回：Esc / 缩小 / F11 之后立即恢复</span>
+    }
+  }
+  win.on(<span class="s">'leave-full-screen'</span>, assertFullscreen)
+  win.on(<span class="s">'exit-full-screen'</span>, assertFullscreen)
+  win.on(<span class="s">'resize'</span>, assertFullscreen)
+
+  <span class="c">// 可选加固：在渲染层消费 Escape 键，避免触发一次"退出→拉回"的闪烁</span>
+  win.webContents.on(<span class="s">'before-input-event'</span>, (_e, input) =&gt; {
+    <span class="k">if</span> (opts.active() &amp;&amp; input.key === <span class="s">'Escape'</span>) _e.preventDefault()
+  })
+}</code></pre>
+<p class="callout warn"><b>Electron 限制</b>：没有 <code class="inline">setFullScreenable(false)</code> 这类原子 API，退全屏会被浏览器默认行为触发，因此采用"事件兜底拉回"，会在极端情况下产生一帧闪烁。这是可行且工程上最常见的做法；若追求零闪烁，可在 <code class="inline">before-input-event</code> 预先消费 Escape（已在上方作为可选加固）。</p>
+
+<!-- ================= 5 ================= -->
+<h2 id="s5"><span class="sec-no">5</span>四层导航判定</h2>
+<p>把 <code class="inline">guard.ts</code> 从"纯 URL 谓词"升级为"URL 判断 + 行为守卫 + 内容判断"三件套，并接收 <code class="inline">BiliGuardContext</code>（主题、档位、放行 BV 集合）。</p>
+
+<h3>5.1 判定职责拆分</h3>
+<div class="table-wrap">
+<table>
+  <tbody><tr><th>层级</th><th>判定器</th><th>触发点</th><th>拦截处理</th></tr>
+  <tr><td>L1 域名</td><td><code>isAllowedBiliUrl</code>（既有）</td><td><code>will-navigate / did-navigate</code></td><td>拦截提示页</td></tr>
+  <tr><td>L2 路径</td><td><code>isAllowedBiliUrl</code>（既有 + 严格档 BV 白名单）</td><td>同上</td><td>拦截提示页</td></tr>
+  <tr><td>L3 历史</td><td><code>HISTORY_TRAP</code> 注入脚本 + popstate 兜底</td><td>页面加载后注入；<code>did-navigate-in-page</code></td><td>拉回当前搜索语境</td></tr>
+  <tr><td>L4 内容</td><td><code>isRelevantContent(title, tags, ctx)</code></td><td>视频页加载后提取标题/标签</td><td>标准档警告 / 严格档拦截</td></tr>
+</tbody></table>
+</div>
+
+<h3>5.2 守卫上下文（跨模块传递）</h3>
+<pre><code><span class="c">// src/shared/bili.ts 新增</span>
+<span class="k">export interface</span> <span class="t">BiliGuardContext</span> {
+  <span class="c">/** 学习主题（来自搜索关键词） */</span>
+  topic: <span class="t">string</span>
+  <span class="c">/** 相关度档位：strict / standard / loose */</span>
+  strictness: <span class="t">BiliStrictness</span>
+  <span class="c">/** 严格档可放行的 BV 集合（当前搜索结果列表） */</span>
+  allowedBvs: <span class="t">string</span>[]
+}</code></pre>
+<p>当前会话上下文由 <code class="inline">biliWindow</code> 维护（已有 <code class="inline">currentTopic</code>），扩展为 <code class="inline">currentCtx</code>，并在每次判定时读取 <code class="inline">settings.bili.strictness</code>——从此档位设置真正生效。</p>
+
+<h3>5.3 L3 历史锁定</h3>
+<pre><code><span class="c">// 注入脚本：覆写 history 计数 + 拦截 popstate（后退/侧键）</span>
+<span class="k">const</span> <span class="t">HISTORY_TRAP</span> = <span class="s">`
+  (() =&gt; {
+    const push = history.pushState, rep = history.replaceState
+    history.pushState = function (...a) { window.__navSteps = (window.__navSteps || 0) + 1; return push.apply(this, a) }
+    history.replaceState = function (...a) { window.__navSteps = (window.__navSteps || 0) + 1; return rep.apply(this, a) }
+    window.addEventListener('popstate', () =&gt; {
+      // 后退想离开当前语境 → 立刻 push 回当前 URL，禁止离开
+      if (location.href) history.pushState(null, '', location.href)
+    })
+  })()
+`</span>
+
+<span class="c">// 在 attachNavigationGuard 内，页面加载后注入；并保留 will-navigate 判定</span>
+target.on(<span class="s">'did-finish-load'</span>, () =&gt; {
+  target.executeJavaScript(<span class="t">HISTORY_TRAP</span>).catch(() =&gt; <span class="c">/* 页面限制时降级：仅靠事件兜底 */</span>)
+})</code></pre>
+<p class="callout info"><b>降级策略</b>：若 B 站页面 CSP 阻止注入，L3 退化为"仅靠 <code class="inline">will-navigate</code> 域名/路径判定"，功能不中断（§3.7 回归清单要求 L4 脚本容错降级，L3 同理）。</p>
+
+<h3>5.4 L4 内容相关性</h3>
+<p>视频页加载后提取标题与标签，与主题做关键词匹配。匹配规则：主题切分为 token（中文细粒度、英文按词），任一 token（或其同义词）命中标题/标签即判相关；标注"标记为相关"可把某 BV 加入放行集合。</p>
+<pre><code><span class="k">const</span> <span class="t">CONTENT_EXTRACTOR</span> = <span class="s">`
+  (() =&gt; {
+    const title = document.title || document.querySelector('h1')?.textContent || ''
+    const tags = Array.from(document.querySelectorAll('a[href*="tag"]'))
+      .map(a =&gt; a.textContent).join(' ')
+    return { title, tags }
+  })()
+`</span>
+
+<span class="c">// isRelevantContent：主题 token 命中标题/标签</span>
+<span class="k">export function</span> <span class="f">isRelevantContent</span>(
+  title: <span class="t">string</span>,
+  tags: <span class="t">string</span>,
+  ctx: <span class="t">BiliGuardContext</span>
+): <span class="t">boolean</span> {
+  <span class="k">const</span> tokens = <span class="f">tokenize</span>(ctx.topic)          <span class="c">// 中文：按字/词；英文：按词</span>
+  <span class="k">const</span> hay = title + <span class="s">' '</span> + tags
+  <span class="k">return</span> tokens.some((t) =&gt; hay.includes(t) || <span class="f">SYNONYMS</span>[t]?.some((s) =&gt; hay.includes(s)))
+}
+
+<span class="c">// 严格档：仅当 BV 在放行集合内才放行</span>
+<span class="k">export function</span> <span class="f">isBvAllowed</span>(bvid: <span class="t">string</span>, ctx: <span class="t">BiliGuardContext</span>): <span class="t">boolean</span> {
+  <span class="k">return</span> ctx.strictness !== <span class="s">'strict'</span> || ctx.allowedBvs.includes(bvid)
+}</code></pre>
+
+<!-- ================= 6 ================= -->
+<h2 id="s6"><span class="sec-no">6</span>类型与 IPC 扩展</h2>
+<h3>6.1 shared/bili.ts</h3>
+<pre><code><span class="c">// 扩展判定层级与拦截类别</span>
+<span class="k">export type</span> <span class="t">NavVerdictLevel</span> = <span class="s">'L1'</span> | <span class="s">'L2'</span> | <span class="s">'L3'</span> | <span class="s">'L4'</span>
+<span class="c">// NavVerdict.level 由 'L1'|'L2'|null 扩为 NavVerdictLevel | null</span>
+
+<span class="k">export type</span> <span class="t">NavCategory</span> = <span class="s">'直播'</span> | <span class="s">'番剧'</span> | <span class="s">'影视'</span> | <span class="s">'动态'</span> | <span class="s">'外部'</span> | <span class="s">'无关内容'</span> | <span class="s">'历史回退'</span>
+
+<span class="c">// OpenVideoPayload 增加会话上限（首页时长浮层回传的分钟数）</span>
+<span class="k">export interface</span> <span class="t">OpenVideoPayload</span> {
+  bvid: <span class="t">string</span>
+  autoFullscreen: <span class="t">boolean</span>
+  topic?: <span class="t">string</span>
+  plannedMs?: <span class="t">number</span>   <span class="c">// 新增</span>
+}
+
+<span class="c">// 标记某 BV 为"与主题相关"</span>
+<span class="k">export interface</span> <span class="t">MarkRelevantPayload</span> { bvid: <span class="t">string</span> }</code></pre>
+
+<h3>6.2 ipc.ts 新增通道</h3>
+<pre><code>bili: {
+  <span class="c">// ...既有的 search / openVideo / closeVideo / ... / navCheck / resetWbi</span>
+  markRelevant: <span class="s">'bili:mark-relevant'</span>   <span class="c">// 新增：把 BV 加入放行集合</span>
+}</code></pre>
+<p>处理器：<code class="inline">bili:mark-relevant</code> 把 bvid 写入当前会话放行集合（内存 + 可选持久化到 settings），并返回是否已生效。</p>
+
+<!-- ================= 7 ================= -->
+<h2 id="s7"><span class="sec-no">7</span>关键代码：guard.ts 重写要点</h2>
+<p>把原 <code class="inline">attachNavigationGuard</code> 改为携带上下文，并接入 L3/L4。核心是在既有 <code class="inline">will-navigate / setWindowOpenHandler / did-navigate / did-navigate-in-page</code> 基础上，增加内容判定回调。</p>
+<pre><code><span class="k">export function</span> <span class="f">attachNavigationGuard</span>(
+  target: <span class="t">WebContents</span>,
+  ctx: <span class="t">BiliGuardContext</span>,
+  callbacks?: <span class="t">GuardCallbacks</span>
+): <span class="t">void</span> {
+  <span class="k">const</span> judge = (url: <span class="t">string</span>): <span class="t">boolean</span> =&gt; {
+    <span class="k">if</span> (!/^https?:/i.test(url)) <span class="k">return</span> <span class="k">true</span>
+    <span class="k">const</span> verdict = <span class="f">isAllowedBiliUrl</span>(url, ctx)   <span class="c">// L1 域名 + L2 路径 + 严格档 BV 白名单</span>
+    <span class="k">if</span> (!verdict.allowed) {
+      callbacks?.onBlocked?.(verdict, target)
+      <span class="k">return</span> <span class="k">false</span>
+    }
+    <span class="k">return</span> <span class="k">true</span>
+  }
+
+  <span class="c">// ...既有的 will-navigate / setWindowOpenHandler / did-navigate / did-navigate-in-page 复用 judge...</span>
+
+  <span class="c">// L4：视频页加载后提取标题/标签做相关性判定</span>
+  target.on(<span class="s">'did-finish-load'</span>, async () =&gt; {
+    target.executeJavaScript(<span class="t">HISTORY_TRAP</span>).catch(() =&gt; <span class="c">/* 降级 */</span>)
+    <span class="k">if</span> (ctx.strictness === <span class="s">'loose'</span>) <span class="k">return</span>   <span class="c">// 宽松档不做 L4</span>
+    <span class="k">try</span> {
+      <span class="k">const</span> { title, tags } = <span class="k">await</span> target.executeJavaScript(<span class="t">CONTENT_EXTRACTOR</span>)
+      <span class="k">if</span> (!<span class="f">isRelevantContent</span>(title, tags, ctx)) {
+        <span class="f">handleIrrelevant</span>(ctx, target)   <span class="c">// 标准档：警告悬浮层；严格档：拦截页</span>
+      }
+    } <span class="k">catch</span> { <span class="c">/* 提取失败 → 容错降级，不误拦 */</span> }
+  })
+}</code></pre>
+<p>拦截页复用 <code class="inline">buildBlockPageHtml</code>，为<strong>无关内容</strong>新增提示文案与"标记为相关"按钮（点击调 <code class="inline">bili:mark-relevant</code> 后回到搜索页）。标准档的警告通过主窗口渲染层以悬浮条呈现，不阻断播放。</p>
+
+<!-- ================= 8 ================= -->
+<h2 id="s8"><span class="sec-no">8</span>严格 / 标准 / 宽松档位</h2>
+<div class="table-wrap">
+<table>
+  <tbody><tr><th>档位</th><th>L1 域名</th><th>L2 路径</th><th>L3 历史</th><th>L4 内容</th><th>BV 白名单</th></tr>
+  <tr><td>strict 严格</td><td>拦截</td><td>拦截</td><td>锁定</td><td><strong>拦截</strong>（无关即阻断）</td><td>仅放行搜索结果内 BV</td></tr>
+  <tr><td>standard 标准（默认）</td><td>拦截</td><td>拦截</td><td>锁定</td><td>警告不阻断</td><td>否</td></tr>
+  <tr><td>loose 宽松</td><td>拦截</td><td>拦截</td><td>锁定</td><td>不启用</td><td>否</td></tr>
+</tbody></table>
+</div>
+<p>档位由 <code class="inline">settings.bili.strictness</code> 决定，每次打开视频时读取并构造 <code class="inline">BiliGuardContext</code>。设置页修改档位后即时生效（下次开视频生效）。</p>
+
+<!-- ================= 9 ================= -->
+<h2 id="s9"><span class="sec-no">9</span>测试与回归</h2>
+<ul>
+  <li><strong>单元测试（Vitest）</strong>：<code class="inline">isAllowedBiliUrl</code> 各层用例（L1 非白名单域名、L2 直播/番剧/影视/动态、严格档 BV 白名单）；<code class="inline">isRelevantContent</code> 关键词/同义词命中与未命中；<code class="inline">tokenize</code> 中英文切分。</li>
+  <li><strong>集成冒烟</strong>：真实打开 B 站视频，验证自动全屏；Esc/F11/缩小后自动拉回；点击后台推荐链接被拦截；关闭窗口后强制会话结束、统计落库。</li>
+  <li><strong>回归清单（§3.7）</strong>：B 站页面结构变更后 L3/L4 注入脚本容错降级，不影响播放；CSP 禁止注入时功能不中断；杀毒软件对 <code class="inline">taskkill</code> 的误报在 L2 已存在，此方案不新增。</li>
+</ul>
+
+<!-- ================= 10 ================= -->
+<h2 id="s10"><span class="sec-no">10</span>涉及文件清单</h2>
+<ul class="filelist">
+  <li><code>src/shared/bili.ts</code> <span class="tag"><span class="badge mod">修改</span></span></li>
+  <li><code>src/main/ipc.ts</code> <span class="tag"><span class="badge mod">修改</span></span></li>
+  <li><code>src/main/enforcement/index.ts</code> <span class="tag"><span class="badge mod">修改</span></span></li>
+  <li><code>src/main/navigation/guard.ts</code> <span class="tag"><span class="badge mod">修改</span></span></li>
+  <li><code>src/main/navigation/fullscreenLock.ts</code> <span class="tag"><span class="badge new">新增</span></span></li>
+  <li><code>src/main/navigation/index.ts</code> <span class="tag"><span class="badge mod">修改</span></span></li>
+  <li><code>src/main/navigation/biliWindow.ts</code> <span class="tag"><span class="badge mod">修改</span></span></li>
+  <li><code>src/main/index.ts</code> <span class="tag"><span class="badge mod">修改</span></span></li>
+  <li><code>src/preload/index.ts</code> + <code>index.d.ts</code> <span class="tag"><span class="badge mod">修改</span></span></li>
+  <li><code>src/renderer/src/pages/BiliModePage.tsx</code> <span class="tag"><span class="badge mod">修改</span></span></li>
+</ul>
+
+<footer>
+  <div class="sources">
+    <b>依据</b>
+    <ol>
+      <li><span>番茄钟最优设计方案与落地方案 v2.0，§2.5 锁定强度分级 / §2.6 B 站学习模式详细设计 / §3.5 IPC 通道设计 / §3.7 测试策略。</span></li>
+      <li><span>用户上传：pomodoro-force-lock-design.html（B 站全屏锁定 + 四层导航界面演示参考）。</span></li>
+    </ol>
+  </div>
+</footer>
+</div>
+
+</body></html>
