@@ -13,6 +13,7 @@
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "test": "vitest run",
     "samples:generate": "node scripts/generate-samples.mjs",
     "samples:validate": "node scripts/validate-samples.mjs",
     "build:win": "npm run build && electron-builder --win --config electron-builder.yml",
@@ -43,6 +44,7 @@
     "remark-gfm": "^4.0.0",
     "typescript": "^5.7.3",
     "vite": "^6.0.7",
+    "vitest": "^4.1.10",
     "zustand": "^5.0.3"
   }
 }

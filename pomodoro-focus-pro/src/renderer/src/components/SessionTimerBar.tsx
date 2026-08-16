@@ -1,0 +1,185 @@
+import { useEffect, useState } from 'react'
+import { Button, Card, InputNumber, Progress, Space, message } from 'antd'
+import { PauseCircleOutlined, CaretRightOutlined, StopOutlined } from '@ant-design/icons'
+import { useSessionStore } from '../store/sessionStore'
+import { noiseEngine } from '../audio'
+import { playChime } from '../audio/chime'
+import type { SessionMode } from '../../../shared/types'
+
+const MINUTE = 60 * 1000
+const PRESETS = [15, 30, 60, 120]
+
+const MODE_META: Record<SessionMode, { title: string; icon: string; hint: string }> = {
+  bili: {
+    title: 'B 站学习会话',
+    icon: '📺',
+    hint: '倒计时结束将自动关闭视频窗口并休息'
+  },
+  english: {
+    title: '英语学习会话',
+    icon: '📖',
+    hint: '倒计时结束将提示休息，学习时长计入统计'
+  }
+}
+
+const MODE_ACCENT: Record<SessionMode, string> = {
+  bili: 'var(--accent)',
+  english: 'var(--accent2)'
+}
+
+/** mm:ss（超过 1 小时显示 h:mm:ss） */
+function formatMs(ms: number): string {
+  const total = Math.max(0, Math.ceil(ms / 1000))
+  const h = Math.floor(total / 3600)
+  const m = Math.floor((total % 3600) / 60)
+  const s = total % 60
+  const mm = String(m).padStart(2, '0')
+  const ss = String(s).padStart(2, '0')
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`
+}
+
+interface Props {
+  /** 当前页面所属模式（决定空闲态的默认文案与强调色） */
+  mode: SessionMode
+}
+
+/**
+ * 学习会话计时条（B 站学习 / 英语学习模式）。
+ * - 空闲：预设时长 + 开始按钮（首页进入时已由时长弹窗启动，此处用于直达页面）
+ * - 进行中：倒计时 + 进度条 + 暂停/继续/结束
+ * - 到点：提示音 + 消息 + 白噪音联动；主进程同步桌面通知与统计落库
+ */
+function SessionTimerBar({ mode }: Props): JSX.Element {
+  const { snapshot, mode: storeMode, justCompleted, init, start, pause, resume, stop, clearCompleted } =
+    useSessionStore()
+
+  const [pendingMin, setPendingMin] = useState(60)
+
+  const inSession = snapshot.status !== 'idle'
+  const running = snapshot.status === 'running'
+  const paused = snapshot.status === 'paused'
+  const finished = snapshot.status === 'finished'
+  const currentMode: SessionMode = inSession || finished ? storeMode : mode
+  const meta = MODE_META[currentMode]
+  const accent = MODE_ACCENT[currentMode]
+
+  useEffect(() => {
+    void init()
+  }, [init])
+
+  // 到点：提示音 + 消息 + 白噪音休息联动（与专注模式一致）
+  useEffect(() => {
+    if (justCompleted) {
+      playChime()
+      const restAction = noiseEngine.getSettings().restAction
+      if (restAction === 'stop') {
+        noiseEngine.stopAll()
+      } else if (restAction === 'duck') {
+        noiseEngine.duck()
+      }
+      void message.success(`🍅 ${meta.title}完成，休息一下吧！`)
+      clearCompleted()
+    }
+  }, [justCompleted, meta.title, clearCompleted])
+
+  const percent = snapshot.durationMs > 0 ? Math.min(100, (snapshot.elapsedMs / snapshot.durationMs) * 100) : 0
+  const statusText = finished
+    ? '本轮完成 🎉'
+    : running
+      ? '学习中 · 倒计时'
+      : paused
+        ? '已暂停'
+        : `未开始 · ${meta.hint}`
+
+  const handleStart = (): void => {
+    const minutes = Math.max(1, Math.min(480, Math.round(pendingMin) || 60))
+    void start(currentMode, minutes * MINUTE).catch((err: unknown) => {
+      void message.error(err instanceof Error ? err.message : '开始失败')
+    })
+  }
+
+  return (
+    <Card size="small" className="session-bar">
+      <div className="session-bar-inner">
+        <div className="session-bar-title">
+          <span className="session-bar-icon">{meta.icon}</span>
+          <span>{meta.title}</span>
+        </div>
+
+        {!inSession && !finished ? (
+          /* ===== 空闲态：预设时长 + 自定义输入 + 开始 ===== */
+          <div className="session-bar-idle">
+            <Space size={6} wrap>
+              {PRESETS.map((m) => (
+                <Button
+                  key={m}
+                  size="small"
+                  type={pendingMin === m ? 'primary' : 'default'}
+                  onClick={() => setPendingMin(m)}
+                >
+                  {m} 分钟
+                </Button>
+              ))}
+            </Space>
+            <div className="session-bar-custom">
+              <span className="session-bar-custom-label">自定义</span>
+              <InputNumber
+                min={1}
+                max={480}
+                precision={0}
+                value={pendingMin}
+                onChange={(v) => v !== null && setPendingMin(v)}
+                style={{ width: 130 }}
+                addonAfter="分钟"
+              />
+            </div>
+            <Button type="primary" onClick={handleStart}>
+              开始计时
+            </Button>
+          </div>
+        ) : (
+          /* ===== 进行中 / 完成态 ===== */
+          <>
+            <div className={`session-bar-timer${running ? ' active' : ''}`} style={{ color: running ? accent : undefined }}>
+              {formatMs(snapshot.remainingMs)}
+            </div>
+            <div className="session-bar-progress">
+              <Progress
+                percent={Math.round(percent)}
+                showInfo={false}
+                strokeColor={accent}
+                trailColor="var(--rule)"
+                size="small"
+              />
+              <div className="session-bar-status">{statusText}</div>
+            </div>
+            <div className="session-bar-controls">
+              {running && (
+                <Button size="small" icon={<PauseCircleOutlined />} onClick={() => void pause()}>
+                  暂停
+                </Button>
+              )}
+              {paused && (
+                <Button size="small" type="primary" icon={<CaretRightOutlined />} onClick={() => void resume()}>
+                  继续
+                </Button>
+              )}
+              {(running || paused) && (
+                <Button size="small" danger icon={<StopOutlined />} onClick={() => void stop()}>
+                  结束
+                </Button>
+              )}
+              {finished && (
+                <Button type="primary" onClick={handleStart}>
+                  再来一轮
+                </Button>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </Card>
+  )
+}
+
+export default SessionTimerBar
