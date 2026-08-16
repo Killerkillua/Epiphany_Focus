@@ -1,8 +1,7 @@
-import { app, globalShortcut, ipcMain, protocol, net } from 'electron'
+import { app, globalShortcut, ipcMain, protocol } from 'electron'
 import type { BrowserWindow } from 'electron'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { join, basename } from 'node:path'
-import { pathToFileURL } from 'node:url'
 import { IPC_CHANNELS, IPC_EVENTS } from '../ipc'
 import { HOTKEY_VOLUME_STEP, SAMPLE_ASSET_SPECS } from '../../shared/audio'
 import type { AssetInfo } from '../../shared/audio'
@@ -17,20 +16,28 @@ import type { AssetInfo } from '../../shared/audio'
  * 4. 退出时注销热键
  */
 
-/** resources/audio/ 目录（开发 = 工程根/resources/audio；生产 = process.resourcesPath/audio） */
+/**
+ * resources/audio/ 目录。
+ * 统一走 app.getAppPath()：
+ * - 开发 = 工程根/resources/audio
+ * - 生产 = app.asar/resources/audio（asar 对 asarUnpack 文件透明重定向到
+ *   app.asar.unpacked/resources/audio，fs 读取自动生效）
+ */
 function audioDir(): string {
-  return app.isPackaged
-    ? join(process.resourcesPath, 'audio')
-    : join(app.getAppPath(), 'resources', 'audio')
+  return join(app.getAppPath(), 'resources', 'audio')
 }
 
-/** 解析 8 个采样素材的路径与存在性。OGG 优先，WAV 兜底（兼顾无 ffmpeg 环境）。 */
+/** 解析 8 个采样素材的路径与存在性。OGG > MP3 > WAV 兜底。 */
 function resolveAssetInfos(): AssetInfo[] {
   const dir = audioDir()
   return SAMPLE_ASSET_SPECS.map((spec) => {
-    const ogg = join(dir, spec.file)
-    const wav = join(dir, spec.file.replace(/\.ogg$/, '.wav'))
-    const file = existsSync(ogg) ? ogg : existsSync(wav) ? wav : ogg
+    const base = spec.file.replace(/\.(ogg|mp3|wav)$/, '')
+    const candidates = [
+      join(dir, `${base}.ogg`),
+      join(dir, `${base}.mp3`),
+      join(dir, `${base}.wav`),
+    ]
+    const file = candidates.find((f) => existsSync(f)) ?? join(dir, spec.file)
     const exists = existsSync(file)
     const fileName = basename(file)
     return {
@@ -43,6 +50,13 @@ function resolveAssetInfos(): AssetInfo[] {
   })
 }
 
+/** 按扩展名推断 MIME（decodeAudioData 依赖嗅探，此处仅为规范） */
+function mimeOf(fileName: string): string {
+  if (fileName.endsWith('.wav')) return 'audio/wav'
+  if (fileName.endsWith('.mp3')) return 'audio/mpeg'
+  return 'audio/ogg'
+}
+
 function registerGlobalHotkey(accelerator: string, label: string, callback: () => void): void {
   const ok = globalShortcut.register(accelerator, callback)
   if (!ok) {
@@ -53,18 +67,32 @@ function registerGlobalHotkey(accelerator: string, label: string, callback: () =
 export function registerAudioModule(getWindow: () => BrowserWindow | null): void {
   // ---- 0. 注册自定义协议处理器（渲染层 fetch 采样文件用） ----
   protocol.handle('tomato-audio', (request) => {
-    // URL 格式：tomato-audio://rain.ogg → hostname = 'rain.ogg'
-    const fileName = new URL(request.url).hostname
-    // 安全：拒绝含路径分隔符的输入，防目录穿越
-    if (!fileName || fileName.includes('/') || fileName.includes('\\') || fileName.includes('..')) {
-      return new Response(new Uint8Array(), { status: 403 })
-    }
-    const full = join(audioDir(), basename(fileName))
-    if (!existsSync(full)) {
+    // URL 格式：tomato-audio://rain.mp3 → hostname = 'rain.mp3'
+    const fileName = basename(new URL(request.url).hostname)
+    // 安全：拒绝目录穿越（basename 已清洗，再校验最终路径必须位于 audioDir 内）
+    const full = join(audioDir(), fileName)
+    if (
+      !fileName ||
+      fileName !== new URL(request.url).hostname ||
+      fileName.includes('..') ||
+      !existsSync(full)
+    ) {
       return new Response(new Uint8Array(), { status: 404 })
     }
-    return net.fetch(pathToFileURL(full).toString())
+    // 直接读文件构造响应（素材 ≤5MB，无需流式）；
+    // 显式带 ACAO 头，兼容当前及未来版本对自定义协议的 CORS 管控
+    return new Response(new Uint8Array(readFileSync(full)), {
+      status: 200,
+      headers: {
+        'Content-Type': mimeOf(fileName),
+        'Access-Control-Allow-Origin': '*'
+      }
+    })
   })
+
+  // 启动诊断：素材就绪情况（缺素材时便于排查路径）
+  const readyCount = resolveAssetInfos().filter((info) => info.exists).length
+  console.info(`[audio] 素材目录 ${audioDir()}，就绪 ${readyCount}/${SAMPLE_ASSET_SPECS.length}`)
 
   // ---- 1. 盲操作热键：Ctrl+Shift+↑/↓ 调节主音量 ----
   registerGlobalHotkey('CommandOrControl+Shift+Up', '音量 +', () => {
