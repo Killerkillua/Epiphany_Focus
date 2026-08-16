@@ -12,7 +12,7 @@ import {
 } from '@ant-design/icons'
 import HomePage from './pages/HomePage'
 import FocusPage from './pages/FocusPage'
-import EnglishModePage from './pages/EnglishModePage'
+import EnglishModePageWithNoise from './pages/EnglishModePageWithNoise'
 import BiliModePage from './pages/BiliModePage'
 import StatsPage from './pages/StatsPage'
 import NotesPage from './pages/NotesPage'
@@ -107,7 +107,7 @@ function App(): JSX.Element {
       case 'focus':
         return <FocusPage />
       case 'english':
-        return <EnglishModePage />
+        return <EnglishModePageWithNoise />
       case 'bili':
         return <BiliModePage />
       case 'stats':
