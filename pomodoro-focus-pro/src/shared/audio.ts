@@ -41,6 +41,8 @@ export interface AssetInfo extends SampleAssetSpec {
   /** 素材文件是否真实存在（未打包时为 false，采样轨跳过） */
   exists: boolean
   path: string
+  /** 渲染层可 fetch 的 URL（tomato-audio:// 自定义协议，主进程注册） */
+  url?: string
 }
 
 /* ===== 预设（方案 2.8：多音轨组合 + 推荐音量比例） ===== */
