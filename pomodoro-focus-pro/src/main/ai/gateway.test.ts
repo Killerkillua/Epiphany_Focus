@@ -61,7 +61,11 @@ vi.mock('openai', () => {
   return { default: FakeOpenAI }
 })
 
-const QUESTION: AiQuestion = { scenario: 'grammar', message: 'I suggest him to go 对吗？' }
+const QUESTION: AiQuestion = {
+  requestId: 'test-request',
+  scenario: 'grammar',
+  message: 'I suggest him to go 对吗？'
+}
 
 function makeConfig(overrides: Partial<AiConfig> = {}): AiConfig {
   return {

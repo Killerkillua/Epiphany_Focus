@@ -131,7 +131,7 @@ export const useEnglishStore = create<EnglishStore>((set, get) => ({
             .slice(-8)
             .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
         : undefined
-    const question: AiQuestion = { scenario, message: trimmed, word, history }
+    const question: AiQuestion = { requestId, scenario, message: trimmed, word, history }
 
     const userMsg: ChatMessage = { id: crypto.randomUUID(), role: 'user', content: trimmed, sources: [] }
     const assistantMsg: ChatMessage = {

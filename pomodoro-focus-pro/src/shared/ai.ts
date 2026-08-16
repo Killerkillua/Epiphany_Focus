@@ -35,6 +35,8 @@ export interface AiChatTurn {
 
 /** 英语模式提问 */
 export interface AiQuestion {
+  /** 渲染层生成的请求关联 ID：流式 ai:chunk 事件用同一 id 关联到消息 */
+  requestId: string
   scenario: AiScenario
   message: string
   /** 词汇场景的查询词（可选，自动从 message 提取） */

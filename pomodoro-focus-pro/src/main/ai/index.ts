@@ -34,7 +34,7 @@ export function registerAiIpc(): void {
 
   ipcMain.handle(IPC_CHANNELS.ai.ask, async (_event, request: AiAskRequest): Promise<AiReply> => {
     const reply = await gateway.chat(
-      { scenario: 'free', message: request.message },
+      { requestId: randomUUID(), scenario: 'free', message: request.message },
       [],
       () => undefined,
       { profile: 'bili', biliRequest: request }
@@ -48,7 +48,7 @@ export function registerAiIpc(): void {
 
   ipcMain.handle(IPC_CHANNELS.ai.stream, async (_event, request: AiAskRequest): Promise<string> => {
     const reply = await gateway.chat(
-      { scenario: 'free', message: request.message },
+      { requestId: randomUUID(), scenario: 'free', message: request.message },
       [],
       () => undefined,
       { profile: 'bili', biliRequest: request }
@@ -64,7 +64,8 @@ export function registerAiIpc(): void {
       if (!store.tryUseQuestion()) {
         throw new Error(`已达本会话提问上限（${store.getUsage().limit} 次），请重启应用或调整设置`)
       }
-      const requestId = randomUUID()
+      // requestId 由渲染层生成并随问题传入，保证 ai:chunk 事件能关联到对应消息
+      const requestId = question.requestId
       const sender = event.sender
 
       const sendChunk = (delta: string, done: boolean, extra?: Partial<AiStreamChunk>): void => {

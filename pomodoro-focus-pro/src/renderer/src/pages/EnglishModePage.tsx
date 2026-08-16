@@ -155,10 +155,13 @@ function EnglishModePage(): JSX.Element {
   }, [messages])
 
   const handleSend = async (): Promise<void> => {
-    const word = scenario === 'vocabulary' ? input.trim() : undefined
+    const text = input.trim()
+    if (!text || isStreaming) return
+    // 发送瞬间立即清空输入框，避免流式响应期间残留已发送文本
+    setInput('')
+    const word = scenario === 'vocabulary' ? text : undefined
     try {
-      await ask(scenario, input, word)
-      setInput('')
+      await ask(scenario, text, word)
     } catch (err) {
       message.error(err instanceof Error ? err.message : '请求失败')
     }
