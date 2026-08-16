@@ -1,5 +1,6 @@
 import { net } from 'electron'
 import { signParams } from './wbi'
+import { getProxiedPicUrl } from '../../shared/bili'
 import type { BiliSearchOptions, BiliSearchResponse, BiliVideoItem } from '../../shared/bili'
 
 /**
@@ -52,10 +53,12 @@ function normalizePic(pic: string): string {
 }
 
 function mapItem(raw: RawSearchItem): BiliVideoItem {
+  const pic = normalizePic(raw.pic ?? '')
   return {
     bvid: String(raw.bvid ?? ''),
     title: cleanTitle(raw.title ?? ''),
-    pic: normalizePic(raw.pic ?? ''),
+    pic,
+    picProxied: getProxiedPicUrl(pic),
     play: Number(raw.play ?? 0),
     danmaku: Number(raw.danmaku ?? 0),
     duration: String(raw.duration ?? ''),

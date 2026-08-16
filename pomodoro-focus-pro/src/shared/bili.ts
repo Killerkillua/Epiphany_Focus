@@ -21,7 +21,10 @@ export interface BiliSearchOptions {
 export interface BiliVideoItem {
   bvid: string
   title: string
+  /** 原始 CDN 封面 URL（调试 / 复制原始链接用） */
   pic: string
+  /** bili-image:// 代理封面 URL（主进程注入 Referer 拉图，防防盗链 403） */
+  picProxied: string
   play: number
   danmaku: number
   duration: string
@@ -104,7 +107,54 @@ export interface OverlaySize {
 export const OVERLAY_EXPANDED_SIZE: OverlaySize = { width: 340, height: 560 }
 export const OVERLAY_COLLAPSED_SIZE: OverlaySize = { width: 64, height: 240 }
 
-/* ===== AI 网关占位接口 ===== */
+/**
+ * 悬浮面板完整状态机（原 collapsed 布尔 → 4 态）：
+ * - expanded ：340×560 展开面板
+ * - collapsed：64×240 侧边竖条
+ * - minimized：窗口最小化（仅 L0/L1 档允许；L2 档自动降级为 hidden）
+ * - hidden   ：完全隐藏，快捷键 Ctrl+Shift+O 呼出
+ */
+export type OverlayState = 'expanded' | 'collapsed' | 'minimized' | 'hidden'
+
+/** 悬浮面板状态定义（尺寸 + 是否可见） */
+export interface OverlayStateDef {
+  size: OverlaySize
+  visible: boolean
+}
+
+export const OVERLAY_STATES: Record<OverlayState, OverlayStateDef> = {
+  expanded: { size: OVERLAY_EXPANDED_SIZE, visible: true },
+  collapsed: { size: OVERLAY_COLLAPSED_SIZE, visible: true },
+  minimized: { size: { width: 0, height: 0 }, visible: false },
+  hidden: { size: { width: 0, height: 0 }, visible: false }
+}
+
+/** 悬浮面板完整状态快照（主进程 → 渲染层同步） */
+export interface OverlaySnapshot {
+  state: OverlayState
+  size: OverlaySize
+  /** 当前锁定档是否允许最小化（L2 不允许，minimized 会降级为 hidden） */
+  canMinimize: boolean
+  /** 状态切换时的用户提示（如 L2 不允许最小化时的降级说明） */
+  notice?: string
+}
+
+/* ===== B 站封面图代理（防盗链修复） ===== */
+
+/** 封面代理自定义协议（主进程 protocol.handle，渲染层 <img> 直接使用） */
+export const BILI_IMAGE_SCHEME = 'bili-image'
+
+/**
+ * 把 CDN 封面原始 URL 转成 bili-image:// 代理地址。
+ * 主进程按此协议用 net.fetch + Referer 拉图（解决 B 站 CDN 防盗链 403）。
+ */
+export function getProxiedPicUrl(rawPic: string): string {
+  const url = rawPic.startsWith('//') ? `https:${rawPic}` : rawPic
+  if (!url) return ''
+  return `${BILI_IMAGE_SCHEME}://img/?url=${encodeURIComponent(url)}`
+}
+
+/* ===== AI 学习助手（B 站悬浮面板） ===== */
 
 export interface AiMessage {
   role: 'user' | 'assistant' | 'system'
@@ -114,9 +164,14 @@ export interface AiMessage {
 export interface AiAskRequest {
   message: string
   context?: {
+    /** 学习主题（来自搜索关键词） */
     topic?: string
     videoTitle?: string
+    /** 当前视频 BV 号 */
+    bvid?: string
   }
+  /** 最近多轮历史（按时间升序，仅 user/assistant 参与组装） */
+  history?: AiMessage[]
 }
 
 export interface AiReply {
