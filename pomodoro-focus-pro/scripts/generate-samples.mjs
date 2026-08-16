@@ -98,17 +98,7 @@ function placeEvents(out, count, make, seed = 1) {
   }
 }
 
-/** 指数衰减包络 */
-function applyEnvelope(data, start, length, attack, decay) {
-  const end = Math.min(start + length, data.length)
-  for (let i = start; i < end; i++) {
-    const t = (i - start) / length
-    const env = t < attack ? t / attack : Math.exp(-(t - attack) * decay)
-    data[i] *= env
-  }
-}
-
-/* ---- 写出 WAV（16-bit PCM，峰值 -3dB） ---- */
+/** 在 1.6s ~ DUR-1.6s 区间随机放置瞬态（避开首尾接缝） */
 
 function writeWav(name, samples) {
   const num = samples.length
@@ -160,8 +150,6 @@ function maybeToOgg(name) {
     '-y', '-i', wavPath, '-c:a', 'libvorbis', '-q:a', '4', oggPath
   ], { stdio: 'pipe' })
   if (result.status === 0) {
-    // 删除 WAV，保留 OGG
-    const { unlinkSync } = require('node:fs')
     unlinkSync(wavPath)
     return true
   }
