@@ -1018,6 +1018,29 @@ body {
   gap: 6px;
 }
 
+/* 结果统计（总条数 + 当前页码），分页修复新增 */
+.bili-result-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  margin: 2px 0 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.bili-result-meta b {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* 分页条（居中对齐，随 antd 深色主题渲染） */
+.bili-pagination {
+  display: flex;
+  justify-content: center;
+  margin-top: 20px;
+}
+
 /* B 站学习页：视频播放期间的"结束学习会话"退出浮层。
    用 position: sticky 而非 fixed：.app-content 的容器查询（container-type）隐含 contain: layout，
    会把 .app-content 变成 fixed 后代的包含块，导致按钮随内容滚动失效；
@@ -1041,6 +1064,56 @@ body {
   display: flex;
   gap: 12px;
   align-items: center;
+}
+
+/* ===== 学习助手抽屉（问题 3：B 站学习页顶部导航入口，非视频模式） ===== */
+
+.assistant-drawer .ant-drawer-header {
+  height: 38px;
+  padding: 0 12px;
+  background: rgba(23, 27, 34, 0.95);
+  border-bottom: 1px solid var(--rule);
+}
+
+.assistant-drawer .ant-drawer-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.assistant-drawer .ant-drawer-close {
+  color: var(--muted);
+}
+
+.assistant-drawer .ant-drawer-body {
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  background: rgba(15, 17, 21, 0.97);
+}
+
+.assistant-drawer .ant-drawer-body .overlay-tabs {
+  flex-shrink: 0;
+}
+
+.assistant-drawer .ant-drawer-body .overlay-body {
+  flex: 1;
+  min-height: 0;
+}
+
+/* AI 空态提示（非视频模式：无视频上下文时基于学习主题提问） */
+.overlay-ai-hint {
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--muted);
+  background: var(--bg3);
+  border: 1px dashed var(--rule);
+  border-radius: 6px;
+  padding: 5px 8px;
+  margin-top: 6px;
 }
 
 /* ===== 全屏悬浮面板（overlay 透明置顶窗） ===== */
@@ -1108,7 +1181,7 @@ body,
   border: 1px solid var(--rule);
   border-radius: 4px;
   padding: 1px 6px;
-  max-width: 150px;
+  max-width: 280px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1215,7 +1288,7 @@ body,
 }
 
 .overlay-msg {
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.6;
   padding: 6px 9px;
   border-radius: 8px;
@@ -1518,148 +1591,6 @@ body,
 
 .progress-ring {
   flex-shrink: 0;
-}
-
-/* ===== 折叠态：可移动悬浮球（56×56，指针拖拽移动 + 点击展开 + hover 退出） ===== */
-
-.overlay-ball-container {
-  position: relative;
-  width: 56px;
-  height: 56px;
-}
-
-/* 球体：指针拖拽（click/hover 保留；不用 -webkit-app-region: drag，因其会吞掉指针事件） */
-.overlay-ball {
-  width: 56px;
-  height: 56px;
-  border-radius: 50%;
-  background: rgba(15, 17, 21, 0.92);
-  border: 1px solid rgba(255, 107, 74, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: grab;
-  user-select: none;
-  touch-action: none;
-  animation: overlay-ball-pulse 2.5s ease-in-out infinite;
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
-}
-
-.overlay-ball.dragging {
-  cursor: grabbing;
-  border-color: rgba(255, 107, 74, 0.9);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
-  animation: none;
-}
-
-/* hover：呼吸暂停，边框实色，退出按钮弹性滑出 */
-.overlay-ball-container:hover .overlay-ball {
-  animation: none;
-  border-color: rgba(255, 107, 74, 0.9);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-}
-
-.overlay-ball-icon {
-  font-size: 22px;
-  color: rgba(255, 255, 255, 0.9);
-  pointer-events: none; /* 不拦截拖拽 / 点击命中 */
-}
-
-/* 学习计时进度环（I-3）：覆盖球面，计时中显示 */
-.overlay-ball-ring {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-/* 未保存笔记红点（I-3） */
-.overlay-ball-dot {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--accent);
-  border: 1px solid rgba(0, 0, 0, 0.6);
-  box-shadow: 0 0 6px rgba(255, 107, 74, 0.8);
-  pointer-events: none;
-}
-
-/* 快捷「记一笔」按钮：默认隐藏在球右侧，hover 滑入（位于退出按钮左侧，互不遮挡） */
-.overlay-ball-note {
-  position: absolute;
-  right: 26px;
-  top: 50%;
-  transform: translateY(-50%) translateX(14px) scale(0.6);
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: var(--bg3);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  color: var(--ink);
-  cursor: pointer;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-.overlay-ball-container:hover .overlay-ball-note {
-  opacity: 1;
-  transform: translateY(-50%) translateX(0) scale(1);
-  pointer-events: auto;
-}
-
-.overlay-ball-note:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-/* 退出按钮：默认隐藏在球右侧（透明窗口内不溢出），hover 弹性滑入球右缘 */
-.overlay-ball-exit {
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%) translateX(14px) scale(0.6);
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: rgba(255, 107, 74, 0.9);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  color: #fff;
-  cursor: pointer;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.25s ease, transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-.overlay-ball-container:hover .overlay-ball-exit {
-  opacity: 1;
-  transform: translateY(-50%) translateX(0) scale(1);
-  pointer-events: auto;
-}
-
-.overlay-ball-exit:hover {
-  background: #ff6b4a;
-  box-shadow: 0 0 12px rgba(255, 107, 74, 0.6);
-}
-
-@keyframes overlay-ball-pulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 rgba(255, 107, 74, 0.35);
-  }
-  50% {
-    box-shadow: 0 0 0 8px rgba(255, 107, 74, 0);
-  }
 }
 
 /* ===== 白噪音控件（专注侧栏） ===== */

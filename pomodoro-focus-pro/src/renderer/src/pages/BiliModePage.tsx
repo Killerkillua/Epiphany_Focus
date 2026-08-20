@@ -4,6 +4,7 @@ import {
   Button,
   Empty,
   Input,
+  Pagination,
   Select,
   Space,
   Spin,
@@ -13,15 +14,15 @@ import {
 } from 'antd'
 import {
   CloseOutlined,
+  DownOutlined,
   FullscreenOutlined,
-  MessageOutlined,
   PlayCircleOutlined,
   RobotOutlined,
   SearchOutlined
 } from '@ant-design/icons'
 import CoverImage from '../components/CoverImage'
 import SessionTimerBar from '../components/SessionTimerBar'
-import FeedbackDialog from '../components/FeedbackDialog'
+import LearningAssistantDrawer from '../components/LearningAssistantDrawer'
 import { useSessionStore } from '../store/sessionStore'
 import type { BiliOrder, BiliVideoItem, OverlaySnapshot } from '../../../shared/bili'
 
@@ -37,6 +38,13 @@ const ORDER_OPTIONS = [
   { value: 'click', label: '最多播放' },
   { value: 'pubdate', label: '最新发布' }
 ]
+
+/**
+ * B 站搜索接口默认每页条数（主进程未传 page_size，B 站按 20 条/页返回，
+ * 并以该粒度计算 numPages）。antd Pagination 用它与 numResults 推算总页数，
+ * 必须与 B 站口径一致，否则页码按钮数与实际页数不符。
+ */
+const PAGE_SIZE = 20
 
 /** 播放量 / 弹幕数格式化：1.2万 / 3.4亿 */
 function formatCount(value: number): string {
@@ -63,13 +71,19 @@ function BiliModePage(): JSX.Element {
   const [error, setError] = useState<string>('')
   const [items, setItems] = useState<BiliVideoItem[]>([])
   const [searched, setSearched] = useState(false)
+  /** 分页状态（此前缺失：搜索永远 page:1，numPages/numResults 被丢弃） */
+  const [page, setPage] = useState(1)
+  const [numResults, setNumResults] = useState(0)
+  const [numPages, setNumPages] = useState(1)
   const searchingRef = useRef(false)
+  /** 结果网格容器（翻页 / 换排序后滚动回结果区顶部） */
+  const gridRef = useRef<HTMLDivElement>(null)
   /** 是否有视频窗口正在播放（用于显示"结束学习会话"退出浮层） */
   const [videoOpen, setVideoOpen] = useState(false)
   /** 悬浮面板是否可见（hidden / minimized 视为隐藏；BiliModePage 兜底按钮的显示状态） */
   const [overlayVisible, setOverlayVisible] = useState(true)
-  /** 反馈弹窗（R-1） */
-  const [feedbackOpen, setFeedbackOpen] = useState(false)
+  /** 学习助手抽屉（非视频模式入口，问题 3；打开视频时自动关闭与悬浮面板互斥） */
+  const [assistantOpen, setAssistantOpen] = useState(false)
 
   const persistAutoFullscreen = (value: boolean): void => {
     setAutoFullscreen(value)
@@ -77,7 +91,7 @@ function BiliModePage(): JSX.Element {
   }
 
   const doSearch = useCallback(
-    async (targetKeyword: string, targetOrder: BiliOrder): Promise<void> => {
+    async (targetKeyword: string, targetOrder: BiliOrder, targetPage: number): Promise<void> => {
       const kw = targetKeyword.trim()
       if (!kw) {
         message.warning('请输入学习主题关键词')
@@ -88,11 +102,15 @@ function BiliModePage(): JSX.Element {
       setLoading(true)
       setError('')
       try {
-        const resp = await window.api.bili.search(kw, { order: targetOrder, page: 1 })
+        // 分页修复：不再硬编码 page:1，传当前目标页码；消费 resp 返回的分页元数据
+        const resp = await window.api.bili.search(kw, { order: targetOrder, page: targetPage })
         setItems(resp.items)
+        setNumResults(resp.numResults)
+        setNumPages(Math.max(1, resp.numPages))
+        setPage(Math.max(1, resp.page))
         setSearched(true)
         if (resp.items.length === 0) {
-          message.info('未找到相关视频，换个关键词试试')
+          message.info(targetPage > 1 ? '该页没有更多内容了' : '未找到相关视频，换个关键词试试')
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
@@ -107,8 +125,28 @@ function BiliModePage(): JSX.Element {
   )
 
   const handleSearch = (): void => {
-    void doSearch(keyword, order)
+    void doSearch(keyword, order, 1)
   }
+
+  /** 排序切换立即生效：已有搜索结果时自动按新排序从第 1 页重搜（否则只改下拉不刷新，用户会误以为排序无效） */
+  const handleOrderChange = (value: BiliOrder): void => {
+    setOrder(value)
+    if (searched && keyword.trim()) {
+      void doSearch(keyword, value, 1)
+    }
+  }
+
+  /** 翻页 */
+  const handlePageChange = (p: number): void => {
+    void doSearch(keyword, order, p)
+  }
+
+  // 新一页结果就绪后滚回结果区顶部（翻页 / 换排序后不滞留页面底部）
+  useEffect(() => {
+    if (searched && items.length > 0) {
+      gridRef.current?.scrollIntoView({ block: 'start' })
+    }
+  }, [searched, items])
 
   const handleOpenVideo = (item: BiliVideoItem): void => {
     // 会话上限时长：取当前学习会话的计划时长（首页时长浮层 / 计时条预设；未开始时为默认快照值），
@@ -141,6 +179,8 @@ function BiliModePage(): JSX.Element {
     )
     const offOpened = window.api.on<{ open: boolean }>(window.api.events.bili.videoOpened, () => {
       setVideoOpen(true)
+      // 打开视频后自动关闭学习助手抽屉（与悬浮面板互斥，避免重复）
+      setAssistantOpen(false)
     })
     const offClosed = window.api.on<{ bvid: string }>(window.api.events.bili.videoClosed, () => {
       setVideoOpen(false)
@@ -187,12 +227,12 @@ function BiliModePage(): JSX.Element {
         <div>
           <h1 className="page-title">B 站学习模式</h1>
           <p className="page-sub">
-            输入学习主题 → WBI 签名搜索 → 结果网格 → 点击视频自动全屏；全屏时右侧悬浮 AI 助手与记事本（可折叠）。
+            输入学习主题 → WBI 签名搜索 → 结果网格 → 点击视频自动全屏；全屏时右侧悬浮学习助手（对话 / 笔记 / 进度，可拖拽、最小化）。
           </p>
         </div>
-        {/* R-1 轻量反馈入口 */}
-        <Button icon={<MessageOutlined />} onClick={() => setFeedbackOpen(true)}>
-          反馈
+        {/* 问题 3：顶部导航栏右侧"学习助手"入口（非视频模式抽屉；反馈已迁移至设置页） */}
+        <Button icon={<RobotOutlined />} onClick={() => setAssistantOpen(true)}>
+          学习助手 <DownOutlined style={{ fontSize: 10, opacity: 0.6 }} />
         </Button>
       </div>
 
@@ -234,7 +274,7 @@ function BiliModePage(): JSX.Element {
           className="bili-order-select"
           value={order}
           options={ORDER_OPTIONS}
-          onChange={(value) => setOrder(value as BiliOrder)}
+          onChange={(value) => handleOrderChange(value as BiliOrder)}
         />
         <Space size={4} className="bili-fullscreen-toggle">
           <FullscreenOutlined style={{ color: 'var(--muted)' }} />
@@ -256,6 +296,20 @@ function BiliModePage(): JSX.Element {
         />
       )}
 
+      {/* 结果统计：总条数 + 当前页码（此前 numResults / numPages 被丢弃，无任何提示） */}
+      {searched && items.length > 0 && (
+        <div className="bili-result-meta">
+          <span>
+            共 <b>{numResults.toLocaleString('zh-CN')}</b> 条结果
+          </span>
+          {numPages > 1 && (
+            <span>
+              第 {page} / {numPages} 页
+            </span>
+          )}
+        </div>
+      )}
+
       {/* 结果网格 */}
       {loading ? (
         <div className="bili-loading">
@@ -264,7 +318,7 @@ function BiliModePage(): JSX.Element {
       ) : searched && items.length === 0 && !error ? (
         <Empty description="没有找到相关视频" />
       ) : (
-        <div className="bili-grid">
+        <div ref={gridRef} className="bili-grid">
           {items.map((item) => (
             <div
               key={item.bvid}
@@ -303,6 +357,20 @@ function BiliModePage(): JSX.Element {
         </div>
       )}
 
+      {/* 分页：多于一页时显示（翻页重新请求，page 参数此前被硬编码为 1） */}
+      {searched && items.length > 0 && numPages > 1 && (
+        <div className="bili-pagination">
+          <Pagination
+            current={page}
+            total={numResults}
+            pageSize={PAGE_SIZE}
+            showSizeChanger={false}
+            showQuickJumper
+            onChange={handlePageChange}
+          />
+        </div>
+      )}
+
       {searched && items.length > 0 && (
         <div className="bili-hint">
           <FullscreenOutlined /> 自动全屏已{autoFullscreen ? '开启' : '关闭'}
@@ -312,7 +380,11 @@ function BiliModePage(): JSX.Element {
         </div>
       )}
 
-      <FeedbackDialog open={feedbackOpen} mode="bili" onClose={() => setFeedbackOpen(false)} />
+      <LearningAssistantDrawer
+        open={assistantOpen}
+        topic={keyword.trim() || undefined}
+        onClose={() => setAssistantOpen(false)}
+      />
     </div>
   )
 }

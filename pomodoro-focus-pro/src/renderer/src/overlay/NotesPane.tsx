@@ -1,7 +1,9 @@
 import { Button, Empty, Input, Tooltip, message } from 'antd'
 import {
   DeleteOutlined,
+  DownloadOutlined,
   EditOutlined,
+  FileImageOutlined,
   PlusOutlined,
   StarFilled,
   StarOutlined
@@ -23,6 +25,12 @@ interface NotesPaneProps {
   onMarkKeyPoint(): void
   /** F-2 时间点跳转：从进度/笔记点击重点跳到视频对应位置 */
   onSeek(seconds: number): void
+  /** 非视频模式扩展（学习助手抽屉）：导出当前笔记为 Markdown */
+  onExport?: () => void
+  /** 非视频模式扩展（学习助手抽屉）：图片 OCR 识别（父组件负责文件选择/粘贴） */
+  onOcr?: () => void
+  /** OCR 进行中（按钮 loading 态） */
+  ocrBusy?: boolean
 }
 
 /**
@@ -40,7 +48,10 @@ function NotesPane({
   onDeleteNote,
   onToggleKey,
   onMarkKeyPoint,
-  onSeek
+  onSeek,
+  onExport,
+  onOcr,
+  ocrBusy = false
 }: NotesPaneProps): JSX.Element {
   const hasBvid = Boolean(context?.bvid)
 
@@ -60,6 +71,16 @@ function NotesPane({
             记重点
           </Button>
         </Tooltip>
+        {onExport && (
+          <Button size="small" icon={<DownloadOutlined />} onClick={onExport}>
+            导出
+          </Button>
+        )}
+        {onOcr && (
+          <Button size="small" icon={<FileImageOutlined />} loading={ocrBusy} onClick={onOcr}>
+            OCR
+          </Button>
+        )}
         <span className="overlay-autosave">500ms 自动保存</span>
       </div>
 

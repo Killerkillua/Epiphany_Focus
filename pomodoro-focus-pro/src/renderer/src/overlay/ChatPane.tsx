@@ -23,13 +23,24 @@ interface ChatPaneProps {
   onSend(): void
   /** I-4 问答↔笔记联动：把 AI 回答一键沉淀为笔记 */
   onSaveToNotes(msg: ChatMsg): void
+  /** 非视频模式（学习助手抽屉）：无视频上下文时的空态提示 */
+  noVideoContext?: boolean
 }
 
 /**
  * 对话页签（I-1）：AI 助手全高空间，长回答不再被笔记挤压；
  * 流式渲染（F-4/P-2）逐字出现；回答底部提供「记入笔记」快捷落库。
  */
-function ChatPane({ log, input, asking, logRef, onInput, onSend, onSaveToNotes }: ChatPaneProps): JSX.Element {
+function ChatPane({
+  log,
+  input,
+  asking,
+  logRef,
+  onInput,
+  onSend,
+  onSaveToNotes,
+  noVideoContext = false
+}: ChatPaneProps): JSX.Element {
   return (
     <div className="overlay-pane overlay-chat-pane">
       <ScrollArea className="overlay-ai-log" ref={logRef}>
@@ -57,6 +68,11 @@ function ChatPane({ log, input, asking, logRef, onInput, onSend, onSaveToNotes }
         ))}
         {asking && <div className="overlay-msg assistant overlay-typing">思考中…</div>}
       </ScrollArea>
+      {noVideoContext && (
+        <div className="overlay-ai-hint">
+          📌 当前未打开视频，可基于学习主题提问；打开视频后自动切换为视频上下文。
+        </div>
+      )}
       <div className="overlay-ai-input">
         <Input.TextArea
           autoSize={{ minRows: 1, maxRows: 3 }}

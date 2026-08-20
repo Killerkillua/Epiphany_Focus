@@ -13,8 +13,10 @@ import {
   Switch,
   Typography
 } from 'antd'
+import { MessageOutlined } from '@ant-design/icons'
 import type { AppSettings, BiliStrictness, EndAction, LockLevel } from '../../../shared/settings'
 import { LEVEL_LABEL } from '../../../main/enforcement/level'
+import FeedbackDialog from '../components/FeedbackDialog'
 
 /**
  * 设置页（方案 4.2）：合并全部配置，写 electron-store，即时生效。
@@ -79,6 +81,8 @@ function SettingsPage(): JSX.Element {
   const [code1, setCode1] = useState('')
   const [code2, setCode2] = useState('')
   const [saving, setSaving] = useState(false)
+  /** 问题 3：反馈模块从 B 站学习页迁移至设置页（R-1，复用 FeedbackDialog） */
+  const [feedbackOpen, setFeedbackOpen] = useState(false)
 
   const load = async (): Promise<void> => {
     const s: AppSettings = await window.api.settings.get()
@@ -357,6 +361,17 @@ function SettingsPage(): JSX.Element {
             默认关闭。开启后仅本地记录计数与时长（打开视频数、会话时长、提问数、导航拦截次数、面板显隐次数），
             绝不上送视频号、关键词、笔记内容或任何输入文本；可随时一键关闭。
           </Typography.Text>
+          {/* 问题 3：反馈入口由 B 站学习页迁移至此（复用 FeedbackDialog，IPC 通道不变） */}
+          <Divider style={{ margin: '10px 0' }} />
+          <div className="settings-row">
+            <span className="settings-label">应用反馈</span>
+            <Button size="small" icon={<MessageOutlined />} onClick={() => setFeedbackOpen(true)}>
+              提交反馈
+            </Button>
+          </div>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            满意度打分 + 问题分类 + 一句话描述，仅保存在本地（feedback 表），不会上传。
+          </Typography.Text>
         </Card>
       </div>
 
@@ -376,6 +391,9 @@ function SettingsPage(): JSX.Element {
           <Input.Password placeholder="再次输入" value={code2} onChange={(e) => setCode2(e.target.value)} />
         </Space>
       </Modal>
+
+      {/* 问题 3：反馈弹窗（从 B 站学习页迁移；mode=general 全局反馈） */}
+      <FeedbackDialog open={feedbackOpen} mode="general" onClose={() => setFeedbackOpen(false)} />
     </div>
   )
 }
