@@ -17,6 +17,7 @@ import { registerShortcutGuard, unregisterShortcutGuard } from './shortcutGuard'
 import { WindowGuard } from './windowGuard'
 import { startTaskmgrKill, stopTaskmgrKill } from './processGuard'
 import { applyLevelWindow, releaseLevelWindow, lockWorkstation } from './lockScreen'
+import { closeVideo } from '../navigation/biliWindow'
 import type { DistractionPolicy, TimerOptions, TimerSnapshot } from '../../shared/types'
 import type { EmergencyExitResult, LockLevel } from '../../shared/settings'
 
@@ -49,6 +50,11 @@ export interface EnforcementHandle {
    * 视频窗口失焦时，不执行 show()+focus() 抢回，保证面板可用。
    */
   setOverlayExempt: (win: BrowserWindow | null) => void
+  /**
+   * 暂停 / 恢复窗口守卫的失焦拉回（P-2：紧急退出弹窗打开期间暂停，
+   * 避免视频窗口把焦点抢回，用户输入不了恢复码）。
+   */
+  setPullBackPaused: (paused: boolean) => void
 }
 
 export function registerEnforcementModule(getWindow: () => BrowserWindow | null): EnforcementHandle {
@@ -115,6 +121,16 @@ export function registerEnforcementModule(getWindow: () => BrowserWindow | null)
       active = null
     }
     if (win) releaseLevelWindow(win)
+    // P-2：紧急退出兜底销毁 B 站视频窗口——video.destroy() 绕过 applyLevelWindow 的
+    // close 拦截，销毁后 'closed' 事件自动清理其遮罩引用计数，
+    // 避免紧急退出成功后视频窗口仍保持全屏 + 拦截关闭 + 隐藏任务栏，把用户困在全屏
+    if (reason === 'emergency') {
+      try {
+        closeVideo()
+      } catch {
+        /* 忽略 */
+      }
+    }
     unregisterShortcutGuard()
     windowGuard.stop()
     stopTaskmgrKill()
@@ -294,6 +310,10 @@ export function registerEnforcementModule(getWindow: () => BrowserWindow | null)
     emergency.setRecoveryCode(code ?? '')
     return true
   })
+  // P-2：紧急退出弹窗期间暂停窗口守卫的失焦拉回（渲染层随弹窗开合调用）
+  ipcMain.handle(IPC_CHANNELS.emergency.setPullBackPaused, (_event, paused: boolean): void => {
+    windowGuard.setPaused(paused === true)
+  })
 
   // ================= B 站强制会话句柄 =================
 
@@ -316,6 +336,9 @@ export function registerEnforcementModule(getWindow: () => BrowserWindow | null)
     exitBiliSession,
     setOverlayExempt: (win) => {
       overlayExemptWindow = win
+    },
+    setPullBackPaused: (paused) => {
+      windowGuard.setPaused(paused)
     }
   }
 }

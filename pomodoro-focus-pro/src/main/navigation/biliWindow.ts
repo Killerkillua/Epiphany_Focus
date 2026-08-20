@@ -15,13 +15,13 @@ import type {
   OverlayState,
   VideoState
 } from '../../shared/bili'
-import { OVERLAY_COLLAPSED_SIZE, OVERLAY_EXPANDED_SIZE, OVERLAY_STATES } from '../../shared/bili'
+import { OVERLAY_EXPANDED_SIZE, OVERLAY_STATES } from '../../shared/bili'
 
 /**
  * B 站播放窗口管理（接入强制引擎 + 四层导航守卫 + 全屏锁定）：
  * - 视频窗口：加载 /video/BV*，挂载 L1–L4 导航守卫；全屏锁定防退出
- * - 悬浮面板窗口：无边框透明置顶窗口（全屏悬浮 AI 助手 + 记事本，可折叠），
- *   加载渲染层 #overlay 路由
+ * - 悬浮面板窗口：无边框透明置顶窗口（全屏悬浮 AI 助手 + 记事本，展开态 610×940，
+ *   可拖拽 header 移动 / 最小化，最小窗口 610×940），加载渲染层 #overlay 路由
  * - 强制会话：onOpen 启动 / onClose 结束
  */
 
@@ -37,10 +37,14 @@ interface ActiveVideo {
 
 interface VideoEventCallbacks {
   getMainWindow: () => BrowserWindow | null
+  /** 创建视频窗口之前回调（P-2：前置释放主窗口学习会话遮罩，避免 screen-saver 置顶遮罩盖住视频窗口） */
+  onBeforeOpen?: () => void
   /** 打开视频时回调（启动强制会话 + 全屏锁定） */
   onOpen?: (video: BrowserWindow, payload: OpenVideoPayload) => void
   /** 关闭视频时回调（结束强制会话） */
   onClose?: () => void
+  /** 主进程兜底 5×Esc 命中回调（P-2：唤起主窗口紧急退出弹窗） */
+  onEscapeSpam?: () => void
 }
 
 let active: ActiveVideo | null = null
@@ -53,19 +57,15 @@ let currentCtx: BiliGuardContext = { topic: '', strictness: 'standard', allowedB
 /** 当前放行 BV 集合（渲染层可追加） */
 let allowedBvs: string[] = []
 /** 事件回调 */
+let onBeforeOpenCallback: (() => void) | undefined
 let onOpenCallback: ((video: BrowserWindow, payload: OpenVideoPayload) => void) | undefined
 let onCloseCallback: (() => void) | undefined
+let onEscapeSpamCallback: (() => void) | undefined
 
-/* ===== 悬浮面板状态机（4 态：expanded / collapsed / minimized / hidden） ===== */
+/* ===== 悬浮面板状态机（3 态：expanded / minimized / hidden，已删除 collapsed 悬浮球） ===== */
 let overlayState: OverlayState = 'expanded'
 /** 窗口能力（按锁定档解耦：L0/L1 可最小化 / L2 安全档全禁用） */
 let overlayOptions: OverlayOptions = { allowMinimize: false, showInTaskbar: false }
-/** 进入 hidden / minimized 前的可见态（呼出时恢复） */
-let previousVisibleState: OverlayState = 'expanded'
-/** 进入全屏时是否由我们自动折叠（离开全屏时恢复展开） */
-let autoCollapsedOnFullscreen = false
-/** 用户拖拽球体后的自定义位置（null = 未拖拽，跟随 dockOverlay 停靠） */
-let ballPosition: { x: number; y: number } | null = null
 /** 用户拖拽面板 header 后的自定义位置（null = 未拖拽，跟随 dockOverlay 停靠） */
 let panelPosition: { x: number; y: number } | null = null
 /** 全局呼出 / 关闭视频快捷键注册状态（供 getHotkeyStatus 上报 / 调试） */
@@ -98,8 +98,10 @@ function buildOverlayOptions(): OverlayOptions {
 
 export function registerVideoEvents(opts: VideoEventCallbacks): void {
   getMainWindow = opts.getMainWindow
+  onBeforeOpenCallback = opts.onBeforeOpen
   onOpenCallback = opts.onOpen
   onCloseCallback = opts.onClose
+  onEscapeSpamCallback = opts.onEscapeSpam
 }
 
 function sendToMainWindow(channel: string, payload: unknown): void {
@@ -146,7 +148,6 @@ function dockOverlay(): void {
   if (overlay.isDestroyed()) return
 
   // 位置记忆：用户拖拽过 → 不跟随视频，保持用户放置的位置
-  if (overlayState === 'collapsed' && ballPosition) return
   if (overlayState === 'expanded' && panelPosition) return
 
   const vb = video.getBounds()
@@ -162,11 +163,13 @@ function dockOverlay(): void {
 
 function createOverlay(video: BrowserWindow, opts: OverlayOptions): BrowserWindow {
   const overlay = new BrowserWindow({
-    ...OVERLAY_EXPANDED_SIZE,
+    ...OVERLAY_EXPANDED_SIZE, // 610×940（学习助手重构：始终展开态）
+    minWidth: OVERLAY_EXPANDED_SIZE.width,
+    minHeight: OVERLAY_EXPANDED_SIZE.height,
     frame: false,
     transparent: true,
-    resizable: false,
-    movable: true, // 始终允许：球态（渲染层指针拖拽）与面板态（header 原生拖拽）均可移动
+    resizable: true, // 允许系统级缩放（配合 setMinimumSize 约束最小 610×940）
+    movable: true, // 始终允许：展开态 header 原生拖拽移动
     minimizable: opts.allowMinimize,
     maximizable: false,
     alwaysOnTop: true,
@@ -181,6 +184,7 @@ function createOverlay(video: BrowserWindow, opts: OverlayOptions): BrowserWindo
       sandbox: false
     }
   })
+  overlay.setMinimumSize(OVERLAY_EXPANDED_SIZE.width, OVERLAY_EXPANDED_SIZE.height)
   overlay.setAlwaysOnTop(true, 'screen-saver')
   overlay.setMenuBarVisibility(false)
   loadOverlay(overlay)
@@ -193,8 +197,7 @@ function createOverlay(video: BrowserWindow, opts: OverlayOptions): BrowserWindo
   overlay.on('move', () => {
     if (Date.now() - lastProgrammaticMoveAt < MOVE_TRACKING_GUARD_MS) return
     const b = overlay.getBounds()
-    if (overlayState === 'collapsed') ballPosition = { x: b.x, y: b.y }
-    else if (overlayState === 'expanded') panelPosition = { x: b.x, y: b.y }
+    if (overlayState === 'expanded') panelPosition = { x: b.x, y: b.y }
   })
 
   overlay.once('ready-to-show', () => {
@@ -202,10 +205,10 @@ function createOverlay(video: BrowserWindow, opts: OverlayOptions): BrowserWindo
     overlay.showInactive()
   })
 
-  // 任务栏恢复（L0）时回到之前的可见态
+  // 任务栏恢复（L0）时回到展开态
   overlay.on('restore', () => {
     if (overlayState === 'minimized') {
-      applyOverlayState(previousVisibleState === 'collapsed' ? 'collapsed' : 'expanded')
+      applyOverlayState('expanded')
     }
     dockOverlay()
   })
@@ -246,10 +249,11 @@ export function openVideo(payload: OpenVideoPayload): void {
   // 幂等：先关闭旧窗口再开新窗口
   closeVideo()
 
+  // P-2：创建视频窗口之前前置释放主窗口学习会话遮罩（screen-saver 置顶遮罩会盖住未置顶的视频窗口）
+  onBeforeOpenCallback?.()
+
   // 重置悬浮面板状态机（新会话从展开态开始）
   overlayState = 'expanded'
-  previousVisibleState = 'expanded'
-  autoCollapsedOnFullscreen = false
   overlayOptions = buildOverlayOptions()
 
   const video = new BrowserWindow({
@@ -257,7 +261,7 @@ export function openVideo(payload: OpenVideoPayload): void {
     height: 760,
     minWidth: 900,
     minHeight: 560,
-    fullscreen: autoFullscreen,
+    show: false, // P-2：先创建后显示（创建后立即 show()，再 setFullScreen），规避 Windows "先全屏后显示" 显示异常
     autoHideMenuBar: true,
     backgroundColor: '#0f1115',
     title: `B 站学习 · ${bvid}`,
@@ -295,23 +299,17 @@ export function openVideo(payload: OpenVideoPayload): void {
     }
   })
 
-  // 全屏锁定（Esc/F11/缩小 均拉回）+ 全屏协同 Overlay 状态
+  // 全屏锁定（Esc/F11/缩小 均拉回）。已删除"进入全屏自动折叠为悬浮球"的协同：
+  // 学习助手重构后始终以展开态呈现，进出全屏由 dockOverlay 跟随停靠。
+  // P-2：autoFullscreen 延迟到窗口显示后 setFullScreen；主进程兜底 5×Esc → 唤起紧急退出弹窗。
   attachFullscreenLock(video, {
     autoFullscreen,
     active: () => !video.isDestroyed(),
-    onEnterFullscreen: () => {
-      // 展开态默认自动折叠为竖条（不挡视频）；用户手动展开后取消该默认
-      if (!active || active.overlay.isDestroyed() || overlayState !== 'expanded') return
-      autoCollapsedOnFullscreen = true
-      applyOverlayState('collapsed')
-    },
-    onLeaveFullscreen: () => {
-      if (autoCollapsedOnFullscreen) {
-        autoCollapsedOnFullscreen = false
-        applyOverlayState('expanded')
-      }
-    }
+    onEscapeSpam: () => onEscapeSpamCallback?.()
   })
+
+  // P-2：创建后立即显示（不等 ready-to-show：页面加载失败 / 需登录时窗口也不至于"永不显示"）
+  video.show()
 
   video.loadURL(`https://www.bilibili.com/video/${bvid}`).catch((err) => {
     sendToMainWindow(IPC_EVENTS.bili.navBlocked, {
@@ -330,10 +328,6 @@ export function openVideo(payload: OpenVideoPayload): void {
 
   // 全局呼出热键（会话期间生效）
   registerOverlayHotkey()
-
-  video.once('ready-to-show', () => {
-    video.show()
-  })
 
   video.on('closed', () => {
     unregisterOverlayHotkey()
@@ -360,7 +354,6 @@ export function openVideo(payload: OpenVideoPayload): void {
 /** 关闭当前播放窗口（overlay 由 closed 事件级联销毁；重置位置记忆） */
 export function closeVideo(): void {
   if (active && !active.video.isDestroyed()) {
-    ballPosition = null
     panelPosition = null
     active.video.destroy()
   }
@@ -452,32 +445,16 @@ export function ensureOverlayOnTop(): void {
   overlay.setAlwaysOnTop(true, 'screen-saver')
 }
 
-/** 悬浮面板折叠 / 展开时调整窗口尺寸并重新停靠（旧版兼容入口，新 UI 走 overlaySetState） */
+/** 悬浮面板调整窗口尺寸并重新停靠（兼容入口；最小尺寸钳制到 610×940） */
 export function resizeOverlay(size: OverlaySize): void {
   if (!active || active.overlay.isDestroyed()) return
-  const width = Math.max(48, Math.round(size.width))
-  const height = Math.max(48, Math.round(size.height))
+  const width = Math.max(OVERLAY_EXPANDED_SIZE.width, Math.round(size.width))
+  const height = Math.max(OVERLAY_EXPANDED_SIZE.height, Math.round(size.height))
   active.overlay.setSize(width, height)
   dockOverlay()
 }
 
-/**
- * 渲染层指针拖拽：按增量移动悬浮面板窗口（可移动悬浮球 / 可移动面板）。
- * 拖拽即用户放置 → 同步记录 ballPosition / panelPosition（位置记忆）。
- */
-export function moveOverlayBy(dx: number, dy: number): void {
-  const overlay = active?.overlay
-  if (!overlay || overlay.isDestroyed()) return
-  const [x, y] = overlay.getPosition()
-  const nx = Math.round(x + dx)
-  const ny = Math.round(y + dy)
-  overlay.setPosition(nx, ny)
-  // 直接记录（'move' 事件可能落在时间戳守卫窗口内被忽略，这里同步落盘用户位置）
-  if (overlayState === 'collapsed') ballPosition = { x: nx, y: ny }
-  else if (overlayState === 'expanded') panelPosition = { x: nx, y: ny }
-}
-
-/* ===== 悬浮面板状态机 API（4 态） ===== */
+/* ===== 悬浮面板状态机 API（3 态） ===== */
 
 /** 广播状态快照给 overlay 与主窗口（外部事件驱动时同步渲染层 UI） */
 function broadcastOverlayState(): void {
@@ -498,12 +475,6 @@ function applyOverlayState(next: OverlayState): void {
 
   switch (next) {
     case 'expanded': {
-      // 从球态展开：记住球的位置，恢复面板位置（面板态同样可移动）
-      if (prev === 'collapsed') {
-        const b = overlay.getBounds()
-        ballPosition = { x: b.x, y: b.y }
-      }
-      autoCollapsedOnFullscreen = false
       overlay.setSize(OVERLAY_STATES.expanded.size.width, OVERLAY_STATES.expanded.size.height)
       overlay.setMovable(true)
       if (prev === 'minimized' && overlay.isMinimized()) overlay.restore()
@@ -512,27 +483,11 @@ function applyOverlayState(next: OverlayState): void {
       else dockOverlay()
       break
     }
-    case 'collapsed': {
-      // 从面板态折叠：记住面板位置，恢复球的位置
-      if (prev === 'expanded') {
-        const b = overlay.getBounds()
-        panelPosition = { x: b.x, y: b.y }
-      }
-      overlay.setSize(OVERLAY_STATES.collapsed.size.width, OVERLAY_STATES.collapsed.size.height)
-      overlay.setMovable(true)
-      if (prev === 'minimized' && overlay.isMinimized()) overlay.restore()
-      if (prev === 'hidden' || !overlay.isVisible()) overlay.showInactive()
-      if (ballPosition) setOverlayPosition(overlay, ballPosition.x, ballPosition.y)
-      else dockOverlay()
-      break
-    }
     case 'minimized': {
-      if (prev === 'expanded' || prev === 'collapsed') previousVisibleState = prev
       overlay.minimize()
       break
     }
     case 'hidden': {
-      if (prev === 'expanded' || prev === 'collapsed') previousVisibleState = prev
       overlay.hide()
       break
     }
@@ -577,7 +532,8 @@ export function toggleOverlayHide(): OverlaySnapshot {
     throw new Error('没有正在播放的视频，悬浮面板不可用')
   }
   if (overlayState === 'hidden') {
-    applyOverlayState(previousVisibleState === 'collapsed' ? 'collapsed' : 'expanded')
+    // 学习助手重构后无悬浮球态：呼出固定恢复展开态
+    applyOverlayState('expanded')
   } else {
     applyOverlayState('hidden')
   }
@@ -651,4 +607,4 @@ export function markRelevant(bvid: string): boolean {
 /** 供调试 / 测试使用：暴露纯判定函数 */
 export { isAllowedBiliUrl }
 
-export const OVERLAY_SIZES = { expanded: OVERLAY_EXPANDED_SIZE, collapsed: OVERLAY_COLLAPSED_SIZE }
+export const OVERLAY_SIZES = { expanded: OVERLAY_EXPANDED_SIZE }

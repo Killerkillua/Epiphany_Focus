@@ -64,6 +64,13 @@ export class WindowGuard {
   private blurHandler: (() => void) | null = null
   private policy: DistractionPolicy = { enabled: false, blacklist: [], whitelist: [] }
   private win: BrowserWindow | null = null
+  /** 失焦拉回暂停（P-2：紧急退出弹窗期间由渲染层置 true，避免视频窗口抢焦点导致输入不了恢复码） */
+  private paused = false
+
+  /** 暂停 / 恢复失焦拉回（紧急退出弹窗打开时暂停、关闭时恢复） */
+  setPaused(paused: boolean): void {
+    this.paused = paused
+  }
 
   /** 启动守卫（level 决定是否启用各能力；policy 来自渲染层配置） */
   start(win: BrowserWindow, level: LockLevel, policy: DistractionPolicy, opts?: WindowGuardStartOpts): void {
@@ -84,10 +91,11 @@ export class WindowGuard {
 
     if (caps.pullBackForeground && !this.blurHandler) {
       this.blurHandler = (): void => {
-        // 失焦 400ms 后拉回（紧急退出弹窗期间由渲染层暂停）
+        // 失焦 400ms 后拉回（紧急退出弹窗期间由渲染层暂停，避免抢焦点）
         setTimeout(() => {
           const w = this.win
           if (w && !w.isDestroyed() && !w.isFocused()) {
+            if (this.paused) return
             // 聚焦窗口命中豁免（如悬浮面板）→ 不拉回，避免抢走面板交互
             if (opts?.exemptFromPullBack?.(BrowserWindow.getFocusedWindow())) return
             w.show()

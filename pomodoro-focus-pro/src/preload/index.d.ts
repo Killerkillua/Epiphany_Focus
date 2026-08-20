@@ -71,8 +71,6 @@ export interface RendererApi {
     overlaySetState(state: OverlayState): Promise<OverlaySnapshot>
     overlayGetState(): Promise<OverlaySnapshot>
     overlayToggleHide(): Promise<OverlaySnapshot>
-    /** 渲染层指针拖拽：按增量移动悬浮面板窗口（球态 / 面板态均可移动） */
-    overlayMoveBy(dx: number, dy: number): Promise<void>
     navCheck(url: string): Promise<NavVerdict>
     resetWbi(): Promise<void>
     markRelevant(payload: MarkRelevantPayload): Promise<boolean>
@@ -150,6 +148,8 @@ export interface RendererApi {
   emergency: {
     exit(code: string): Promise<EmergencyExitResult>
     setCode(code: string): Promise<boolean>
+    /** 紧急退出弹窗期间暂停窗口守卫失焦拉回（避免视频窗口抢焦点，输入不了恢复码） */
+    setPullBackPaused(paused: boolean): Promise<void>
   }
 
   /** AI 网关 */

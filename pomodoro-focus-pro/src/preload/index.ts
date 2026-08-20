@@ -109,8 +109,6 @@ const api: RendererApi = {
       ipcRenderer.invoke(IPC_CHANNELS.bili.overlayGetState) as Promise<OverlaySnapshot>,
     overlayToggleHide: (): Promise<OverlaySnapshot> =>
       ipcRenderer.invoke(IPC_CHANNELS.bili.overlayToggleHide) as Promise<OverlaySnapshot>,
-    overlayMoveBy: (dx: number, dy: number): Promise<void> =>
-      ipcRenderer.invoke(IPC_CHANNELS.bili.overlayMoveBy, dx, dy) as Promise<void>,
     navCheck: (url: string): Promise<NavVerdict> =>
       ipcRenderer.invoke(IPC_CHANNELS.bili.navCheck, url) as Promise<NavVerdict>,
     resetWbi: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.bili.resetWbi) as Promise<void>,
@@ -210,7 +208,10 @@ const api: RendererApi = {
     exit: (code: string): Promise<EmergencyExitResult> =>
       ipcRenderer.invoke(IPC_CHANNELS.emergency.exit, code) as Promise<EmergencyExitResult>,
     setCode: (code: string): Promise<boolean> =>
-      ipcRenderer.invoke(IPC_CHANNELS.emergency.setCode, code) as Promise<boolean>
+      ipcRenderer.invoke(IPC_CHANNELS.emergency.setCode, code) as Promise<boolean>,
+    /** 紧急退出弹窗期间暂停窗口守卫失焦拉回（避免视频窗口抢焦点，输入不了恢复码） */
+    setPullBackPaused: (paused: boolean): Promise<void> =>
+      ipcRenderer.invoke(IPC_CHANNELS.emergency.setPullBackPaused, paused) as Promise<void>
   },
 
   /* ===== AI 网关 ===== */

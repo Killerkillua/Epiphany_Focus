@@ -1,9 +1,11 @@
 import { ipcMain } from 'electron'
 import type { BrowserWindow } from 'electron'
-import { IPC_CHANNELS } from '../ipc'
+import { IPC_CHANNELS, IPC_EVENTS } from '../ipc'
 import { searchBiliVideo } from './biliSearch'
 import { warmupWbiCache, resetWbiCache } from './wbi'
 import { isAllowedBiliUrl } from './guard'
+import { getSettings } from '../storage/settings'
+import { assertExitSafety } from '../enforcement/emergencyExit'
 import {
   closeVideo,
   ensureOverlayOnTop,
@@ -13,7 +15,6 @@ import {
   getVideoPosition,
   getVideoState,
   markRelevant,
-  moveOverlayBy,
   openVideo,
   registerVideoEvents,
   resizeOverlay,
@@ -74,30 +75,58 @@ export function registerNavigationModule(
 ): void {
   registerVideoEvents({
     getMainWindow: getWindow,
-    onOpen: (video, payload) => {
-      enforcement.enterBiliSession(video, {
-        plannedMs: payload.plannedMs ?? 0,
-        topic: payload.topic ?? ''
-      })
-      // F-3：打开视频 → upsert play_records 并累加观看次数（标题快照用于进度页归档）
-      const prev = getPlayRecord(payload.bvid)
-      upsertPlayRecord({
-        bvid: payload.bvid,
-        title: payload.title,
-        viewedCount: (prev?.viewedCount ?? 0) + 1
-      })
-      // 悬浮面板必须始终浮于视频之上：登记失焦拉回豁免（面板交互不抢焦点）+ 防御性提升置顶
-      // （applyLevelWindow 已跳过视频窗口的 screen-saver 置顶，此处兜底同级 z-order 竞争）
-      enforcement.setOverlayExempt(getOverlayWindow())
-      ensureOverlayOnTop()
-      // 视频窗口自身全屏锁定接管，挂起主窗口学习会话遮罩（避免 screen-saver 置顶遮罩盖住视频）
+    // P-2：创建视频窗口之前前置释放主窗口学习会话遮罩
+    // （session.start 施加的 screen-saver 置顶遮罩恒高于未置顶的视频窗口，会盖住视频）
+    onBeforeOpen: () => {
       session.suspendOverlay()
+    },
+    onOpen: (video, payload) => {
+      try {
+        enforcement.enterBiliSession(video, {
+          plannedMs: payload.plannedMs ?? 0,
+          topic: payload.topic ?? ''
+        })
+        // F-3：打开视频 → upsert play_records 并累加观看次数（标题快照用于进度页归档）
+        const prev = getPlayRecord(payload.bvid)
+        upsertPlayRecord({
+          bvid: payload.bvid,
+          title: payload.title,
+          viewedCount: (prev?.viewedCount ?? 0) + 1
+        })
+        // 悬浮面板必须始终浮于视频之上：登记失焦拉回豁免（面板交互不抢焦点）+ 防御性提升置顶
+        // （applyLevelWindow 已跳过视频窗口的 screen-saver 置顶，此处兜底同级 z-order 竞争）
+        enforcement.setOverlayExempt(getOverlayWindow())
+        ensureOverlayOnTop()
+      } catch (err) {
+        // P-2：强制会话启动失败（如恢复码前置校验异常）→ 回滚关闭视频窗口，
+        // 避免"窗口已创建但会话失败"的半开中间态
+        console.error('[bili] 强制会话启动失败，关闭视频窗口:', err)
+        try {
+          closeVideo()
+        } catch {
+          /* 忽略 */
+        }
+      } finally {
+        // P-2：无论成功与否都挂起主窗口学习会话遮罩（视频窗口自身全屏锁定接管）；
+        // 防止 onOpen 中途抛错导致 suspendOverlay 永不执行、主窗口遮罩永久残留盖住视频
+        session.suspendOverlay()
+      }
     },
     onClose: () => {
       enforcement.exitBiliSession('manual')
       enforcement.setOverlayExempt(null)
       // 视频关闭后恢复主窗口学习会话遮罩（若会话仍在进行且设置开启）
       session.resumeOverlay()
+    },
+    // P-2：主进程兜底 5×Esc（视频窗口聚焦时主窗口渲染层收不到 Esc，渲染层检测失效）：
+    // 唤起主窗口紧急退出弹窗（渲染层收到事件后暂停失焦拉回）
+    onEscapeSpam: () => {
+      const main = getWindow()
+      if (main && !main.isDestroyed()) {
+        main.show()
+        main.focus()
+        main.webContents.send(IPC_EVENTS.bili.emergencyRequest, {})
+      }
     }
   })
 
@@ -114,7 +143,17 @@ export function registerNavigationModule(
 
   /* ===== 播放窗口 ===== */
   ipcMain.handle(IPC_CHANNELS.bili.openVideo, (_event, payload: OpenVideoPayload): void => {
-    openVideo(payload)
+    // P-2：恢复码前置校验前移——L1/L2 未设恢复码直接拒绝，
+    // 避免"视频窗口已创建但强制会话启动失败"的中间态（窗口半开 + 全屏无锁定）
+    assertExitSafety(getSettings().lockLevel)
+    try {
+      // 内部 onBeforeOpen 会在创建视频窗口之前先释放主窗口学习会话遮罩
+      openVideo(payload)
+    } catch (err) {
+      // 打开失败回滚：恢复主窗口学习会话遮罩（会话仍在进行，遮罩不应丢失）
+      session.resumeOverlay()
+      throw err
+    }
   })
   ipcMain.handle(IPC_CHANNELS.bili.closeVideo, (): void => {
     closeVideo()
@@ -126,17 +165,13 @@ export function registerNavigationModule(
   ipcMain.handle(IPC_CHANNELS.bili.overlaySetSize, (_event, size: OverlaySize): void => {
     resizeOverlay(size)
   })
-  // 状态机：expanded / collapsed / minimized / hidden
+  // 状态机：expanded / minimized / hidden（已删除 collapsed 悬浮球态）
   ipcMain.handle(
     IPC_CHANNELS.bili.overlaySetState,
     (_event, state: OverlayState): OverlaySnapshot => setOverlayState(state)
   )
   ipcMain.handle(IPC_CHANNELS.bili.overlayGetState, (): OverlaySnapshot => getOverlaySnapshot())
   ipcMain.handle(IPC_CHANNELS.bili.overlayToggleHide, (): OverlaySnapshot => toggleOverlayHide())
-  // 渲染层指针拖拽移动悬浮面板（球态 / 面板态）
-  ipcMain.handle(IPC_CHANNELS.bili.overlayMoveBy, (_event, dx: number, dy: number): void => {
-    moveOverlayBy(dx, dy)
-  })
 
   /* ===== 导航判定 ===== */
   const navCheck = (_event: unknown, url: string): NavVerdict => isAllowedBiliUrl(url)

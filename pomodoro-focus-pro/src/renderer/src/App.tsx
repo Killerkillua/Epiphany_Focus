@@ -78,6 +78,24 @@ function App(): JSX.Element {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  // P-2：主进程兜底 5×Esc（B 站视频窗口聚焦/全屏时本窗口收不到 Esc，渲染层检测失效）：
+  // 主进程在视频窗口侧检测到连按 5 次 Esc 后转发此事件，直接唤起紧急退出弹窗
+  useEffect(() => {
+    return window.api.on(window.api.events.bili.emergencyRequest, () => {
+      setEmergencyCode('')
+      setEmergencyHint('')
+      setEmergencyOpen(true)
+    })
+  }, [])
+
+  // P-2：弹窗打开期间暂停窗口守卫的失焦拉回——
+  // 否则视频窗口失焦 400ms 后会被守卫抢回焦点，主窗口收不到输入，恢复码无法输入
+  useEffect(() => {
+    void window.api.emergency.setPullBackPaused(emergencyOpen).catch(() => {
+      /* 会话已结束，忽略 */
+    })
+  }, [emergencyOpen])
+
   const handleEmergencyExit = async (): Promise<void> => {
     if (emergencyBusy) return
     setEmergencyBusy(true)

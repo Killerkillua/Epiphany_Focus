@@ -39,14 +39,12 @@ export const IPC_CHANNELS = {
     videoState: 'bili:video-state',
     getContext: 'bili:get-context',
     overlaySetSize: 'bili:overlay-set-size',
-    /** 悬浮面板状态机切换（expanded/collapsed/minimized/hidden） */
+    /** 悬浮面板状态机切换（expanded/minimized/hidden，已删除 collapsed 悬浮球态） */
     overlaySetState: 'bili:overlay-set-state',
     /** 获取悬浮面板当前状态快照 */
     overlayGetState: 'bili:overlay-get-state',
     /** 快捷键呼出 / 隐藏悬浮面板 */
     overlayToggleHide: 'bili:overlay-toggle-hide',
-    /** 渲染层指针拖拽：按增量移动悬浮面板窗口（可移动悬浮球 / 可移动面板） */
-    overlayMoveBy: 'bili:overlay-move-by',
     navCheck: 'bili:nav-check',
     resetWbi: 'bili:reset-wbi',
     markRelevant: 'bili:mark-relevant',
@@ -130,7 +128,9 @@ export const IPC_CHANNELS = {
   emergency: {
     exit: 'emergency:exit',
     /** 设置/修改紧急恢复码 */
-    setCode: 'emergency:set-code'
+    setCode: 'emergency:set-code',
+    /** 紧急退出弹窗期间暂停窗口守卫的失焦拉回（避免视频窗口抢焦点，输入不了恢复码） */
+    setPullBackPaused: 'emergency:set-pull-back-paused'
   },
   /** 学习统计（study_stats / sessions 聚合） */
   stats: {
@@ -178,7 +178,9 @@ export const IPC_EVENTS = {
     videoClosed: 'bili:video-closed',
     navBlocked: 'bili:nav-blocked',
     /** 悬浮面板状态变化广播（主进程 → overlay / 主窗口） */
-    overlayStateChanged: 'bili:overlay-state-changed'
+    overlayStateChanged: 'bili:overlay-state-changed',
+    /** 主进程兜底 5×Esc 检测（视频窗口聚焦时渲染层收不到 Esc）→ 唤起主窗口紧急退出弹窗 */
+    emergencyRequest: 'bili:emergency-request'
   },
   /** AI 事件 */
   ai: {
