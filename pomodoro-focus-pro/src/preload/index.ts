@@ -15,6 +15,7 @@ import type {
   OverlaySize,
   OverlaySnapshot,
   OverlayState,
+  SeekToPayload,
   VideoState
 } from '../shared/bili'
 import type {
@@ -31,7 +32,16 @@ import type {
 } from '../shared/ai'
 import type { AssetInfo } from '../shared/audio'
 import type { AppSettings, EmergencyExitResult } from '../shared/settings'
-import type { DayTrendPoint, HeatmapCell, HomeSummary, ModeStat } from '../shared/stats'
+import type {
+  DayTrendPoint,
+  FeedbackEntry,
+  FeedbackStats,
+  HeatmapCell,
+  HomeSummary,
+  ModeStat,
+  PlayRecord,
+  PlayRecordTick
+} from '../shared/stats'
 import type { SessionStartOptions, SessionState, TimerSnapshot } from '../shared/types'
 
 /**
@@ -99,11 +109,17 @@ const api: RendererApi = {
       ipcRenderer.invoke(IPC_CHANNELS.bili.overlayGetState) as Promise<OverlaySnapshot>,
     overlayToggleHide: (): Promise<OverlaySnapshot> =>
       ipcRenderer.invoke(IPC_CHANNELS.bili.overlayToggleHide) as Promise<OverlaySnapshot>,
+    overlayMoveBy: (dx: number, dy: number): Promise<void> =>
+      ipcRenderer.invoke(IPC_CHANNELS.bili.overlayMoveBy, dx, dy) as Promise<void>,
     navCheck: (url: string): Promise<NavVerdict> =>
       ipcRenderer.invoke(IPC_CHANNELS.bili.navCheck, url) as Promise<NavVerdict>,
     resetWbi: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.bili.resetWbi) as Promise<void>,
     markRelevant: (payload: MarkRelevantPayload): Promise<boolean> =>
-      ipcRenderer.invoke(IPC_CHANNELS.bili.markRelevant, payload) as Promise<boolean>
+      ipcRenderer.invoke(IPC_CHANNELS.bili.markRelevant, payload) as Promise<boolean>,
+    seekTo: (payload: SeekToPayload): Promise<boolean> =>
+      ipcRenderer.invoke(IPC_CHANNELS.bili.seekTo, payload) as Promise<boolean>,
+    getVideoPosition: (): Promise<number> =>
+      ipcRenderer.invoke(IPC_CHANNELS.bili.getVideoPosition) as Promise<number>
   },
 
   /* ===== 学习会话计时（B 站 / 英语模式） ===== */
@@ -120,11 +136,48 @@ const api: RendererApi = {
       ipcRenderer.invoke(IPC_CHANNELS.session.getState) as Promise<SessionState>
   },
 
-  /* ===== 记事本 ===== */
+  /* ===== 记事本（增量 upsert + 分视频归档） ===== */
   notes: {
     save: (entries: NoteEntry[]): Promise<void> =>
       ipcRenderer.invoke(IPC_CHANNELS.notes.save, entries) as Promise<void>,
-    load: (): Promise<NoteEntry[]> => ipcRenderer.invoke(IPC_CHANNELS.notes.load) as Promise<NoteEntry[]>
+    load: (): Promise<NoteEntry[]> => ipcRenderer.invoke(IPC_CHANNELS.notes.load) as Promise<NoteEntry[]>,
+    upsert: (entry: NoteEntry): Promise<NoteEntry> =>
+      ipcRenderer.invoke(IPC_CHANNELS.notes.upsert, entry) as Promise<NoteEntry>,
+    delete: (id: string): Promise<void> =>
+      ipcRenderer.invoke(IPC_CHANNELS.notes.delete, id) as Promise<void>,
+    loadByVideo: (bvid: string): Promise<NoteEntry[]> =>
+      ipcRenderer.invoke(IPC_CHANNELS.notes.loadByVideo, bvid) as Promise<NoteEntry[]>
+  },
+
+  /* ===== 按视频学习进度（F-3） ===== */
+  playRecords: {
+    tick: (tick: PlayRecordTick): Promise<PlayRecord | null> =>
+      ipcRenderer.invoke(IPC_CHANNELS.playRecords.tick, tick) as Promise<PlayRecord | null>,
+    list: (): Promise<PlayRecord[]> =>
+      ipcRenderer.invoke(IPC_CHANNELS.playRecords.list) as Promise<PlayRecord[]>,
+    markDone: (bvid: string): Promise<PlayRecord | null> =>
+      ipcRenderer.invoke(IPC_CHANNELS.playRecords.markDone, bvid) as Promise<PlayRecord | null>,
+    setGoal: (bvid: string, goalRounds: number, goalDeadline?: string): Promise<PlayRecord | null> =>
+      ipcRenderer.invoke(IPC_CHANNELS.playRecords.setGoal, {
+        bvid,
+        goalRounds,
+        goalDeadline
+      }) as Promise<PlayRecord | null>
+  },
+
+  /* ===== 用户反馈（R-1） ===== */
+  feedback: {
+    submit: (payload: {
+      mode: string
+      rating: number
+      category?: string
+      detail?: string
+    }): Promise<FeedbackEntry | null> =>
+      ipcRenderer.invoke(IPC_CHANNELS.feedback.submit, payload) as Promise<FeedbackEntry | null>,
+    list: (): Promise<FeedbackEntry[]> =>
+      ipcRenderer.invoke(IPC_CHANNELS.feedback.list) as Promise<FeedbackEntry[]>,
+    stats: (): Promise<FeedbackStats> =>
+      ipcRenderer.invoke(IPC_CHANNELS.feedback.stats) as Promise<FeedbackStats>
   },
 
   /* ===== 白噪音 ===== */
@@ -164,6 +217,10 @@ const api: RendererApi = {
   ai: {
     ask: (request: AiAskRequest): Promise<AiReply> =>
       ipcRenderer.invoke(IPC_CHANNELS.ai.ask, request) as Promise<AiReply>,
+
+    /** B 站学习助手：流式问答（增量经 ai:chunk 事件推送，requestId 关联；F-4/P-2） */
+    biliAsk: (request: AiAskRequest): Promise<AiReply> =>
+      ipcRenderer.invoke(IPC_CHANNELS.ai.biliAsk, request) as Promise<AiReply>,
 
     /* ===== 英语学习模式 ===== */
     englishAsk: (question: AiQuestion): Promise<EnglishAiReply> =>

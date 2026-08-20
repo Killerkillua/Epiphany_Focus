@@ -58,6 +58,8 @@ export interface AppSettings {
   endAction: EndAction
   /** 会话时长上限（小时），默认 4，防止误锁过久 */
   sessionMaxHours: number
+  /** 学习会话全屏遮罩（英语 / B 站计时开始后对主窗口施加与专注模式一致的遮罩；默认开启） */
+  sessionOverlay: boolean
   bili: BiliSettings
   ai: AiSettings
   /** 白噪音预设 key（audio 模块清单） */
@@ -66,6 +68,12 @@ export interface AppSettings {
   recoveryCodeHash: string | null
   /** 强制会话持久化状态 */
   enforced: EnforcedState | null
+  /**
+   * 匿名使用统计（R-2）：默认关闭；开启后仅记录本地计数/时长事件
+   * （打开视频数、会话时长、提问数、导航拦截次数、面板显隐次数），
+   * 不上送任何内容 / URL / 笔记文本，可随时一键关闭。
+   */
+  telemetryEnabled: boolean
 }
 
 /** 紧急退出结果 */
@@ -82,6 +90,7 @@ export const SETTINGS_DEFAULTS: AppSettings = {
   pomodoro: { focusMin: 25, shortBreakMin: 5, longBreakMin: 15, longBreakEvery: 4 },
   endAction: 'overlay',
   sessionMaxHours: 4,
+  sessionOverlay: true,
   bili: { strictness: 'standard', autoFullscreen: true },
   ai: {
     baseURL: 'https://api.siliconflow.cn/v1',
@@ -92,5 +101,6 @@ export const SETTINGS_DEFAULTS: AppSettings = {
   },
   noisePreset: 'rain',
   recoveryCodeHash: null,
-  enforced: null
+  enforced: null,
+  telemetryEnabled: false
 }

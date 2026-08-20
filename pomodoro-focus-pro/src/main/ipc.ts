@@ -45,9 +45,15 @@ export const IPC_CHANNELS = {
     overlayGetState: 'bili:overlay-get-state',
     /** 快捷键呼出 / 隐藏悬浮面板 */
     overlayToggleHide: 'bili:overlay-toggle-hide',
+    /** 渲染层指针拖拽：按增量移动悬浮面板窗口（可移动悬浮球 / 可移动面板） */
+    overlayMoveBy: 'bili:overlay-move-by',
     navCheck: 'bili:nav-check',
     resetWbi: 'bili:reset-wbi',
-    markRelevant: 'bili:mark-relevant'
+    markRelevant: 'bili:mark-relevant',
+    /** 时间点标记跳转：让视频窗口 seek 到指定进度（F-2） */
+    seekTo: 'bili:seek-to',
+    /** 读取视频当前播放位置（秒，HTML5 video.currentTime，标准 API） */
+    getVideoPosition: 'bili:get-video-position'
   },
   /** AI 网关 */
   ai: {
@@ -55,6 +61,8 @@ export const IPC_CHANNELS = {
     ask: 'ai:ask',
     /** 兼容：一次性返回整段文本 */
     stream: 'ai:stream',
+    /** B 站学习助手：流式问答（增量经 ai:chunk 事件推送，requestId 关联；F-4/P-2） */
+    biliAsk: 'ai:bili-ask',
     /** 英语模式：流式问答（增量经 ai:chunk 事件推送） */
     englishAsk: 'ai:english-ask',
     /** 图片文字识别（OCR 模型） */
@@ -72,10 +80,37 @@ export const IPC_CHANNELS = {
     listGrammar: 'ai:list-grammar',
     deleteGrammar: 'ai:delete-grammar'
   },
-  /** 记事本 */
+  /** 记事本（增量 upsert + 按视频归档） */
   notes: {
     save: 'notes:save',
-    load: 'notes:load'
+    load: 'notes:load',
+    /** 单条增量保存（P-1：不再整份覆盖） */
+    upsert: 'notes:upsert',
+    /** 按 id 删除单条 */
+    delete: 'notes:delete',
+    /** 按视频归档读取 */
+    loadByVideo: 'notes:load-by-video'
+  },
+  /** 按视频学习进度（F-3） */
+  playRecords: {
+    /** 会话心跳累计观看时长 / 播放位置 */
+    tick: 'play-records:tick',
+    /** 全部进度列表 */
+    list: 'play-records:list',
+    /** 标记某视频已学完 */
+    markDone: 'play-records:mark-done',
+    /** 学习目标设定（F-5） */
+    setGoal: 'play-records:set-goal'
+  },
+  /** 用户反馈（R-1） */
+  feedback: {
+    submit: 'feedback:submit',
+    list: 'feedback:list',
+    stats: 'feedback:stats'
+  },
+  /** 匿名遥测（R-2，opt-in） */
+  telemetry: {
+    record: 'telemetry:record'
   },
   /** 白噪音（主进程侧：素材信息；混音引擎在渲染层） */
   audio: {

@@ -75,6 +75,8 @@ export interface OpenVideoPayload {
   autoFullscreen: boolean
   /** 学习主题（搜索关键词），供 AI / 记事本上下文使用 */
   topic?: string
+  /** 视频标题（搜索结果页快照，注入 AI 上下文 / 笔记归档） */
+  title?: string
   /** 会话上限时长（毫秒，来自首页时长浮层） */
   plannedMs?: number
 }
@@ -94,6 +96,8 @@ export interface VideoState {
 export interface BiliContext {
   bvid?: string
   topic?: string
+  /** 当前视频标题（搜索结果页快照，导航守卫提取到更精确标题时更新） */
+  videoTitle?: string
   fullscreen: boolean
 }
 
@@ -105,14 +109,14 @@ export interface OverlaySize {
 
 /** 悬浮面板展开 / 折叠尺寸（主进程 biliWindow 与渲染层 OverlayApp 共用） */
 export const OVERLAY_EXPANDED_SIZE: OverlaySize = { width: 340, height: 560 }
-export const OVERLAY_COLLAPSED_SIZE: OverlaySize = { width: 64, height: 240 }
+export const OVERLAY_COLLAPSED_SIZE: OverlaySize = { width: 56, height: 56 }
 
 /**
- * 悬浮面板完整状态机（原 collapsed 布尔 → 4 态）：
- * - expanded ：340×560 展开面板
- * - collapsed：64×240 侧边竖条
+ * 悬浮面板完整状态机（4 态）：
+ * - expanded ：340×560 展开面板（AI 助手 + 记事本），可拖拽 header 移动
+ * - collapsed：56×56 可移动悬浮球（呼吸动画 + hover 退出按钮），可拖拽球体移动
  * - minimized：窗口最小化（仅 L0/L1 档允许；L2 档自动降级为 hidden）
- * - hidden   ：完全隐藏，快捷键 Ctrl+Shift+O 呼出
+ * - hidden   ：完全隐藏，Ctrl+Shift+O 呼出或 BiliModePage 按钮切换
  */
 export type OverlayState = 'expanded' | 'collapsed' | 'minimized' | 'hidden'
 
@@ -162,6 +166,8 @@ export interface AiMessage {
 }
 
 export interface AiAskRequest {
+  /** 渲染层生成的请求关联 ID：流式 ai:chunk 事件用同一 id 关联到消息（缺省主进程生成） */
+  requestId?: string
   message: string
   context?: {
     /** 学习主题（来自搜索关键词） */
@@ -183,8 +189,28 @@ export interface AiReply {
 
 /* ===== 记事本 ===== */
 
+/** 笔记来源：主窗口记事本 / 悬浮面板 / AI 一键入笔记 / 时间点标记 */
+export type NoteSource = 'main' | 'overlay' | 'ai' | 'time-mark'
+
 export interface NoteEntry {
   id: string
   createdAt: number
   content: string
+  /** 关联视频 BV 号（按视频归档 / 回看定位） */
+  bvid?: string
+  /** 视频标题快照（笔记页展示所属视频） */
+  videoTitle?: string
+  /** 视频内进度秒（时间点标记，点击可跳转播放器到该位置） */
+  timestampS?: number
+  /** 重点标记（★ 只看重点过滤） */
+  isKey?: boolean
+  /** 来源（用于过滤 AI 沉淀 / 时间点标记） */
+  source?: NoteSource
+}
+
+/** 时间点标记跳转（F-2）：让视频窗口 seek 到指定进度 */
+export interface SeekToPayload {
+  bvid: string
+  /** 目标进度（秒） */
+  seconds: number
 }

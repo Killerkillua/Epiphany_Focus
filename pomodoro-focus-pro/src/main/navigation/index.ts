@@ -6,18 +6,40 @@ import { warmupWbiCache, resetWbiCache } from './wbi'
 import { isAllowedBiliUrl } from './guard'
 import {
   closeVideo,
+  ensureOverlayOnTop,
   getContext,
   getOverlaySnapshot,
+  getOverlayWindow,
+  getVideoPosition,
   getVideoState,
   markRelevant,
+  moveOverlayBy,
   openVideo,
   registerVideoEvents,
   resizeOverlay,
+  seekTo,
   setOverlayState,
   toggleOverlayHide
 } from './biliWindow'
-import { loadNotesAll, saveNotesAll } from '../storage/db'
+import {
+  addFeedback,
+  deleteNote,
+  getFeedbackStats,
+  getPlayRecord,
+  listFeedback,
+  listPlayRecords,
+  loadNotesAll,
+  loadNotesByVideo,
+  markPlayRecordDone,
+  recordEvent,
+  saveNotesAll,
+  setPlayGoal,
+  tickPlayRecord,
+  upsertNote,
+  upsertPlayRecord
+} from '../storage/db'
 import type { EnforcementHandle } from '../enforcement'
+import type { SessionHandle } from '../session'
 import type {
   BiliSearchOptions,
   BiliSearchResponse,
@@ -29,8 +51,15 @@ import type {
   OverlayState,
   VideoState,
   NoteEntry,
-  MarkRelevantPayload
+  MarkRelevantPayload,
+  SeekToPayload
 } from '../../shared/bili'
+import type {
+  FeedbackEntry,
+  FeedbackStats,
+  PlayRecord,
+  PlayRecordTick
+} from '../../shared/stats'
 
 /**
  * B 站模式模块入口（接入强制引擎 + 四层导航判定）。
@@ -40,7 +69,8 @@ import type {
 
 export function registerNavigationModule(
   getWindow: () => BrowserWindow | null,
-  enforcement: EnforcementHandle
+  enforcement: EnforcementHandle,
+  session: SessionHandle
 ): void {
   registerVideoEvents({
     getMainWindow: getWindow,
@@ -49,8 +79,26 @@ export function registerNavigationModule(
         plannedMs: payload.plannedMs ?? 0,
         topic: payload.topic ?? ''
       })
+      // F-3：打开视频 → upsert play_records 并累加观看次数（标题快照用于进度页归档）
+      const prev = getPlayRecord(payload.bvid)
+      upsertPlayRecord({
+        bvid: payload.bvid,
+        title: payload.title,
+        viewedCount: (prev?.viewedCount ?? 0) + 1
+      })
+      // 悬浮面板必须始终浮于视频之上：登记失焦拉回豁免（面板交互不抢焦点）+ 防御性提升置顶
+      // （applyLevelWindow 已跳过视频窗口的 screen-saver 置顶，此处兜底同级 z-order 竞争）
+      enforcement.setOverlayExempt(getOverlayWindow())
+      ensureOverlayOnTop()
+      // 视频窗口自身全屏锁定接管，挂起主窗口学习会话遮罩（避免 screen-saver 置顶遮罩盖住视频）
+      session.suspendOverlay()
     },
-    onClose: () => enforcement.exitBiliSession('manual')
+    onClose: () => {
+      enforcement.exitBiliSession('manual')
+      enforcement.setOverlayExempt(null)
+      // 视频关闭后恢复主窗口学习会话遮罩（若会话仍在进行且设置开启）
+      session.resumeOverlay()
+    }
   })
 
   // 启动预热 WBI 密钥（4h 缓存；失败静默，首次搜索时重试）
@@ -85,6 +133,10 @@ export function registerNavigationModule(
   )
   ipcMain.handle(IPC_CHANNELS.bili.overlayGetState, (): OverlaySnapshot => getOverlaySnapshot())
   ipcMain.handle(IPC_CHANNELS.bili.overlayToggleHide, (): OverlaySnapshot => toggleOverlayHide())
+  // 渲染层指针拖拽移动悬浮面板（球态 / 面板态）
+  ipcMain.handle(IPC_CHANNELS.bili.overlayMoveBy, (_event, dx: number, dy: number): void => {
+    moveOverlayBy(dx, dy)
+  })
 
   /* ===== 导航判定 ===== */
   const navCheck = (_event: unknown, url: string): NavVerdict => isAllowedBiliUrl(url)
@@ -100,11 +152,64 @@ export function registerNavigationModule(
     }
   )
 
-  /* ===== 记事本（中央 SQLite notes 表，整份覆盖语义兼容） ===== */
+  /* ===== 时间点标记跳转（F-2） ===== */
+  ipcMain.handle(IPC_CHANNELS.bili.seekTo, (_event, payload: SeekToPayload): Promise<boolean> => {
+    return seekTo(payload.bvid, payload.seconds)
+  })
+  ipcMain.handle(IPC_CHANNELS.bili.getVideoPosition, (): Promise<number> => getVideoPosition())
+
+  /* ===== 记事本（增量 upsert + 分视频归档，F-1/P-1） ===== */
   ipcMain.handle(IPC_CHANNELS.notes.load, async (): Promise<NoteEntry[]> => loadNotesAll())
   ipcMain.handle(IPC_CHANNELS.notes.save, async (_event, entries: NoteEntry[]): Promise<void> => {
     saveNotesAll(entries)
   })
+  ipcMain.handle(IPC_CHANNELS.notes.upsert, async (_event, entry: NoteEntry): Promise<NoteEntry> => {
+    return upsertNote(entry)
+  })
+  ipcMain.handle(IPC_CHANNELS.notes.delete, async (_event, id: string): Promise<void> => {
+    deleteNote(id)
+  })
+  ipcMain.handle(IPC_CHANNELS.notes.loadByVideo, async (_event, bvid: string): Promise<NoteEntry[]> => {
+    return loadNotesByVideo(bvid)
+  })
+
+  /* ===== 按视频学习进度（F-3） ===== */
+  ipcMain.handle(IPC_CHANNELS.playRecords.tick, async (_event, tick: PlayRecordTick): Promise<PlayRecord | null> => {
+    return tickPlayRecord(tick)
+  })
+  ipcMain.handle(IPC_CHANNELS.playRecords.list, async (): Promise<PlayRecord[]> => listPlayRecords())
+  ipcMain.handle(
+    IPC_CHANNELS.playRecords.markDone,
+    async (_event, bvid: string): Promise<PlayRecord | null> => markPlayRecordDone(bvid)
+  )
+  ipcMain.handle(
+    IPC_CHANNELS.playRecords.setGoal,
+    async (_event, payload: { bvid: string; goalRounds: number; goalDeadline?: string }): Promise<PlayRecord | null> => {
+      return setPlayGoal(payload.bvid, { goalRounds: payload.goalRounds, goalDeadline: payload.goalDeadline })
+    }
+  )
+
+  /* ===== 用户反馈（R-1，本地落库） ===== */
+  ipcMain.handle(
+    IPC_CHANNELS.feedback.submit,
+    async (
+      _event,
+      payload: { mode: string; rating: number; category?: string; detail?: string }
+    ): Promise<FeedbackEntry | null> => {
+      return addFeedback(payload)
+    }
+  )
+  ipcMain.handle(IPC_CHANNELS.feedback.list, async (): Promise<FeedbackEntry[]> => listFeedback())
+  ipcMain.handle(IPC_CHANNELS.feedback.stats, async (): Promise<FeedbackStats> => getFeedbackStats())
+
+  /* ===== 匿名遥测（R-2，opt-in；telemetry.ts 已按开关过滤） ===== */
+  ipcMain.handle(
+    IPC_CHANNELS.telemetry.record,
+    async (_event, payload: { domain: string; action: string; data?: Record<string, unknown> }): Promise<void> => {
+      if (!payload || typeof payload.domain !== 'string' || typeof payload.action !== 'string') return
+      recordEvent(payload.domain, payload.action, payload.data)
+    }
+  )
 
   /* ===== 调试辅助 ===== */
   ipcMain.handle(IPC_CHANNELS.bili.resetWbi, (): void => {

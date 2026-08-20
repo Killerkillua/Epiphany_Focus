@@ -48,12 +48,26 @@ const HISTORY_TRAP = `
   })()
 `
 
-/* ===== L4 内容提取脚本 ===== */
+/* ===== L4 内容提取脚本（C-1：多候选选择器降级链，抗 B 站前端改版） ===== */
 const CONTENT_EXTRACTOR = `
   (() => {
-    var title = document.title || (document.querySelector('h1') || {}).textContent || ''
-    var tags = Array.from(document.querySelectorAll('a[href*="tag"]'))
-      .map(function(a) { return a.textContent }).join(' ')
+    function text(sel) {
+      var el = document.querySelector(sel)
+      return el ? (el.textContent || '').trim() : ''
+    }
+    var title =
+      text('h1') ||                       // 视频页主标题（常见）
+      text('.video-title') ||             // 老版视频标题
+      text('.video-info-title') ||        // 新版视频标题容器
+      text('h1.title') ||                 // 部分页面的 h1 类名变体
+      (document.title || '')              // 文档标题兜底
+    if (!title) {
+      var og = document.querySelector('meta[property="og:title"]')
+      title = og ? (og.content || '') : ''
+    }
+    var tags = Array.from(
+      document.querySelectorAll('a[href*="tag"], a[href*="/tag/"], .tag-link, .tag-item')
+    ).map(function(a) { return a.textContent || '' }).join(' ')
     return { title: title, tags: tags }
   })()
 `
@@ -209,6 +223,8 @@ export interface GuardCallbacks {
   onBlocked?: (verdict: NavVerdict, webContents: WebContents) => void
   /** L4 无关内容时回调（标准档仅警告，严格档拦截） */
   onIrrelevant?: (verdict: NavVerdict, webContents: WebContents) => void
+  /** L4 提取到视频标题时回调（回填当前上下文，供 AI 基于正在观看的视频作答，I-2） */
+  onTitleExtracted?: (title: string) => void
 }
 
 /**
@@ -267,28 +283,45 @@ export function attachNavigationGuard(
 
     // L4 内容相关性（宽松档跳过）
     if (ctx.strictness === 'loose') return
-    try {
-      const extracted = await target.executeJavaScript(CONTENT_EXTRACTOR) as { title: string; tags: string } | null
-      if (!extracted) return
-      const { title, tags } = extracted
-      if (!isRelevantContent(title, tags, ctx)) {
-        const verdict: NavVerdict = {
-          allowed: false,
-          level: 'L4',
-          category: '无关内容',
-          reason: `视频内容与学习主题「${ctx.topic}」不相关`,
-          url: target.getURL(),
-          host: new URL(target.getURL()).hostname,
-          path: new URL(target.getURL()).pathname
-        }
-        if (ctx.strictness === 'strict') {
-          callbacks?.onBlocked?.(verdict, target)
-        } else {
-          callbacks?.onIrrelevant?.(verdict, target)
-        }
+
+    /** 构造并分发 L4 无关内容判定（严格档拦截 / 标准档警告）；标题回调由调用方负责 */
+    const judgeIrrelevant = (title: string, relevant: boolean): void => {
+      if (relevant) return
+      const verdict: NavVerdict = {
+        allowed: false,
+        level: 'L4',
+        category: '无关内容',
+        reason: `视频内容与学习主题「${ctx.topic}」不相关`,
+        url: target.getURL(),
+        host: new URL(target.getURL()).hostname,
+        path: new URL(target.getURL()).pathname
       }
+      if (ctx.strictness === 'strict') {
+        callbacks?.onBlocked?.(verdict, target)
+      } else {
+        callbacks?.onIrrelevant?.(verdict, target)
+      }
+    }
+
+    try {
+      const extracted = (await target.executeJavaScript(CONTENT_EXTRACTOR)) as
+        | { title: string; tags: string }
+        | null
+      if (!extracted) return
+      if (extracted.title) callbacks?.onTitleExtracted?.(extracted.title)
+      judgeIrrelevant(extracted.title, isRelevantContent(extracted.title, extracted.tags, ctx))
     } catch {
-      /* 提取失败 → 容错降级，不误拦 */
+      // C-2：CSP 拦截 executeJavaScript → 降级用 document.title（webContents.getTitle
+      // 不经注入即可拿到页面标题）做弱相关判定，保住标准档的 L4 兜底。
+      try {
+        const fallbackTitle = target.getTitle() || ''
+        if (fallbackTitle) {
+          callbacks?.onTitleExtracted?.(fallbackTitle)
+          judgeIrrelevant(fallbackTitle, isRelevantContent(fallbackTitle, '', ctx))
+        }
+      } catch {
+        /* 标题也拿不到 → 不误拦，仅靠 will-navigate 兜底 */
+      }
     }
   })
 }
