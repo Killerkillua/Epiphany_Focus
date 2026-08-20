@@ -25,6 +25,7 @@ interface LocalForm {
   lockLevel: LockLevel
   endAction: EndAction
   sessionMaxHours: number
+  sessionOverlay: boolean
   focusMin: number
   shortBreakMin: number
   longBreakMin: number
@@ -38,12 +39,14 @@ interface LocalForm {
   maxQuestionsPerSession: number
   noisePreset: string
   hasCode: boolean
+  telemetryEnabled: boolean
 }
 
 const EMPTY: LocalForm = {
   lockLevel: 'L1',
   endAction: 'overlay',
   sessionMaxHours: 4,
+  sessionOverlay: true,
   focusMin: 25,
   shortBreakMin: 5,
   longBreakMin: 15,
@@ -56,7 +59,8 @@ const EMPTY: LocalForm = {
   ocrModel: 'Qwen/Qwen3.5-4B',
   maxQuestionsPerSession: 50,
   noisePreset: 'rain',
-  hasCode: false
+  hasCode: false,
+  telemetryEnabled: false
 }
 
 const NOISE_OPTIONS = [
@@ -82,6 +86,7 @@ function SettingsPage(): JSX.Element {
       lockLevel: s.lockLevel,
       endAction: s.endAction,
       sessionMaxHours: s.sessionMaxHours,
+      sessionOverlay: s.sessionOverlay,
       focusMin: s.pomodoro.focusMin,
       shortBreakMin: s.pomodoro.shortBreakMin,
       longBreakMin: s.pomodoro.longBreakMin,
@@ -94,7 +99,8 @@ function SettingsPage(): JSX.Element {
       ocrModel: s.ai.ocrModel,
       maxQuestionsPerSession: s.ai.maxQuestionsPerSession,
       noisePreset: s.noisePreset,
-      hasCode: !!s.recoveryCodeHash
+      hasCode: !!s.recoveryCodeHash,
+      telemetryEnabled: !!s.telemetryEnabled
     })
   }
 
@@ -243,6 +249,21 @@ function SettingsPage(): JSX.Element {
           </div>
         </Card>
 
+        <Card size="small" title="📚 学习会话" className="settings-card">
+          <div className="settings-row">
+            <span className="settings-label">学习会话全屏遮罩</span>
+            <Switch
+              checked={form.sessionOverlay}
+              disabled={saving}
+              onChange={(v) => void update({ sessionOverlay: v }, '学习会话遮罩已更新')}
+            />
+          </div>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            英语 / B 站学习计时开始后，主窗口进入全屏遮罩（与专注模式一致：全屏、置顶、禁缩放、隐藏任务栏）；
+            B 站打开视频时由视频窗口的全屏锁定接管。
+          </Typography.Text>
+        </Card>
+
         <Card size="small" title="🤖 AI 设置（BYOK）" className="settings-card">
           <div className="settings-row">
             <span className="settings-label">API 端点</span>
@@ -320,6 +341,21 @@ function SettingsPage(): JSX.Element {
           </div>
           <Typography.Text type="secondary" style={{ fontSize: 12 }}>
             合成层（白/粉/棕噪）即时可用；采样层需打包 resources/audio 素材后自动生效。
+          </Typography.Text>
+        </Card>
+
+        <Card size="small" title="📈 帮助改进（R-2，可选匿名统计）" className="settings-card">
+          <div className="settings-row">
+            <span className="settings-label">开启匿名使用统计</span>
+            <Switch
+              checked={form.telemetryEnabled}
+              disabled={saving}
+              onChange={(v) => void update({ telemetryEnabled: v }, v ? '已开启匿名统计' : '已关闭匿名统计')}
+            />
+          </div>
+          <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+            默认关闭。开启后仅本地记录计数与时长（打开视频数、会话时长、提问数、导航拦截次数、面板显隐次数），
+            绝不上送视频号、关键词、笔记内容或任何输入文本；可随时一键关闭。
           </Typography.Text>
         </Card>
       </div>

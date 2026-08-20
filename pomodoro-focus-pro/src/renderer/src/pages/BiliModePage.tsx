@@ -11,10 +11,19 @@ import {
   Tag,
   message
 } from 'antd'
-import { FullscreenOutlined, PlayCircleOutlined, SearchOutlined } from '@ant-design/icons'
+import {
+  CloseOutlined,
+  FullscreenOutlined,
+  MessageOutlined,
+  PlayCircleOutlined,
+  RobotOutlined,
+  SearchOutlined
+} from '@ant-design/icons'
 import CoverImage from '../components/CoverImage'
 import SessionTimerBar from '../components/SessionTimerBar'
-import type { BiliOrder, BiliVideoItem } from '../../../shared/bili'
+import FeedbackDialog from '../components/FeedbackDialog'
+import { useSessionStore } from '../store/sessionStore'
+import type { BiliOrder, BiliVideoItem, OverlaySnapshot } from '../../../shared/bili'
 
 /**
  * B 站学习模式页（核心版）：
@@ -55,6 +64,12 @@ function BiliModePage(): JSX.Element {
   const [items, setItems] = useState<BiliVideoItem[]>([])
   const [searched, setSearched] = useState(false)
   const searchingRef = useRef(false)
+  /** 是否有视频窗口正在播放（用于显示"结束学习会话"退出浮层） */
+  const [videoOpen, setVideoOpen] = useState(false)
+  /** 悬浮面板是否可见（hidden / minimized 视为隐藏；BiliModePage 兜底按钮的显示状态） */
+  const [overlayVisible, setOverlayVisible] = useState(true)
+  /** 反馈弹窗（R-1） */
+  const [feedbackOpen, setFeedbackOpen] = useState(false)
 
   const persistAutoFullscreen = (value: boolean): void => {
     setAutoFullscreen(value)
@@ -96,11 +111,16 @@ function BiliModePage(): JSX.Element {
   }
 
   const handleOpenVideo = (item: BiliVideoItem): void => {
+    // 会话上限时长：取当前学习会话的计划时长（首页时长浮层 / 计时条预设；未开始时为默认快照值），
+    // 修复此前未传 plannedMs 导致视频强制会话 cap=0 的问题
+    const plannedMs = useSessionStore.getState().snapshot.durationMs
     void window.api.bili
       .openVideo({
         bvid: item.bvid,
         autoFullscreen,
-        topic: keyword.trim() || undefined
+        topic: keyword.trim() || undefined,
+        title: item.title, // I-2：标题快照注入 AI 上下文 / 笔记归档 / 进度记录
+        plannedMs
       })
       .then(() => {
         message.success(`已打开 ${item.title}（${autoFullscreen ? '全屏' : '窗口'}播放）`)
@@ -119,21 +139,82 @@ function BiliModePage(): JSX.Element {
         message.warning(`导航已拦截（${verdict.level}）: ${cat}${verdict.reason}`, 4)
       }
     )
+    const offOpened = window.api.on<{ open: boolean }>(window.api.events.bili.videoOpened, () => {
+      setVideoOpen(true)
+    })
     const offClosed = window.api.on<{ bvid: string }>(window.api.events.bili.videoClosed, () => {
+      setVideoOpen(false)
+      setOverlayVisible(true)
       message.info('视频窗口已关闭')
     })
     return () => {
       offBlocked()
+      offOpened()
       offClosed()
     }
   }, [])
 
+  // 悬浮面板显隐状态同步（面板隐藏后的 UI 兜底：不依赖快捷键即可呼出）
+  useEffect(() => {
+    if (!videoOpen) return
+    const sync = (s: OverlaySnapshot): void => {
+      setOverlayVisible(s.state !== 'hidden' && s.state !== 'minimized')
+    }
+    void window.api.bili
+      .overlayGetState()
+      .then(sync)
+      .catch((err) => console.error('[bili] 获取悬浮面板状态失败:', err))
+    const off = window.api.on<OverlaySnapshot>(window.api.events.bili.overlayStateChanged, sync)
+    return off
+  }, [videoOpen])
+
+  const handleCloseVideo = (): void => {
+    void window.api.bili
+      .closeVideo()
+      .catch((err) => message.error(`关闭视频失败: ${err instanceof Error ? err.message : String(err)}`))
+  }
+
+  // 学习助手显示 / 隐藏切换（overlayToggleHide 已由 preload 桥接；快捷键失败时此按钮为兜底入口）
+  const handleToggleOverlay = (): void => {
+    void window.api.bili
+      .overlayToggleHide()
+      .catch((err) => message.error(`切换失败: ${err instanceof Error ? err.message : String(err)}`))
+  }
+
   return (
-    <div>
-      <h1 className="page-title">B 站学习模式</h1>
-      <p className="page-sub">
-        输入学习主题 → WBI 签名搜索 → 结果网格 → 点击视频自动全屏；全屏时右侧悬浮 AI 助手与记事本（可折叠）。
-      </p>
+    <div className="page-dashboard">
+      <div className="bili-page-head">
+        <div>
+          <h1 className="page-title">B 站学习模式</h1>
+          <p className="page-sub">
+            输入学习主题 → WBI 签名搜索 → 结果网格 → 点击视频自动全屏；全屏时右侧悬浮 AI 助手与记事本（可折叠）。
+          </p>
+        </div>
+        {/* R-1 轻量反馈入口 */}
+        <Button icon={<MessageOutlined />} onClick={() => setFeedbackOpen(true)}>
+          反馈
+        </Button>
+      </div>
+
+      {/* 视频播放期间的紧急退出浮层（全屏锁定时被视频窗口遮挡，窗口/非全屏播放时始终可见）。
+          含"学习助手"显隐兜底按钮：面板 hidden 且快捷键注册失败时，这里是不依赖快捷键的恢复入口 */}
+      {videoOpen && (
+        <div className="bili-exit-float">
+          <div className="bili-overlay-controls">
+            <Button
+              type={overlayVisible ? 'primary' : 'default'}
+              ghost={overlayVisible}
+              icon={<RobotOutlined />}
+              onClick={handleToggleOverlay}
+            >
+              学习助手{overlayVisible ? '' : '（已隐藏）'}
+            </Button>
+            <Button danger type="primary" icon={<CloseOutlined />} onClick={handleCloseVideo}>
+              结束学习会话（Ctrl+Shift+Q）
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* 学习会话计时（倒计时 + 进度 + 到点自动关视频休息） */}
       <SessionTimerBar mode="bili" />
@@ -225,9 +306,13 @@ function BiliModePage(): JSX.Element {
       {searched && items.length > 0 && (
         <div className="bili-hint">
           <FullscreenOutlined /> 自动全屏已{autoFullscreen ? '开启' : '关闭'}
-          {autoFullscreen ? '：点击视频将全屏锁定播放（Esc/F11/缩小均无效）' : '：点击视频以普通窗口播放'}
+          {autoFullscreen
+            ? '：点击视频将全屏锁定播放（Esc/F11 无效；按 Ctrl+Shift+Q 或悬浮面板「关闭视频」退出）'
+            : '：点击视频以普通窗口播放'}
         </div>
       )}
+
+      <FeedbackDialog open={feedbackOpen} mode="bili" onClose={() => setFeedbackOpen(false)} />
     </div>
   )
 }

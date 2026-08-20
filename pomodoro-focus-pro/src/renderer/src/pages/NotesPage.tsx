@@ -27,8 +27,8 @@ function NotesPage(): JSX.Element {
     try {
       const list = await window.api.notes.load()
       setEntries(list)
-      // 聚焦最新一条；空库则创建一条草稿
-      const target = list[list.length - 1] ?? { id: 'main', createdAt: Date.now(), content: '' }
+      // 聚焦最新一条（新模型按 created_at DESC 返回，list[0] 为最新）；空库则创建一条草稿
+      const target = list[0] ?? { id: 'main', createdAt: Date.now(), content: '' }
       setCurrentId(target.id)
       setDraft(target.content)
     } catch (err) {
@@ -66,7 +66,7 @@ function NotesPage(): JSX.Element {
     await window.api.notes.save(next)
     setEntries(next)
     if (id === currentId) {
-      const target = next[next.length - 1] ?? { id: 'main', createdAt: Date.now(), content: '' }
+      const target = next[0] ?? { id: 'main', createdAt: Date.now(), content: '' }
       setCurrentId(target.id)
       setDraft(target.content)
     }
