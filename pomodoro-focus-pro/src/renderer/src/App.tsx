@@ -18,6 +18,7 @@ import StatsPage from './pages/StatsPage'
 import NotesPage from './pages/NotesPage'
 import SettingsPage from './pages/SettingsPage'
 import OverlayApp from './overlay/OverlayApp'
+import ScrollArea from './components/ScrollArea'
 import { noiseEngine } from './audio'
 
 const { Sider, Content } = Layout
@@ -37,6 +38,8 @@ const NAV_ITEMS: MenuProps['items'] = [
 function App(): JSX.Element {
   const [route, setRoute] = useState<string>(window.location.hash)
   const [page, setPage] = useState<PageKey>('home')
+  // 自适应侧栏：breakpoint="md"（<768px）自动折叠为图标栏；主窗口 minWidth 940 实际不触发，保留供 B 站窗口与未来兼容；可手动折叠
+  const [siderCollapsed, setSiderCollapsed] = useState(false)
 
   // 悬浮面板窗口通过 #overlay 路由加载独立应用（透明置顶窗）
   useEffect(() => {
@@ -122,7 +125,16 @@ function App(): JSX.Element {
   return (
     <>
       <Layout className="app-shell">
-        <Sider width={220} className="app-sider">
+        <Sider
+          collapsible
+          collapsed={siderCollapsed}
+          collapsedWidth={56}
+          width={240}
+          breakpoint="md"
+          onCollapse={setSiderCollapsed}
+          onBreakpoint={(broken) => setSiderCollapsed(broken)}
+          className="app-sider"
+        >
         <div className="app-logo">
           <span className="app-logo-mark">🍅</span>
           <Typography.Text strong className="app-logo-text">
@@ -138,7 +150,9 @@ function App(): JSX.Element {
           className="app-menu"
         />
       </Sider>
-        <Content className="app-content">{renderPage()}</Content>
+        <Content className="app-content">
+          <ScrollArea style={{ height: '100%' }}>{renderPage()}</ScrollArea>
+        </Content>
       </Layout>
 
       <Modal

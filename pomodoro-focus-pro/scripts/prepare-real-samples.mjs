@@ -13,7 +13,7 @@
  *   → （可选）首尾 1.5s 交叉淡化做无缝循环接缝
  */
 
-import { existsSync, mkdirSync, readdirSync, copyFileSync, unlinkSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, copyFileSync, unlinkSync, statSync, rmdirSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { join, dirname, extname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -138,8 +138,8 @@ for (const rule of MATCH_RULES) {
     ? `atrim=start=${((duration - TARGET_DURATION) / 2).toFixed(3)}:duration=${TARGET_DURATION},asetpts=PTS-STARTPTS`
     : duration && duration >= TARGET_DURATION * 0.6
       // 时长基本够用，不裁（短于 30s 后面 validate 会警告）
+      ? null
       : null
-    : null
 
   const afFilters1 = [
     'pan=mono|c0=0.5*c0+0.5*c1',              // 立体声→单声道（等功率混合）
@@ -179,7 +179,7 @@ for (const rule of MATCH_RULES) {
   if (!ok3) continue
 
   const finalDur = probeDuration(outPath) ?? dur2
-  const sizeMB = (existsSync(outPath) ? require('node:fs').statSync(outPath).size : 0) / 1048576
+  const sizeMB = (existsSync(outPath) ? statSync(outPath).size : 0) / 1048576
   console.log(`    ✓ 输出: ${rule.key}.ogg (${finalDur ? finalDur.toFixed(1) + 's' : '??s'}, ${sizeMB.toFixed(1)}MB)`)
   results.push(rule.key)
 }
@@ -187,7 +187,7 @@ for (const rule of MATCH_RULES) {
 /* 3. 清理临时文件 */
 try {
   for (const f of readdirSync(tmpDir)) unlinkSync(join(tmpDir, f))
-  require('node:fs').rmdirSync(tmpDir)
+  rmdirSync(tmpDir)
 } catch { /* 忽略清理错误 */ }
 
 console.log(`\n完成！共处理 ${results.length}/${MATCH_RULES.length} 种素材：${results.join(', ')}`)

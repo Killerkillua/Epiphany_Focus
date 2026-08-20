@@ -44,6 +44,11 @@ export interface EnforcementHandle {
   enterBiliSession: (videoWin: BrowserWindow, opts: { plannedMs: number; topic: string }) => void
   /** 关闭 B 站视频时结束强制会话并落库 */
   exitBiliSession: (reason: 'manual' | 'completed' | 'emergency') => void
+  /**
+   * 登记"失焦拉回豁免"窗口（B 站悬浮面板）：用户与面板交互（点击 / 输入）导致
+   * 视频窗口失焦时，不执行 show()+focus() 抢回，保证面板可用。
+   */
+  setOverlayExempt: (win: BrowserWindow | null) => void
 }
 
 export function registerEnforcementModule(getWindow: () => BrowserWindow | null): EnforcementHandle {
@@ -62,6 +67,12 @@ export function registerEnforcementModule(getWindow: () => BrowserWindow | null)
   let guardian: ReturnType<typeof spawn> | null = null
   let lastPomos = 0
   let currentPolicy: DistractionPolicy = { ...DEFAULT_POLICY }
+  /** B 站悬浮面板窗口：失焦拉回豁免对象（面板交互时视频窗口不抢焦点） */
+  let overlayExemptWindow: BrowserWindow | null = null
+
+  /** 失焦拉回豁免判定：当前聚焦窗口是悬浮面板时不拉回视频窗口 */
+  const overlayExempt = (focused: BrowserWindow | null): boolean =>
+    overlayExemptWindow !== null && focused === overlayExemptWindow
 
   // ================= 强制会话生命周期 =================
 
@@ -75,9 +86,11 @@ export function registerEnforcementModule(getWindow: () => BrowserWindow | null)
     const sessionId =
       recordSessionStart({ mode, level, startedAt: Date.now(), durationPlanned: plannedMs }) ?? 0
 
-    applyLevelWindow(win)
+    // B 站模式：视频窗口不设置置顶（悬浮面板须浮于视频之上；全屏由 attachFullscreenLock 管理），
+    // 其余锁定属性（禁缩放 / 隐藏任务栏 / 拦截关闭）照常施加
+    applyLevelWindow(win, { skipAlwaysOnTop: mode === 'bili' })
     if (LEVEL_CAPS[level].globalShortcuts) registerShortcutGuard()
-    windowGuard.start(win, level, currentPolicy)
+    windowGuard.start(win, level, currentPolicy, { exemptFromPullBack: overlayExempt })
     if (LEVEL_CAPS[level].killTaskmgr) startTaskmgrKill()
     if (LEVEL_CAPS[level].guardian) spawnGuardian()
 
@@ -114,7 +127,8 @@ export function registerEnforcementModule(getWindow: () => BrowserWindow | null)
 
   /** 到点：记录统计 + 按"到点动作"执行（方案 4.2） */
   function onTimerComplete(snap: TimerSnapshot): void {
-    recordStudyStats(todayLocal(), active?.mode ?? 'focus', Math.ceil(snap.elapsedMs / 60_000), 1)
+    // 分钟换算统一在 recordStudyStats 内完成（毫秒入参）
+    recordStudyStats(todayLocal(), active?.mode ?? 'focus', snap.elapsedMs, 1)
     lastPomos = snap.completedPomodoros
     if (getSettings().endAction === 'lock') {
       lockWorkstation()
@@ -175,7 +189,7 @@ export function registerEnforcementModule(getWindow: () => BrowserWindow | null)
 
     if (remainingMs <= 0) {
       // 离线期间已到期：记为完成并解除
-      recordStudyStats(todayLocal(), enforced.mode, Math.ceil(enforced.plannedMs / 60_000), 1)
+      recordStudyStats(todayLocal(), enforced.mode, enforced.plannedMs, 1)
       if (enforced.sessionId) {
         recordSessionEnd(enforced.sessionId, {
           durationActual: enforced.plannedMs,
@@ -228,7 +242,7 @@ export function registerEnforcementModule(getWindow: () => BrowserWindow | null)
     const result = timer.stop()
     // 正序手动结束计数的一段，补记统计（逆序到点已由 complete 记录）
     if (result.completedPomodoros > before.completedPomodoros) {
-      recordStudyStats(todayLocal(), 'focus', Math.ceil(result.elapsedMs / 60_000), 1)
+      recordStudyStats(todayLocal(), 'focus', result.elapsedMs, 1)
     }
     endEnforcement('manual')
     return result
@@ -250,7 +264,7 @@ export function registerEnforcementModule(getWindow: () => BrowserWindow | null)
       currentPolicy = policy
       if (active) {
         const win = getWindow()
-        if (win) windowGuard.start(win, active.level, policy)
+        if (win) windowGuard.start(win, active.level, policy, { exemptFromPullBack: overlayExempt })
       }
       return policy
     }
@@ -296,5 +310,12 @@ export function registerEnforcementModule(getWindow: () => BrowserWindow | null)
     endEnforcement(reason)
   }
 
-  return { restoreAfterRestart, enterBiliSession, exitBiliSession }
+  return {
+    restoreAfterRestart,
+    enterBiliSession,
+    exitBiliSession,
+    setOverlayExempt: (win) => {
+      overlayExemptWindow = win
+    }
+  }
 }

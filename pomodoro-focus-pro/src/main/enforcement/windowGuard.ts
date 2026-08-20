@@ -50,6 +50,15 @@ function listWindowProcessNames(): Promise<string[]> {
   })
 }
 
+export interface WindowGuardStartOpts {
+  /**
+   * 失焦拉回豁免：聚焦窗口命中时（如 B 站悬浮面板）不拉回本窗口。
+   * 用于悬浮面板交互场景——点击面板（AI 输入 / 记事本）时视频窗口会失焦，
+   * 若不豁免会被 400ms 后 show()+focus() 抢回焦点并置前，导致面板不可用。
+   */
+  exemptFromPullBack?: (focused: BrowserWindow | null) => boolean
+}
+
 export class WindowGuard {
   private killTimer: NodeJS.Timeout | null = null
   private blurHandler: (() => void) | null = null
@@ -57,7 +66,7 @@ export class WindowGuard {
   private win: BrowserWindow | null = null
 
   /** 启动守卫（level 决定是否启用各能力；policy 来自渲染层配置） */
-  start(win: BrowserWindow, level: LockLevel, policy: DistractionPolicy): void {
+  start(win: BrowserWindow, level: LockLevel, policy: DistractionPolicy, opts?: WindowGuardStartOpts): void {
     this.win = win
     this.policy = {
       enabled: policy.enabled === true,
@@ -79,6 +88,8 @@ export class WindowGuard {
         setTimeout(() => {
           const w = this.win
           if (w && !w.isDestroyed() && !w.isFocused()) {
+            // 聚焦窗口命中豁免（如悬浮面板）→ 不拉回，避免抢走面板交互
+            if (opts?.exemptFromPullBack?.(BrowserWindow.getFocusedWindow())) return
             w.show()
             w.focus()
           }

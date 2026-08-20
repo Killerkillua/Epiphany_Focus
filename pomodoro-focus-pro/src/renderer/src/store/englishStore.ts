@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { extractErrorMessage } from '../utils/errorMessage'
 import type {
   AddGrammarPayload,
   AddVocabPayload,
@@ -29,7 +30,7 @@ export interface ChatMessage {
 
 /**
  * 渲染层 AI 配置初始占位（仅 init() 完成前的类型默认值）。
- * 真实配置（含默认 API Key）由 init() 从主进程 electron-store 拉取后覆盖，
+ * 真实配置（由用户在设置中配置的 API Key）由 init() 从主进程 electron-store 拉取后覆盖，
  * 此处 apiKey 保持空字符串，避免在渲染层 bundle 中明文携带密钥。
  */
 const DEFAULT_CONFIG: AiConfig = {
@@ -161,15 +162,17 @@ export const useEnglishStore = create<EnglishStore>((set, get) => ({
       const usage = await window.api.ai.usage()
       set({ usage })
     } catch (err) {
+      // 提取主进程中文错误（401 等），写入气泡并向上抛友好错误供 Toast 展示
+      const friendly = extractErrorMessage(err)
       set((state) => ({
         messages: state.messages.map((m) =>
           m.id === requestId
-            ? { ...m, content: m.content || '⚠️ 请求失败', streaming: false }
+            ? { ...m, content: m.content || `⚠️ ${friendly}`, streaming: false }
             : m
         ),
         isStreaming: false
       }))
-      throw err instanceof Error ? err : new Error(String(err))
+      throw new Error(friendly)
     }
   },
 
