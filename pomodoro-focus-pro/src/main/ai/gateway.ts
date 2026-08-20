@@ -2,6 +2,7 @@ import OpenAI from 'openai'
 import type { AiConfig, AiQuestion, AiReply, AiSource } from '../../shared/ai'
 import type { AiAskRequest } from '../../shared/bili'
 import { buildBiliMessages, buildMessages, SCENARIO_TEMPLATES, SYSTEM_PROMPT } from './prompts'
+import { toFriendlyAiError } from './errors'
 
 /**
  * AI 网关（OpenAI 兼容 SDK，双档位）：
@@ -167,22 +168,29 @@ export class EnglishGateway {
       profile === 'bili' && options.biliRequest
         ? buildBiliMessages(options.biliRequest)
         : buildMessages(question, sources)
-    const stream = await client.chat.completions.create({
-      model: cfg.model,
-      messages,
-      stream: true,
-      temperature: profile === 'bili' ? 0.5 : 0.7
-    })
 
-    let content = ''
-    for await (const chunk of stream) {
-      const delta = chunk.choices[0]?.delta?.content ?? ''
-      if (delta) {
-        content += delta
-        onDelta(delta)
+    // 根因 C 修复：create / 流式迭代 任一环节失败（401 鉴权、网络、限流等）
+    // 都翻译为中文、可操作、指向「设置 → AI 设置」的错误，不再裸抛 SDK 原文。
+    try {
+      const stream = await client.chat.completions.create({
+        model: cfg.model,
+        messages,
+        stream: true,
+        temperature: profile === 'bili' ? 0.5 : 0.7
+      })
+
+      let content = ''
+      for await (const chunk of stream) {
+        const delta = chunk.choices[0]?.delta?.content ?? ''
+        if (delta) {
+          content += delta
+          onDelta(delta)
+        }
       }
+      return { content, sources }
+    } catch (err) {
+      throw toFriendlyAiError(err)
     }
-    return { content, sources }
   }
 
   /** 演示模式：按档位输出结构化模拟回复，按词块异步流式推送 */
@@ -212,13 +220,15 @@ export class EnglishGateway {
     })
   }
 
-  /** B 站学习助手演示回复：展示学习主题、能力清单与配置入口 */
+  /** B 站学习助手演示回复：展示学习主题/视频标题、能力清单与配置入口 */
   private mockBiliReply(request?: AiAskRequest): string {
     const topic = request?.context?.topic?.trim()
-    return [
-      '**学习助手（演示模式）** 📺',
-      '',
-      topic ? `> 当前学习主题：「${topic}」` : '> 当前未设置学习主题',
+    const videoTitle = request?.context?.videoTitle?.trim()
+    const lines = ['**学习助手（演示模式）** 📺', '']
+    if (topic) lines.push(`> 当前学习主题：「${topic}」`)
+    if (videoTitle) lines.push(`> 正在观看：《${videoTitle}》`)
+    if (!topic && !videoTitle) lines.push('> 当前未设置学习主题')
+    lines.push(
       '',
       '我可以帮你：',
       '1. **概念讲解** —— 看不懂的点，用通俗语言讲明白',
@@ -227,7 +237,8 @@ export class EnglishGateway {
       '4. **学习规划** —— 给出下一步 15 分钟粒度建议',
       '',
       '在「设置 → AI 设置」填写硅基流动 API Key 后，将由真实模型基于视频内容答疑。'
-    ].join('\n')
+    )
+    return lines.join('\n')
   }
 
   /** 英语教学演示回复：按场景输出结构化模拟回复 */

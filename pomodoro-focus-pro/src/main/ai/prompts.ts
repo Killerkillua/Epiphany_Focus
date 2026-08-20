@@ -112,7 +112,8 @@ export const BILI_STUDY_PROMPT = `# 角色
 # 总结类回答格式（用户要求总结/笔记时必用）
 ## 核心要点（≤5 条，每条一句话）
 ## 易错点 / 注意事项
-## 建议下一步`
+## 建议下一步
+回答末尾附一行：> 🖊️ 以上要点可直接一键存入笔记（面板提供「记入笔记」按钮，无需复制粘贴）`
 
 /** 清洗多轮历史：仅保留 user/assistant 且内容非空，截取最近 8 轮防 token 膨胀 */
 export function sanitizeHistory(
