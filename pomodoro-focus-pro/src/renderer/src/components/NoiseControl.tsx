@@ -7,6 +7,7 @@ import {
   ThunderboltOutlined
 } from '@ant-design/icons'
 import { noiseEngine } from '../audio'
+import ScrollArea from './ScrollArea'
 import { NOISE_PRESETS, getNoisePreset } from '../../../shared/audio'
 import type { NoiseSettings, RestAction } from '../../../shared/audio'
 
@@ -101,7 +102,7 @@ function NoiseControl(): JSX.Element {
 
         {/* 活跃轨道独立混音 */}
         {activeTracks.length > 0 && (
-          <div className="noise-tracks">
+          <ScrollArea className="noise-tracks" style={{ maxHeight: 160 }}>
             <div className="noise-tracks-title">当前音轨（独立混音）</div>
             {activeTracks.map((track) => (
               <div key={track.key} className="noise-row">
@@ -118,7 +119,7 @@ function NoiseControl(): JSX.Element {
                 <span className="noise-row-value">{Math.round(track.volume * 100)}%</span>
               </div>
             ))}
-          </div>
+          </ScrollArea>
         )}
 
         <Divider style={{ margin: '4px 0' }} />
