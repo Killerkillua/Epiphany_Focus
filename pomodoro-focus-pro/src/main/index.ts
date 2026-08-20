@@ -5,6 +5,7 @@ import { registerNavigationModule } from './navigation'
 import { installBiliImageProxy } from './navigation/biliImageProxy'
 import { registerAiIpc } from './ai'
 import { registerAudioModule } from './audio'
+import { loadEnvFile } from './env'
 import { registerSettingsIpc } from './storage/settings'
 import { registerStatsIpc } from './storage/stats'
 import { getDb } from './storage/db'
@@ -86,6 +87,11 @@ function createMainWindow(): BrowserWindow {
 }
 
 app.whenReady().then(() => {
+  // .env 加载必须在任何模块读取配置之前（根因 B 修复）：
+  // 把应用根目录 .env 中的 POMODORO_AI_API_KEY 注入 process.env，
+  // 供 settings 默认值回退使用（见 storage/settings.ts getSettings）。
+  loadEnvFile()
+
   createMainWindow()
 
   // B 站封面图代理（bili-image:// 协议 + Referer 注入 + 磁盘缓存），修复 CDN 防盗链 403
@@ -101,14 +107,14 @@ app.whenReady().then(() => {
   // 强制引擎（计时 / 锁定分级 / 紧急退出 / 分心拦截 / 守护进程）
   const enforcement = registerEnforcementModule(getMainWindow)
 
-  // B 站模式（接入强制引擎 + 四层导航判定）
-  registerNavigationModule(getMainWindow, enforcement)
+  // 学习会话计时（B 站 / 英语模式，与强制引擎解耦；返回遮罩联动句柄）
+  const session = registerSessionModule(getMainWindow)
+
+  // B 站模式（接入强制引擎 + 四层导航判定 + 学习会话遮罩联动）
+  registerNavigationModule(getMainWindow, enforcement, session)
 
   // AI 网关（英语模式）
   registerAiIpc()
-
-  // 学习会话计时（B 站 / 英语模式，与强制引擎解耦）
-  registerSessionModule(getMainWindow)
 
   // 白噪音（全局热键 + 采样素材解析）
   registerAudioModule(getMainWindow)

@@ -1,6 +1,7 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import Store from 'electron-store'
 import { IPC_CHANNELS, IPC_EVENTS } from '../ipc'
+import { ENV_KEY_API_KEY } from '../env'
 import { SETTINGS_DEFAULTS, type AppSettings } from '../../shared/settings'
 
 /**
@@ -26,7 +27,14 @@ function getStore(): Store<AppSettings> {
 
 /** 返回完整设置快照 */
 export function getSettings(): AppSettings {
-  return getStore().store
+  const snapshot: AppSettings = { ...getStore().store }
+  // .env 注入（根因 B 修复）：用户未显式配置 API Key（存储为空）时，
+  // 回退到 .env 提供的 Key（主进程启动时经 loadEnvFile 注入 process.env）。
+  // 仅在读取时回退、不落盘，保持 .env 为密钥唯一来源，且显式保存的 Key 始终优先。
+  if (!snapshot.ai.apiKey && process.env[ENV_KEY_API_KEY]) {
+    snapshot.ai = { ...snapshot.ai, apiKey: process.env[ENV_KEY_API_KEY] }
+  }
+  return snapshot
 }
 
 /** 按点号路径批量写入（如 { 'pomodoro.focusMin': 30, 'ai.apiKey': 'sk-...' }），返回新快照 */
