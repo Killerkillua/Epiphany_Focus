@@ -107,18 +107,19 @@ export interface OverlaySize {
   height: number
 }
 
-/** 悬浮面板展开 / 折叠尺寸（主进程 biliWindow 与渲染层 OverlayApp 共用） */
-export const OVERLAY_EXPANDED_SIZE: OverlaySize = { width: 340, height: 560 }
-export const OVERLAY_COLLAPSED_SIZE: OverlaySize = { width: 56, height: 56 }
+/**
+ * 悬浮面板展开尺寸（px，主进程 biliWindow 与渲染层 OverlayApp 共用）。
+ * 学习助手重构后始终以展开态呈现，最小窗口 610×940（可拖拽 header 移动、可系统级缩放）。
+ */
+export const OVERLAY_EXPANDED_SIZE: OverlaySize = { width: 610, height: 940 }
 
 /**
- * 悬浮面板完整状态机（4 态）：
- * - expanded ：340×560 展开面板（AI 助手 + 记事本），可拖拽 header 移动
- * - collapsed：56×56 可移动悬浮球（呼吸动画 + hover 退出按钮），可拖拽球体移动
+ * 悬浮面板完整状态机（3 态，已删除 collapsed 悬浮球态）：
+ * - expanded ：610×940 展开面板（AI 助手 + 记事本 + 进度），可拖拽 header 移动、可缩放（最小 610×940）
  * - minimized：窗口最小化（仅 L0/L1 档允许；L2 档自动降级为 hidden）
  * - hidden   ：完全隐藏，Ctrl+Shift+O 呼出或 BiliModePage 按钮切换
  */
-export type OverlayState = 'expanded' | 'collapsed' | 'minimized' | 'hidden'
+export type OverlayState = 'expanded' | 'minimized' | 'hidden'
 
 /** 悬浮面板状态定义（尺寸 + 是否可见） */
 export interface OverlayStateDef {
@@ -128,7 +129,6 @@ export interface OverlayStateDef {
 
 export const OVERLAY_STATES: Record<OverlayState, OverlayStateDef> = {
   expanded: { size: OVERLAY_EXPANDED_SIZE, visible: true },
-  collapsed: { size: OVERLAY_COLLAPSED_SIZE, visible: true },
   minimized: { size: { width: 0, height: 0 }, visible: false },
   hidden: { size: { width: 0, height: 0 }, visible: false }
 }

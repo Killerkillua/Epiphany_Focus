@@ -2,9 +2,7 @@ import { useCallback, useEffect, useReducer, useRef } from 'react'
 import { Button, Tooltip, message } from 'antd'
 import {
   CloseOutlined,
-  EditOutlined,
   EyeInvisibleOutlined,
-  MenuFoldOutlined,
   MinusOutlined,
   RobotOutlined
 } from '@ant-design/icons'
@@ -19,20 +17,18 @@ import type { AiStreamChunk } from '../../../shared/ai'
 import type { PlayRecord } from '../../../shared/stats'
 import type { TimerSnapshot } from '../../../shared/types'
 import ScrollArea, { type ScrollAreaHandle } from '../components/ScrollArea'
-import { useWindowDrag } from './useWindowDrag'
-import { ProgressRing } from './ProgressRing'
 import ChatPane, { type ChatMsg } from './ChatPane'
 import NotesPane from './NotesPane'
 import ProgressPane from './ProgressPane'
 
 /**
- * 全屏悬浮面板（#overlay 路由，透明置顶窗口内运行）—— 全面重构版（I-1~I-5 / F-1~F-5 / P-1~P-3）：
- * - 状态机 4 态不变：expanded / collapsed / minimized / hidden（主进程窗口状态为唯一事实源）
+ * 全屏悬浮面板（#overlay 路由，透明置顶窗口内运行）—— 学习助手重构版：
+ * - 状态机 3 态：expanded / minimized / hidden（主进程窗口状态为唯一事实源；已删除 collapsed 悬浮球态）
+ * - 展开态 610×940，可拖拽 header 移动、可最小化（L0/L1）、最小窗口 610×940
  * - 展开态改「对话 / 笔记 / 进度」三页签（I-1），长对话与长笔记互不挤压
  * - AI 问答流式渲染（F-4/P-2，ai:bili-ask + ai:chunk），回答可「一键记入笔记」（I-4）
  * - 笔记按视频归档 + 增量 upsert（F-1/P-1）+ 重点标记（F-2）+ 时间点标记/跳转（F-2）
  * - 进度页签（F-3）：当前视频「已看/总时长·进度·看过几遍」+ 学习目标（F-5）
- * - 悬浮球角标（I-3）：学习计时进度环 + 未保存笔记红点 + hover 快捷「记一笔」
  * - 视频标题注入 AI 上下文（I-2），对话问候语说出正在看的视频
  */
 
@@ -191,7 +187,6 @@ function OverlayApp(): JSX.Element {
   const [state, dispatch] = useReducer(reducer, initialState)
   const logRef = useRef<ScrollAreaHandle>(null)
   const persistTimer = useRef<number | null>(null)
-  const { onPointerDown, dragging, consumeDragClick } = useWindowDrag()
 
   /* ===== 初始化：主进程状态快照 + 状态广播订阅 ===== */
   useEffect(() => {
@@ -344,8 +339,6 @@ function OverlayApp(): JSX.Element {
       .catch((err) => console.error('[overlay] 状态切换失败:', err))
   }
 
-  const expand = (): void => requestPhase('expanded')
-  const collapse = (): void => requestPhase('collapsed')
   const minimize = (): void => requestPhase('minimized')
   const hide = (): void => requestPhase('hidden')
 
@@ -520,53 +513,7 @@ function OverlayApp(): JSX.Element {
     void window.api.bili.closeVideo().catch((err) => console.error('[overlay] 关闭视频窗口失败:', err))
   }
 
-  /* ===== 折叠态：可移动悬浮球（拖拽移动 · 点击展开 · 计时进度环 · 未保存红点 · hover 快捷操作） ===== */
-  if (state.phase === 'collapsed') {
-    return (
-      <div className="overlay-ball-container">
-        {/* 球体：指针拖拽（保留 click/hover，原生 drag 区域会吞掉指针事件） */}
-        <div
-          className={`overlay-ball${dragging ? ' dragging' : ''}`}
-          onPointerDown={onPointerDown}
-          onClick={() => {
-            if (!consumeDragClick()) expand()
-          }}
-          title="拖拽移动 · 点击展开 · Ctrl+Shift+Q 退出"
-        >
-          <RobotOutlined className="overlay-ball-icon" />
-          {state.sessionActive && (
-            <div className="overlay-ball-ring">
-              <ProgressRing
-                ratio={state.sessionRatio}
-                size={56}
-                stroke={3}
-                trackColor="rgba(255,255,255,0.16)"
-                progressColor="var(--brand, #ff6b4a)"
-                label={`学习计时 ${Math.round(state.sessionRatio * 100)}%`}
-              />
-            </div>
-          )}
-          {state.noteDirty && <span className="overlay-ball-dot" title="有未保存的笔记变更" />}
-        </div>
-        {/* 快捷操作：hover 滑出 —— 记一笔 / 退出 */}
-        <div
-          className="overlay-ball-note"
-          onClick={() => {
-            dispatch({ type: 'set-tab', tab: 'notes' })
-            expand()
-          }}
-          title="快速记一笔"
-        >
-          <EditOutlined />
-        </div>
-        <div className="overlay-ball-exit" onClick={closeVideo} title="关闭视频，结束学习会话">
-          <CloseOutlined />
-        </div>
-      </div>
-    )
-  }
-
-  // minimized / hidden：窗口本身不可见，无需渲染内容
+  /* ===== 悬浮球态已删除（学习助手重构）：minimized / hidden 窗口本身不可见，无需渲染内容 ===== */
   if (state.phase !== 'expanded') {
     return <div className="overlay-root overlay-invisible" />
   }
@@ -592,9 +539,6 @@ function OverlayApp(): JSX.Element {
           </Tooltip>
           <Tooltip title="隐藏面板（Ctrl+Shift+O 呼出）">
             <Button type="text" size="small" icon={<EyeInvisibleOutlined />} onClick={hide} />
-          </Tooltip>
-          <Tooltip title="缩小为球">
-            <Button type="text" size="small" icon={<MenuFoldOutlined />} onClick={collapse} />
           </Tooltip>
           <Tooltip title="关闭视频，结束学习会话（Ctrl+Shift+Q）">
             <Button type="text" size="small" icon={<CloseOutlined />} onClick={closeVideo} />
