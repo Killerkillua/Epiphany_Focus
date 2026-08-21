@@ -90,7 +90,8 @@ function SettingsPage(): JSX.Element {
       lockLevel: s.lockLevel,
       endAction: s.endAction,
       sessionMaxHours: s.sessionMaxHours,
-      sessionOverlay: s.sessionOverlay,
+      // 旧配置缺失该字段时按默认值 true 处理（SETTINGS_DEFAULTS.sessionOverlay = true）
+      sessionOverlay: s.sessionOverlay !== false,
       focusMin: s.pomodoro.focusMin,
       shortBreakMin: s.pomodoro.shortBreakMin,
       longBreakMin: s.pomodoro.longBreakMin,

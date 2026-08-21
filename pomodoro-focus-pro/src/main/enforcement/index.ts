@@ -223,10 +223,12 @@ export function registerEnforcementModule(getWindow: () => BrowserWindow | null)
       return
     }
 
-    // 恢复：施加级别 + 续时（单调时钟剩余量）
-    applyLevelWindow(win)
+    // 恢复：施加级别 + 续时（单调时钟剩余量）。
+    // 与 beginEnforcement 对齐：bili 模式跳过置顶（悬浮面板须浮于视频之上）、
+    // 登记失焦拉回豁免，避免重启恢复后的强制配置与运行时不一致
+    applyLevelWindow(win, { skipAlwaysOnTop: enforced.mode === 'bili' })
     if (LEVEL_CAPS[enforced.level].globalShortcuts) registerShortcutGuard()
-    windowGuard.start(win, enforced.level, currentPolicy)
+    windowGuard.start(win, enforced.level, currentPolicy, { exemptFromPullBack: overlayExempt })
     if (LEVEL_CAPS[enforced.level].killTaskmgr) startTaskmgrKill()
     if (LEVEL_CAPS[enforced.level].guardian) spawnGuardian()
 

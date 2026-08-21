@@ -448,8 +448,12 @@ export function ensureOverlayOnTop(): void {
 /** 悬浮面板调整窗口尺寸并重新停靠（兼容入口；最小尺寸钳制到 610×940） */
 export function resizeOverlay(size: OverlaySize): void {
   if (!active || active.overlay.isDestroyed()) return
-  const width = Math.max(OVERLAY_EXPANDED_SIZE.width, Math.round(size.width))
-  const height = Math.max(OVERLAY_EXPANDED_SIZE.height, Math.round(size.height))
+  // 数值校验：非法（NaN / 非有限数 / 缺字段）尺寸直接忽略，避免 Math.round→setSize 崩溃或窗口异常
+  const w = Number(size?.width)
+  const h = Number(size?.height)
+  if (!Number.isFinite(w) || !Number.isFinite(h)) return
+  const width = Math.max(OVERLAY_EXPANDED_SIZE.width, Math.round(w))
+  const height = Math.max(OVERLAY_EXPANDED_SIZE.height, Math.round(h))
   active.overlay.setSize(width, height)
   dockOverlay()
 }

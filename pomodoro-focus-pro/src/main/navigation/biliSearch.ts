@@ -9,11 +9,14 @@ import type { BiliSearchOptions, BiliSearchResponse, BiliVideoItem } from '../..
  * 支持 search_type=video、order（totalrank/click/pubdate）、分页。
  *
  * 风控自适应（C-3）：
- * - 命中 -412 时按指数退避等待（1s→2s→4s→8s）并重置 WBI 密钥缓存重试一次，
+ * - 命中 -412（JSON code 或 HTTP 状态码）时按指数退避等待（1s→2s→4s→8s）并重置 WBI 密钥缓存重试一次，
  *   避免连续请求加剧封禁；连续失败仍抛可读错误提示稍后再试。
  */
 
 const SEARCH_URL = 'https://api.bilibili.com/x/web-interface/wbi/search/type'
+
+/** 单次搜索请求超时（ms）：网络异常或服务端不响应时终止挂起，避免 IPC 处理器无限等待 */
+const SEARCH_TIMEOUT_MS = 10_000
 
 const COMMON_HEADERS = {
   'User-Agent':
@@ -115,9 +118,22 @@ export async function searchBiliVideo(options: BiliSearchOptions): Promise<BiliS
 
     let res: Response
     try {
-      res = await net.fetch(`${SEARCH_URL}?${query}`, { headers: COMMON_HEADERS })
+      res = await net.fetch(`${SEARCH_URL}?${query}`, {
+        headers: COMMON_HEADERS,
+        // 超时中止：AbortSignal.timeout 触发时 net.fetch reject（TimeoutError/AbortError）
+        signal: AbortSignal.timeout(SEARCH_TIMEOUT_MS)
+      })
     } catch (err) {
-      throw new Error(`搜索请求失败: ${err instanceof Error ? err.message : String(err)}`)
+      const msg = err instanceof Error ? err.message : String(err)
+      // 区分超时与一般网络错误，给出可读提示
+      if (err instanceof Error && (err.name === 'TimeoutError' || err.name === 'AbortError')) {
+        throw new Error(`搜索请求超时（${SEARCH_TIMEOUT_MS / 1000}s），请稍后再试`)
+      }
+      throw new Error(`搜索请求失败: ${msg}`)
+    }
+    // HTTP 层 -412 同样是风控拦截（与 JSON code=-412 同语义），走退避重试
+    if (res.status === 412) {
+      throw new RiskBlockedError()
     }
     if (!res.ok) {
       throw new Error(`搜索请求失败（HTTP ${res.status}）`)

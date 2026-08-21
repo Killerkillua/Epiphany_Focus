@@ -42,9 +42,17 @@ function NotesPage(): JSX.Element {
 
   const save = async (tip = true): Promise<void> => {
     try {
+      // 保留既有笔记的元数据（bvid / videoTitle / isKey / timestampS / source），
+      // 否则整份保存会把这些属性清空（编辑后按视频归档 / 重点标记丢失）
+      const existing = entries.find((e) => e.id === currentId)
       const next: NoteEntry[] = [
         ...entries.filter((e) => e.id !== currentId),
-        { id: currentId, createdAt: Date.now(), content: draft }
+        {
+          ...existing,
+          id: currentId,
+          createdAt: existing?.createdAt ?? Date.now(),
+          content: draft
+        }
       ]
       await window.api.notes.save(next)
       setEntries(next)
@@ -79,7 +87,9 @@ function NotesPage(): JSX.Element {
     a.href = url
     a.download = `笔记-${new Date().toISOString().slice(0, 10)}.md`
     a.click()
-    URL.revokeObjectURL(url)
+    // 推迟到下载触发后再释放：a.click() 的下载由浏览器异步接管，
+    // 同步栈内 revokeObjectURL 可能导致部分浏览器取消下载
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
     message.success('已导出 Markdown')
   }
 

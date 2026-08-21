@@ -49,6 +49,10 @@ export const useStatsStore = create<StatsState>((set, get) => {
     }
   }
 
+  // 请求令牌：快速连续切换天数 / 重复刷新时，较早请求的响应可能晚到，
+  // 用自增令牌丢弃过期结果（含错误回调），避免旧数据覆盖新请求结果
+  let loadToken = 0
+
   const loadAll = async (days: number): Promise<void> => {
     const s = get()
     const needTrend = s.trendDays !== days
@@ -56,6 +60,7 @@ export const useStatsStore = create<StatsState>((set, get) => {
     const needHeatmap = s.heatmap === null
     // 全部命中缓存：直接使用，不发请求
     if (!needTrend && !needModes && !needHeatmap) return
+    const token = ++loadToken
     set({ loading: true })
     clearError()
     try {
@@ -64,8 +69,10 @@ export const useStatsStore = create<StatsState>((set, get) => {
         needModes ? window.api.stats.modeCompare() : Promise.resolve(s.modes),
         needHeatmap ? window.api.stats.heatmap() : Promise.resolve(s.heatmap)
       ])
+      if (token !== loadToken) return // 已有更新的请求发起：丢弃过期结果
       set({ trend, trendDays: days, modes, heatmap, loading: false })
     } catch (err) {
+      if (token !== loadToken) return // 过期错误同样丢弃，避免旧失败覆盖新状态
       set({ error: err instanceof Error ? err.message : '统计数据加载失败', loading: false })
     }
   }

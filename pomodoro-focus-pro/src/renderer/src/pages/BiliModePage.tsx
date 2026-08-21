@@ -357,12 +357,14 @@ function BiliModePage(): JSX.Element {
         </div>
       )}
 
-      {/* 分页：多于一页时显示（翻页重新请求，page 参数此前被硬编码为 1） */}
+      {/* 分页：多于一页时显示（翻页重新请求，page 参数此前被硬编码为 1）。
+          total 用 numPages × PAGE_SIZE（B 站返回的页数口径），
+          不用 numResults：numResults 与页数换算可能不同步，导致页码按钮数与实际页数不符 */}
       {searched && items.length > 0 && numPages > 1 && (
         <div className="bili-pagination">
           <Pagination
             current={page}
-            total={numResults}
+            total={numPages * PAGE_SIZE}
             pageSize={PAGE_SIZE}
             showSizeChanger={false}
             showQuickJumper

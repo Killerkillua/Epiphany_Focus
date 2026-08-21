@@ -39,7 +39,9 @@ export function toFriendlyAiError(err: unknown): Error {
     )
   }
   if (status === 429) {
-    return new Error('请求过于频繁（HTTP 429），请稍后重试。')
+    return new Error(
+      '请求过于频繁（HTTP 429，已达服务商限流或额度上限）。请稍后重试；若持续出现，可到「设置 → AI 设置」检查服务商额度或更换模型后重试。'
+    )
   }
   if (status !== undefined && status >= 500) {
     return new Error(
