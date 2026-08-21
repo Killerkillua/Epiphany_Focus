@@ -335,24 +335,34 @@ App.tsx
   }
 }
 
-/* ===== Wide: 大窗口/小屏全屏 — max-width 生效 ===== */
+/* ===== Wide: 大窗口/小屏全屏 — max-width 生效；数据型页面放宽 ===== */
 @media (min-width: 1200px) {
   .app-content {
     max-width: var(--content-max);
     margin-inline: auto;
   }
+  /* 数据密集型页面（统计 / B 站，.page-dashboard）在宽容器下放宽到 --dashboard-max，
+     不再被 .app-content 的 1200px 上限卡住；阅读型页面保持 --content-max */
+  .app-content:has(.page-dashboard) {
+    max-width: var(--dashboard-max);
+  }
 }
 
-/* ===== Ultrawide: 全屏/超宽 — 侧栏封顶，数据区放宽 ===== */
+/* ===== Ultrawide: 全屏/超宽 — 侧栏封顶，数据区保持上限 ===== */
 @media (min-width: 1600px) {
   .app-sider {
     width: 280px !important;
   }
-  .app-content {
+  .app-content:has(.page-dashboard) {
     max-width: var(--dashboard-max);
   }
 }
 ```
+
+> **实现对齐（P-2）**：数据型页面（统计 / B 站）的 1600px 上限在 **Wide（≥1200px）** 即生效——
+> 视口 1200–1600px 时可随视口增长（上限 1600px），Ultrawide 下保持 1600px 居中；
+> 阅读型页面（首页/专注/英语/记事本/设置）始终为 `--content-max`（1200px）。
+> 与 §3.4「阅读型 1200px，数据型 1600px」及 ADR 0001 口径一致。
 
 > **注意**：主窗口 minWidth 940px 意味着默认的堆叠布局（< 768px）实际不触发，但保留供 B 站窗口和未来兼容。
 

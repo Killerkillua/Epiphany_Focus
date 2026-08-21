@@ -33,6 +33,7 @@ import {
   loadNotesAll,
   loadNotesByVideo,
   markPlayRecordDone,
+  migrateNotesTable,
   recordSessionEnd,
   recordSessionStart,
   recordStudyStats,
@@ -273,6 +274,48 @@ describe('notes 表迁移（旧 INTEGER 主键 → TEXT 主键 + 新字段，数
     expect(reloaded).toHaveLength(1)
     expect(reloaded[0].isKey).toBe(true)
   })
+
+  it('迁移失败整体回滚：旧表结构与数据完整保留（原子性，P0）', () => {
+    // 建"旧结构" notes 表并写入旧数据（绕过 getDb 的新 SCHEMA）
+    closeDb()
+    const { DatabaseSync } = createRequire(__filename)('node:sqlite') as typeof import('node:sqlite')
+    const raw = new DatabaseSync(process.env.POMODORO_DB_PATH!)
+    raw.exec(`
+      CREATE TABLE notes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        created_at INTEGER NOT NULL,
+        video_title TEXT DEFAULT '',
+        content TEXT NOT NULL,
+        tags TEXT DEFAULT ''
+      );
+      INSERT INTO notes (created_at, video_title, content, tags) VALUES (1000, '旧视频', '旧笔记内容', '');
+    `)
+
+    // 包装驱动：迁移主体 exec（RENAME→CREATE→INSERT→DROP）抛错，模拟中途失败
+    let execCount = 0
+    const broken = {
+      exec: (sql: string): void => {
+        execCount += 1
+        if (execCount === 1) throw new Error('模拟迁移中途失败')
+        raw.exec(sql)
+      },
+      prepare: (sql: string): ReturnType<typeof raw.prepare> => raw.prepare(sql)
+    }
+    // 迁移内部吞错（打日志），对外不抛；关键是状态必须回滚
+    expect(() => migrateNotesTable(broken as unknown as Parameters<typeof migrateNotesTable>[0])).not.toThrow()
+
+    // 回滚后：notes 仍是旧结构、旧数据完好；无孤立 notes_legacy（无半迁移状态）
+    const names = (raw.prepare('PRAGMA table_info(notes)').all() as Array<{ name: string }>).map((c) => c.name)
+    expect(names).not.toContain('bvid')
+    expect(names).not.toContain('timestamp_s')
+    const count = raw.prepare('SELECT COUNT(*) AS c FROM notes').get() as { c: number }
+    expect(count.c).toBe(1)
+    const legacy = raw
+      .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'notes_legacy'`)
+      .get()
+    expect(legacy).toBeUndefined()
+    raw.close()
+  })
 })
 
 /* ================= play_records（按视频学习进度，F-3） ================= */
@@ -315,8 +358,11 @@ describe('play_records（进度累计 / 状态 / 目标）', () => {
     expect(getPlayRecord('BV3')?.status).toBe('done')
   })
 
-  it('listPlayRecords 按更新时间倒序返回全部', () => {
+  it('listPlayRecords 按更新时间倒序返回全部', async () => {
     upsertPlayRecord({ bvid: 'BV1', title: '一' })
+    // 两次写入若落在同一毫秒，updated_at 相同、排序退化为插入序导致 flaky：
+    // 等待 ≥2ms 确保 BV2 的 updated_at 严格更大
+    await new Promise((r) => setTimeout(r, 5))
     tickPlayRecord({ bvid: 'BV2', watchedDeltaS: 5, positionS: 5 })
     const list = listPlayRecords()
     expect(list.map((r) => r.bvid)).toEqual(['BV2', 'BV1'])

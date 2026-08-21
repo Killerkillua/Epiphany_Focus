@@ -1,4 +1,5 @@
 import { Button, Empty, Input, Tooltip, message } from 'antd'
+import type { KeyboardEvent as ReactKeyboardEvent } from 'react'
 import {
   DeleteOutlined,
   DownloadOutlined,
@@ -19,7 +20,8 @@ interface NotesPaneProps {
   onDraftChange(value: string): void
   onNewNote(): void
   onSelectNote(entry: NoteEntry): void
-  onDeleteNote(id: string): void
+  /** 返回 Promise：落库完成 resolve / 失败 reject，删除成功/失败提示才可靠 */
+  onDeleteNote(id: string): Promise<void> | void
   onToggleKey(entry: NoteEntry): void
   /** F-2 时间点标记：记录当前播放位置为重点 */
   onMarkKeyPoint(): void
@@ -55,9 +57,22 @@ function NotesPane({
 }: NotesPaneProps): JSX.Element {
   const hasBvid = Boolean(context?.bvid)
 
-  const handleDelete = (entry: NoteEntry): void => {
-    onDeleteNote(entry.id)
-    message.success('笔记已删除')
+  /** 删除笔记：等落库结果再提示（成功/失败不再凭感觉提示） */
+  const handleDelete = async (entry: NoteEntry): Promise<void> => {
+    try {
+      await onDeleteNote(entry.id)
+      message.success('笔记已删除')
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : '删除失败')
+    }
+  }
+
+  /** 键盘选择笔记：Enter / Space 与点击等效（无障碍） */
+  const handleItemKeyDown = (e: ReactKeyboardEvent, entry: NoteEntry): void => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault()
+      onSelectNote(entry)
+    }
   }
 
   return (
@@ -91,10 +106,15 @@ function NotesPane({
           notes.map((entry) => (
             <div
               key={entry.id}
+              role="button"
+              tabIndex={0}
+              aria-pressed={entry.id === editingId}
+              aria-label={`笔记：${entry.content.split('\n')[0] || '（空笔记）'}`}
               className={`overlay-note-item${entry.id === editingId ? ' active' : ''}${
                 entry.isKey ? ' is-key' : ''
               }`}
               onClick={() => onSelectNote(entry)}
+              onKeyDown={(e) => handleItemKeyDown(e, entry)}
             >
               <div className="overlay-note-item-main">
                 <Tooltip title={entry.isKey ? '取消重点标记' : '标记为重点'}>
@@ -102,6 +122,7 @@ function NotesPane({
                     type="text"
                     size="small"
                     className="overlay-note-star"
+                    aria-label={entry.isKey ? '取消重点标记' : '标记为重点'}
                     icon={entry.isKey ? <StarFilled style={{ color: 'var(--brand, #ff6b4a)' }} /> : <StarOutlined />}
                     onClick={(ev) => {
                       ev.stopPropagation()
@@ -118,6 +139,7 @@ function NotesPane({
                       type="text"
                       size="small"
                       className="overlay-note-time"
+                      aria-label={`跳转到时间点 ${formatSeconds(entry.timestampS)}`}
                       onClick={(ev) => {
                         ev.stopPropagation()
                         onSeek(entry.timestampS ?? 0)
@@ -132,10 +154,11 @@ function NotesPane({
                     type="text"
                     size="small"
                     className="overlay-note-delete"
+                    aria-label="删除笔记"
                     icon={<DeleteOutlined />}
                     onClick={(ev) => {
                       ev.stopPropagation()
-                      handleDelete(entry)
+                      void handleDelete(entry)
                     }}
                   />
                 </Tooltip>

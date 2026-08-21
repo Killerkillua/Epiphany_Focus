@@ -102,11 +102,15 @@ session.start（计时开始）
 
 bili.openVideo（点击视频）
   └─ openVideo(payload)
-       ├─ new BrowserWindow({ fullscreen: autoFullscreen, ... })   // 视频窗口，未置顶
+       ├─ closeVideo()                                     // 幂等：先关旧窗
+       ├─ onBeforeOpen() → session.suspendOverlay()       // P-2 前置：创建窗口前先释放主窗口遮罩
+       ├─ new BrowserWindow({ fullscreen: autoFullscreen, show: false, ... })   // 视频窗口，未置顶
        ├─ attachFullscreenLock(video, { autoFullscreen, ... })
-       │     └─ win.setFullScreen(true) + resize 拉回 + before-input-event 消费 Escape
+       │     └─ autoFullscreen 延迟到 'show' 后 setFullScreen(true) + resize 拉回
+       │        + before-input-event：主进程兜底检测 5×Esc（3s 窗口）→ 唤起紧急退出弹窗
+       ├─ video.show()                                     // P-2：创建后立即显示（不等 ready-to-show）
        ├─ video.loadURL('https://www.bilibili.com/video/BV...')
-       ├─ createOverlay(video, ...)                                 // 悬浮面板（置顶）
+       ├─ createOverlay(video, ...)                        // 悬浮面板（置顶）
        ├─ active = { video, overlay, ... }
        └─ onOpenCallback(video, payload)   // navigation/index.ts
              ├─ enforcement.enterBiliSession(video, ...)
@@ -121,9 +125,12 @@ bili.openVideo（点击视频）
              ├─ upsertPlayRecord(...)
              ├─ enforcement.setOverlayExempt(getOverlayWindow())
              ├─ ensureOverlayOnTop()
-             └─ session.suspendOverlay()                            // 释放主窗口遮罩
-                   └─ releaseSessionOverlay() → releaseLevelWindow(主窗口)
-                         主窗口 count 1→0：setFullScreen(false) + setAlwaysOnTop(false)
+             └─ finally: session.suspendOverlay()          // P-2 兜底：无论成败再释放一次（幂等）
+```
+
+> **实现状态（P-2 已落地）**：`session.suspendOverlay()` 已前置到 `onBeforeOpen`（创建视频窗口之前），
+> `onOpen` 回调整体 `try/catch/finally`，`finally` 中再次 `suspendOverlay()` 幂等兜底——
+> 即使 `enterBiliSession` 抛错（如未设恢复码），主窗口遮罩也必然释放。
 ```
 
 ### 2.3 根本原因分析
@@ -134,30 +141,31 @@ bili.openVideo（点击视频）
 
 - 视频窗口以 `fullscreen:true` 创建，但 B 站模式 **`skipAlwaysOnTop:true` 不置顶**（为让悬浮面板浮于视频之上）。
 - 主窗口 `screen-saver` 置顶层级**恒高于**未置顶的视频窗口 → 视频窗口创建后立即被主窗口全屏遮罩**盖住**。
-- `onOpen` 回调末尾的 `session.suspendOverlay()` 虽会释放主窗口遮罩，但存在两个风险：
-  1. **异常跳过**：`onOpen` 回调中 `enterBiliSession`（`assertExitSafety` 未设恢复码时抛错）或 `upsertPlayRecord` 抛错，`session.suspendOverlay()` 永不执行 → 主窗口遮罩永久残留，视频窗口被永久遮挡。
-  2. **引用计数叠加**：若主窗口遮罩计数 >1（如与专注模式强制会话叠加、`restoreAfterRestart` 重启恢复叠加），`releaseLevelWindow` 只减 1，计数仍 >0，主窗口保持全屏 + 置顶。
-  3. **Windows 异步过渡**：`setFullScreen(false)` + `setAlwaysOnTop(false)` 是异步过渡，存在层级竞争窗口期，视频窗口可能无法及时浮出。
+- **现状（已修复）**：`session.suspendOverlay()` 已前置到 `onBeforeOpen`（创建视频窗口之前）+ `onOpen` 的 `finally` 幂等兜底，原有两个风险已消除：
+  1. ~~异常跳过~~：`enterBiliSession`（`assertExitSafety` 未设恢复码时抛错）或 `upsertPlayRecord` 抛错 → `finally` 仍执行 `suspendOverlay()`，主窗口遮罩不会残留。
+  2. ~~引用计数叠加~~：`suspendOverlay()` 为幂等释放（计数归零），`restoreAfterRestart` 叠加场景由释放侧统一收敛。
+  3. **Windows 异步过渡**：`setFullScreen(false)` + `setAlwaysOnTop(false)` 是异步过渡，存在层级竞争窗口期，视频窗口可能无法及时浮出（保留观察项）。
 
 #### 2.3.2 次因：视频窗口全屏显示异常
 
 - 视频窗口 `show` 默认 `true`，创建即显示为**深色全屏窗口**（`backgroundColor:'#0f1115'`）。
 - B 站页面加载期间（或需登录 / 加载失败 / 播放器未初始化）用户看到的是**黑屏全屏**，误判为"视频窗口不显示"。
-- `ready-to-show` → `video.show()` 与 `attachFullscreenLock` 的 `setFullScreen(true)` 在 Windows 上存在"先全屏后显示"的显示异常风险。
+- `ready-to-show` → `video.show()` 与 `attachFullscreenLock` 的 `setFullScreen(true)` 在 Windows 上存在"先全屏后显示"的显示异常风险（**已修复**：`show:false` 创建 → 立即 `show()` → `autoFullscreen` 延迟到 `show` 事件后再 `setFullScreen(true)`）。
 
 #### 2.3.3 次因：全屏遮罩无法关闭（强制关闭无效）
 
 1. **视频窗口被拦截关闭**：`applyLevelWindow(videoWin)` 添加 `close` 处理器 `event.preventDefault()` + `setSkipTaskbar(true)` + `setResizable(false)`。Alt+F4 / 关闭按钮 / 任务栏均无法关闭视频窗口。
 2. **紧急退出不销毁视频窗口**：`endEnforcement('emergency')` 中 `const win = target ?? getWindow()` 取的是**主窗口**，`releaseLevelWindow(主窗口)` 对主窗口计数为 0 时是 no-op；**视频窗口的遮罩（count=1）从不释放，视频窗口也从不销毁**。紧急退出成功后视频窗口仍保持全屏 + 拦截关闭 + 隐藏任务栏，用户被永久困在全屏。
-3. **Escape 被消费**：`attachFullscreenLock` 的 `before-input-event` 在视频窗口消费 Escape；而"连按 5 次 Esc"紧急退出检测位于**主窗口渲染层**。视频窗口聚焦时主窗口收不到 Esc，紧急退出根本无法触发。
+3. **Escape 被消费**：`attachFullscreenLock` 的 `before-input-event` 在视频窗口消费 Escape；而"连按 5 次 Esc"紧急退出检测位于**主窗口渲染层**。视频窗口聚焦时主窗口收不到 Esc，紧急退出根本无法触发（**已修复**：主进程在视频窗口侧兜底检测 5×Esc，命中后唤起主窗口紧急退出弹窗，见 2.4 第 5 条）。
 
-### 2.4 修复建议（按优先级）
+### 2.4 修复建议（按优先级，均已实现，此处与代码现状对齐）
 
-1. **释放主窗口遮罩前置**：在创建/显示视频窗口**之前**先执行 `session.suspendOverlay()`（或把 `onOpen` 回调中 `session.suspendOverlay()` 提到 `enterBiliSession` 之前），并给 `onOpen` 回调整体加 `try/catch/finally`，保证 `suspendOverlay` 必然执行。
-2. **紧急退出兜底销毁视频窗口**：`endEnforcement` 增加对 B 站视频窗口的清理——调用 `closeVideo()`（`video.destroy()` 绕过 close 拦截）并释放其遮罩，确保紧急退出后无残留全屏窗口。
-3. **恢复码前置校验前移**：`bili.openVideo` 的 IPC 处理器在创建视频窗口前先 `assertExitSafety` 校验，未设恢复码时直接返回错误，避免"窗口已创建但会话失败"的中间态。
-4. **视频窗口显示兜底**：视频窗口创建后立即 `show()`（而非等 `ready-to-show`），并延迟到显示后再 `setFullScreen(true)`，规避"先全屏后显示"异常。
-5. **Escape 放行**：视频窗口的 `before-input-event` 仅在非强制会话期消费 Escape，或改为消费"单次 Esc"而放行"连按 5 次 Esc"（渲染层检测），保证紧急退出始终可达。
+1. ✅ **释放主窗口遮罩前置**：`session.suspendOverlay()` 前移到 `onBeforeOpen`（创建/显示视频窗口**之前**执行，`biliWindow.openVideo` 调用）；`onOpen` 回调整体 `try/catch/finally`，`finally` 中再次 `suspendOverlay()` 幂等兜底，保证必然执行（`navigation/index.ts`）。
+2. ✅ **紧急退出兜底销毁视频窗口**：`endEnforcement('emergency')` 调用 `closeVideo()`（`video.destroy()` 绕过 close 拦截）并级联销毁悬浮面板、释放遮罩，确保紧急退出后无残留全屏窗口（`enforcement/index.ts`）。
+3. ✅ **恢复码前置校验前移**：`bili.openVideo` 的 IPC 处理器在创建视频窗口前先 `assertExitSafety` 校验（`navigation/index.ts`），未设恢复码时直接拒绝，避免"窗口已创建但会话失败"的中间态。
+4. ✅ **视频窗口显示兜底**：视频窗口以 `show:false` 创建后立即 `show()`（不等 `ready-to-show`，页面加载失败/需登录时窗口也不至于永不显示）；`autoFullscreen` 延迟到 `show` 事件后再 `setFullScreen(true)`，规避"先全屏后显示"异常（`biliWindow.ts` / `fullscreenLock.ts`）。
+5. ✅ **Escape 兜底（主进程）**：视频窗口聚焦时主窗口渲染层收不到 Esc，"连按 5 次 Esc"渲染层检测失效——由主进程在视频窗口 `before-input-event` 兜底检测 5×Esc（3 秒窗口），命中后经 `onEscapeSpam` 唤起主窗口紧急退出弹窗，保证紧急退出始终可达；单次 Esc 仍被消费，防止 B 站播放器退全屏触发"退出→拉回"闪烁（`fullscreenLock.ts`）。
+6. ℹ️ **onOpen 回滚时序**：强制会话启动失败时，`closeVideo()`（同步 `video.destroy()`）推迟到 `setImmediate` 执行——`openVideo` 在 `onOpen` 返回后仍会访问 `video`（如 `isFullScreen()` 上报状态），同步销毁会导致"访问已销毁窗口"抛错（`navigation/index.ts`）。
 
 ---
 
