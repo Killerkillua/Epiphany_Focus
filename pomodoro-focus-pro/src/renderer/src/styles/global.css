@@ -1923,15 +1923,20 @@ body,
   }
 }
 
-/* ===== Wide（≥1200px）：内容区 max-width 居中（与阶段一全局规则一致，显式声明断点语义） ===== */
+/* ===== Wide（≥1200px）：内容区 max-width 居中；数据密集型页面放宽到 --dashboard-max ===== */
 @media (min-width: 1200px) {
   .app-content {
     max-width: var(--content-max);
     margin-inline: auto;
   }
+  /* 统计 / B 站等数据型页面（.page-dashboard）：宽容器下即可达 1600px 目标宽度，
+     不再被 .app-content 的 1200px 上限卡住；阅读型页面保持 --content-max（1200px） */
+  .app-content:has(.page-dashboard) {
+    max-width: var(--dashboard-max);
+  }
 }
 
-/* ===== Ultrawide（≥1600px）：侧栏封顶 280px；数据密集型页面放宽内容上限 ===== */
+/* ===== Ultrawide（≥1600px）：侧栏封顶 280px；数据密集型页面保持上限 ===== */
 @media (min-width: 1600px) {
   /* antd Sider 宽度由内联 flex/max/min-width 控制，需 !important 覆盖；排除折叠态防止展开冲突 */
   .app-sider:not(.ant-layout-sider-collapsed) {
@@ -1941,7 +1946,8 @@ body,
     flex: 0 0 280px !important;
   }
 
-  /* 阅读型页面保持 --content-max（1200px）；统计 / B 站等数据型页面放宽到 --dashboard-max（1600px） */
+  /* 阅读型页面保持 --content-max（1200px）；统计 / B 站等数据型页面放宽到 --dashboard-max（1600px）。
+     （Wide 断点已放宽数据型页面，此处声明保持语义一致，随视口继续居中） */
   .app-content:has(.page-dashboard) {
     max-width: var(--dashboard-max);
   }
@@ -2005,8 +2011,10 @@ body,
 
 /* ---- 全屏专项优化 ---- */
 
-/* 弹窗流体宽度：窗口 ↔ 全屏保持比例一致（antd 默认 520px 内联宽度，需 !important 覆盖） */
-.ant-modal {
+/* 弹窗流体宽度：窗口 ↔ 全屏保持比例一致（antd 默认 520px 内联宽度，需 !important 覆盖）。
+   仅作用于显式声明 .app-fluid-modal 的弹窗（rootClassName），
+   避免全局 .ant-modal 强制改写不希望流体排版的弹窗宽度（如固定 420px 的反馈弹窗）。 */
+.app-fluid-modal .ant-modal {
   width: clamp(320px, 50vw, 600px) !important;
   max-width: calc(100vw - 32px);
 }

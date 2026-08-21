@@ -169,7 +169,11 @@ function App(): JSX.Element {
         />
       </Sider>
         <Content className="app-content">
-          <ScrollArea style={{ height: '100%' }}>{renderPage()}</ScrollArea>
+          {/* key=page：切换页面时重挂载滚动区，重置滚动位置并重新计算滚动条——
+              否则旧页面的滚动位置/滚动条指标会残留到新页面（非可滑动页出现幽灵滑块或滑块消失） */}
+          <ScrollArea key={page} style={{ height: '100%' }}>
+            {renderPage()}
+          </ScrollArea>
         </Content>
       </Layout>
 
@@ -182,6 +186,8 @@ function App(): JSX.Element {
         cancelText="取消"
         confirmLoading={emergencyBusy}
         maskClosable={false}
+        // 紧急退出弹窗在强制会话（含全屏）中高频出现：按视口比例流体缩放
+        rootClassName="app-fluid-modal"
       >
         <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
           输入紧急恢复码以解除当前强制会话（错误 3 次将冷却 1 分钟；L2 级别额外冷却 30 秒）。

@@ -219,8 +219,9 @@ function LearningAssistantDrawer({ open, topic, onClose }: LearningAssistantDraw
     setNoteDirty(false)
   }
 
-  const handleDeleteNote = (id: string): void => {
-    void window.api.notes
+  /** 返回 Promise：NotesPane 等落库结果后再提示成功/失败 */
+  const handleDeleteNote = (id: string): Promise<void> => {
+    return window.api.notes
       .delete(id)
       .then(() => {
         setNotes((prev) => prev.filter((n) => n.id !== id))
@@ -230,7 +231,6 @@ function LearningAssistantDrawer({ open, topic, onClose }: LearningAssistantDraw
           setNoteDirty(false)
         }
       })
-      .catch((err) => message.error(`删除失败: ${err instanceof Error ? err.message : String(err)}`))
   }
 
   const handleToggleKey = (entry: NoteEntry): void => {
@@ -260,11 +260,12 @@ function LearningAssistantDrawer({ open, topic, onClose }: LearningAssistantDraw
       .catch((err) => message.error(`操作失败: ${err instanceof Error ? err.message : String(err)}`))
   }
 
-  const handleSetGoal = (bvid: string, goalRounds: number, goalDeadline?: string): void => {
-    void window.api.playRecords
+  /** 返回 Promise：进度页签等落库完成后提示（错误由调用方展示） */
+  const handleSetGoal = (bvid: string, goalRounds: number, goalDeadline?: string): Promise<void> => {
+    return window.api.playRecords
       .setGoal(bvid, goalRounds, goalDeadline)
       .then(() => loadData())
-      .catch((err) => message.error(`目标保存失败: ${err instanceof Error ? err.message : String(err)}`))
+      .then(() => undefined)
   }
 
   /* ===== 导出 Markdown / OCR（复用 NotesPage 能力） ===== */
@@ -275,7 +276,9 @@ function LearningAssistantDrawer({ open, topic, onClose }: LearningAssistantDraw
     a.href = url
     a.download = `笔记-${new Date().toISOString().slice(0, 10)}.md`
     a.click()
-    URL.revokeObjectURL(url)
+    // 推迟到下载触发后再释放：a.click() 的下载由浏览器异步接管，
+    // 同步栈内 revokeObjectURL 可能导致部分浏览器取消下载
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
     message.success('已导出 Markdown')
   }
 

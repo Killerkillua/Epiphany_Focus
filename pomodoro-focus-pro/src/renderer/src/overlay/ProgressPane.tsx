@@ -11,7 +11,8 @@ interface ProgressPaneProps {
   all: PlayRecord[]
   bvid?: string
   onMarkDone(bvid: string): void
-  onSetGoal(bvid: string, goalRounds: number, goalDeadline?: string): void
+  /** 返回 Promise：调用方在落库完成后 resolve，供保存提示等待真实结果 */
+  onSetGoal(bvid: string, goalRounds: number, goalDeadline?: string): Promise<void>
   /** 时间点跳转（跳当前视频的指定进度） */
   onSeek(seconds: number): void
   onRefresh(): void
@@ -42,10 +43,15 @@ function ProgressPane({ current, all, bvid, onMarkDone, onSetGoal, onSeek, onRef
     setGoalDeadline(current?.goalDeadline ?? '')
   }, [current?.bvid, current?.goalRounds, current?.goalDeadline])
 
-  const saveGoal = (): void => {
+  /** 保存目标：等 setGoal 落库完成后再提示，成功/失败提示可靠 */
+  const saveGoal = async (): Promise<void> => {
     if (!bvid) return
-    onSetGoal(bvid, goalRounds || 0, goalDeadline || undefined)
-    message.success('学习目标已保存')
+    try {
+      await onSetGoal(bvid, goalRounds || 0, goalDeadline || undefined)
+      message.success('学习目标已保存')
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : '目标保存失败')
+    }
   }
 
   return (
@@ -118,7 +124,7 @@ function ProgressPane({ current, all, bvid, onMarkDone, onSetGoal, onSeek, onRef
                 onChange={(e) => setGoalDeadline(e.target.value)}
                 style={{ width: 132 }}
               />
-              <Button size="small" onClick={saveGoal}>
+              <Button size="small" onClick={() => void saveGoal()}>
                 保存
               </Button>
             </div>

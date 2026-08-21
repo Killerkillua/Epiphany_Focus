@@ -64,12 +64,14 @@ function FeedbackDialog({ open, mode = 'general', onClose }: FeedbackDialogProps
       <p style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
         反馈仅保存在本地，不会上传。你的意见将帮助我们改进学习体验。
       </p>
-      <div style={{ marginBottom: 12 }}>
-        <div style={{ fontSize: 13, marginBottom: 6 }}>满意度</div>
+      {/* 无障碍：用 fieldset/legend 做原生标签关联（等价于 aria-labelledby，
+          且不依赖 antd Rate/Radio.Group 是否透传 aria 属性） */}
+      <fieldset style={{ border: 'none', padding: 0, margin: '0 0 12px' }}>
+        <legend style={{ fontSize: 13, marginBottom: 6 }}>满意度</legend>
         <Rate value={rating} onChange={setRating} tooltips={RATE_TOOLTIPS} />
-      </div>
-      <div style={{ marginBottom: 12 }}>
-        <div style={{ fontSize: 13, marginBottom: 6 }}>遇到什么</div>
+      </fieldset>
+      <fieldset style={{ border: 'none', padding: 0, margin: '0 0 12px' }}>
+        <legend style={{ fontSize: 13, marginBottom: 6 }}>遇到什么</legend>
         <Radio.Group
           size="small"
           optionType="button"
@@ -78,7 +80,7 @@ function FeedbackDialog({ open, mode = 'general', onClose }: FeedbackDialogProps
           value={category}
           onChange={(e) => setCategory(e.target.value as FeedbackCategory)}
         />
-      </div>
+      </fieldset>
       <Input.TextArea
         maxLength={300}
         showCount
