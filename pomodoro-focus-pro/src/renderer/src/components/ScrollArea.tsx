@@ -48,6 +48,9 @@ const ScrollArea = forwardRef<ScrollAreaHandle, ScrollAreaProps>(function Scroll
   ref
 ) {
   const viewportRef = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
+  /** 拖拽期间挂在 window 上的事件清理函数（组件卸载时兜底移除，避免幽灵监听） */
+  const dragCleanupRef = useRef<(() => void) | null>(null)
   const [m, setM] = useState<Metrics>(EMPTY)
 
   const update = useCallback(() => {
@@ -63,7 +66,18 @@ const ScrollArea = forwardRef<ScrollAreaHandle, ScrollAreaProps>(function Scroll
     const hWidth = canH ? Math.max(hRatio * clientWidth, 24) : 0
     const vTop = canV ? (scrollTop / (scrollHeight - clientHeight)) * (clientHeight - vHeight) : 0
     const hLeft = canH ? (scrollLeft / (scrollWidth - clientWidth)) * (clientWidth - hWidth) : 0
-    setM({ vRatio, vTop, vHeight, hRatio, hLeft, hWidth })
+    const next: Metrics = { vRatio, vTop, vHeight, hRatio, hLeft, hWidth }
+    // 指标无变化时返回原引用，跳过多余渲染（避免 RO 连锁触发无意义的 setState）
+    setM((prev) =>
+      prev.vRatio === next.vRatio &&
+      prev.vTop === next.vTop &&
+      prev.vHeight === next.vHeight &&
+      prev.hRatio === next.hRatio &&
+      prev.hLeft === next.hLeft &&
+      prev.hWidth === next.hWidth
+        ? prev
+        : next
+    )
   }, [])
 
   // 环境无关：用 JS 实测原生滚动条尺寸，把滚动条撑出可视区由外层裁剪
@@ -87,10 +101,18 @@ const ScrollArea = forwardRef<ScrollAreaHandle, ScrollAreaProps>(function Scroll
     if (!el) return
     const ro = new ResizeObserver(() => update())
     ro.observe(el)
+    // 同时观察内容容器：页面切换 / 异步加载 / AI 流式追加等内容尺寸变化时，
+    // viewport 自身尺寸不变、RO 不会触发，仅观察 viewport 会导致滚动条指标
+    // 停留在旧状态（滑块尺寸/位置不刷新）
+    const contentEl = contentRef.current
+    if (contentEl) ro.observe(contentEl)
     window.addEventListener('resize', update)
     return () => {
       ro.disconnect()
       window.removeEventListener('resize', update)
+      // 组件卸载时若仍处于拖拽，移除 window 监听防止泄漏
+      dragCleanupRef.current?.()
+      dragCleanupRef.current = null
     }
   }, [update])
 
@@ -115,17 +137,22 @@ const ScrollArea = forwardRef<ScrollAreaHandle, ScrollAreaProps>(function Scroll
     if (maxScroll <= 0) return
     const trackSize = isH ? el.clientWidth : el.clientHeight
     const thumbSize = isH ? m.hWidth : m.vHeight
+    // 防除零：轨道与滑块等宽（或数值异常）时无拖拽余量，直接忽略
+    const denom = trackSize - thumbSize
+    if (!Number.isFinite(denom) || denom <= 0) return
     const move = (ev: globalThis.MouseEvent) => {
       const delta = (isH ? ev.clientX : ev.clientY) - startPos
-      if (isH) el.scrollLeft = startScroll + (delta / (trackSize - thumbSize)) * maxScroll
-      else el.scrollTop = startScroll + (delta / (trackSize - thumbSize)) * maxScroll
+      if (isH) el.scrollLeft = startScroll + (delta / denom) * maxScroll
+      else el.scrollTop = startScroll + (delta / denom) * maxScroll
     }
-    const up = () => {
+    const cleanup = (): void => {
       window.removeEventListener('mousemove', move)
-      window.removeEventListener('mouseup', up)
+      window.removeEventListener('mouseup', cleanup)
+      if (dragCleanupRef.current === cleanup) dragCleanupRef.current = null
     }
+    dragCleanupRef.current = cleanup
     window.addEventListener('mousemove', move)
-    window.addEventListener('mouseup', up)
+    window.addEventListener('mouseup', cleanup)
   }
 
   return (
@@ -134,7 +161,7 @@ const ScrollArea = forwardRef<ScrollAreaHandle, ScrollAreaProps>(function Scroll
       style={style}
     >
       <div ref={viewportRef} className="scroll-area__viewport" onScroll={update}>
-        <div className="scroll-area__content">{children}</div>
+        <div ref={contentRef} className="scroll-area__content">{children}</div>
       </div>
       {!horizontal && m.vRatio < 1 && (
         <div className="scroll-area__track scroll-area__track--v">

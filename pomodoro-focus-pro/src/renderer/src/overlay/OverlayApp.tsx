@@ -69,6 +69,8 @@ type Action =
   | { type: 'set-notes'; notes: NoteEntry[] }
   | { type: 'set-note-draft'; draft: string; dirty: boolean }
   | { type: 'note-upserted'; entry: NoteEntry }
+  /** 自动保存落盘完成：合并列表 + 仅草稿未变时回填/清 dirty（请求期间用户继续输入则保留新草稿） */
+  | { type: 'note-save-settled'; entry: NoteEntry; savedDraft: string }
   | { type: 'note-attach-id'; id: string }
   | { type: 'note-removed'; id: string }
   | { type: 'set-progress'; current: PlayRecord | null; all: PlayRecord[] }
@@ -164,6 +166,23 @@ function reducer(state: OverlayUiState, action: Action): OverlayUiState {
           : [action.entry, ...state.notes]
       }
     }
+    case 'note-save-settled': {
+      const exists = state.notes.some((n) => n.id === action.entry.id)
+      const notes = exists
+        ? state.notes.map((n) => (n.id === action.entry.id ? action.entry : n))
+        : [action.entry, ...state.notes]
+      // 请求期间用户继续输入（草稿已变）：保留新草稿与 dirty 状态，仅更新列表，
+      // 避免回填旧内容覆盖输入、并误清 dirty 导致后续改动不再自动保存
+      const draftChanged = state.noteDraft !== action.savedDraft
+      return {
+        ...state,
+        notes,
+        noteDraft: draftChanged ? state.noteDraft : action.entry.content,
+        noteDirty: draftChanged ? state.noteDirty : false,
+        // 新笔记首次落盘（editingNoteId 为空）时挂接稳定 id；用户已切换到其他笔记则不覆盖
+        editingNoteId: state.editingNoteId ?? action.entry.id
+      }
+    }
     case 'note-attach-id':
       return { ...state, editingNoteId: action.id }
     case 'note-removed':
@@ -187,6 +206,11 @@ function OverlayApp(): JSX.Element {
   const [state, dispatch] = useReducer(reducer, initialState)
   const logRef = useRef<ScrollAreaHandle>(null)
   const persistTimer = useRef<number | null>(null)
+  /** 最新 state 镜像：供 useCallback([]) 内的异步流程读取最新值（闭包里的 state 已过期） */
+  const stateRef = useRef<OverlayUiState>(state)
+  useEffect(() => {
+    stateRef.current = state
+  })
 
   /* ===== 初始化：主进程状态快照 + 状态广播订阅 ===== */
   useEffect(() => {
@@ -214,6 +238,26 @@ function OverlayApp(): JSX.Element {
 
   /* ===== 初始化：载入当前视频笔记（F-1 按视频归档） ===== */
   const loadNotes = useCallback(async (bvid?: string): Promise<void> => {
+    const prev = stateRef.current
+    // bvid 变化且存在未保存草稿：先按旧上下文落盘，避免切换视频丢弃用户输入
+    // （自动保存 effect 不依赖 bvid，切换时不会自动触发，必须在此兜底 flush）
+    if (prev.noteDirty && prev.noteDraft.trim() && prev.context?.bvid !== bvid) {
+      const flushingId = prev.editingNoteId || `n-${Date.now()}`
+      const existing = prev.notes.find((n) => n.id === flushingId)
+      void window.api.notes
+        .upsert({
+          id: flushingId,
+          createdAt: existing?.createdAt ?? Date.now(),
+          content: prev.noteDraft,
+          bvid: prev.context?.bvid,
+          videoTitle: prev.context?.videoTitle,
+          source: 'overlay'
+        })
+        .then((saved) => dispatch({ type: 'note-upserted', entry: saved }))
+        .catch(() => {
+          /* 落盘失败不阻塞载入 */
+        })
+    }
     try {
       const notes = bvid ? await window.api.notes.loadByVideo(bvid) : await window.api.notes.load()
       dispatch({ type: 'set-notes', notes })
@@ -238,10 +282,13 @@ function OverlayApp(): JSX.Element {
     if (persistTimer.current) window.clearTimeout(persistTimer.current)
     persistTimer.current = window.setTimeout(() => {
       const id = state.editingNoteId || `n-${Date.now()}`
+      // 编辑既有笔记时复用原 createdAt（时间点/排序依据），仅新笔记取当前时间
+      const existing = state.notes.find((n) => n.id === id)
+      const savedDraft = state.noteDraft
       const entry: NoteEntry = {
         id,
-        createdAt: Date.now(),
-        content: state.noteDraft,
+        createdAt: existing?.createdAt ?? Date.now(),
+        content: savedDraft,
         bvid: state.context?.bvid,
         videoTitle: state.context?.videoTitle,
         source: 'overlay'
@@ -249,11 +296,9 @@ function OverlayApp(): JSX.Element {
       void window.api.notes
         .upsert(entry)
         .then((saved) => {
-          dispatch({ type: 'note-upserted', entry: saved })
-          dispatch({ type: 'set-note-draft', draft: saved.content, dirty: false })
-          if (!state.editingNoteId) {
-            dispatch({ type: 'note-attach-id', id: saved.id })
-          }
+          // 收尾判断在 reducer 内基于最新 state 完成（本闭包里的 state 已过期）：
+          // 草稿未变才回填/清 dirty；新笔记首存时才挂接稳定 id
+          dispatch({ type: 'note-save-settled', entry: saved, savedDraft })
         })
         .catch((err) => console.error('[overlay] 笔记保存失败:', err))
     }, 500)
@@ -320,13 +365,7 @@ function OverlayApp(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.sessionActive, state.context?.bvid])
 
-  /* ===== AI 对话自动滚动到底部 ===== */
-  useEffect(() => {
-    const vp = logRef.current?.viewport
-    if (vp) {
-      vp.scrollTop = vp.scrollHeight
-    }
-  }, [state.aiLog, state.asking])
+  /* ===== AI 对话自动滚动到底部：已内聚到 ChatPane（logRef 持有方），本处不再重复 ===== */
 
   /* ===== 状态切换（主进程为事实源，快照回填 UI） ===== */
   const requestPhase = (next: Phase): void => {
@@ -413,10 +452,12 @@ function OverlayApp(): JSX.Element {
   const handleSelectNote = (entry: NoteEntry): void => {
     if (state.noteDirty && state.noteDraft.trim()) {
       const flushingId = state.editingNoteId || `n-${Date.now()}`
+      // 复用既有笔记 createdAt，避免切换落盘把新笔记的创建时间重置为当前时刻
+      const existing = state.notes.find((n) => n.id === flushingId)
       void window.api.notes
         .upsert({
           id: flushingId,
-          createdAt: Date.now(),
+          createdAt: existing?.createdAt ?? Date.now(),
           content: state.noteDraft,
           bvid: state.context?.bvid,
           videoTitle: state.context?.videoTitle,
@@ -431,8 +472,9 @@ function OverlayApp(): JSX.Element {
     dispatch({ type: 'set-note-draft', draft: entry.content, dirty: false })
   }
 
-  const handleDeleteNote = (id: string): void => {
-    void window.api.notes
+  /** 返回 Promise：NotesPane 等落库结果后再提示成功/失败 */
+  const handleDeleteNote = (id: string): Promise<void> => {
+    return window.api.notes
       .delete(id)
       .then(() => {
         dispatch({ type: 'note-removed', id })
@@ -441,7 +483,6 @@ function OverlayApp(): JSX.Element {
           dispatch({ type: 'set-note-draft', draft: '', dirty: false })
         }
       })
-      .catch((err) => message.error(`删除失败: ${err instanceof Error ? err.message : String(err)}`))
   }
 
   const handleToggleKey = (entry: NoteEntry): void => {
@@ -502,11 +543,12 @@ function OverlayApp(): JSX.Element {
       .catch((err) => message.error(`操作失败: ${err instanceof Error ? err.message : String(err)}`))
   }
 
-  const handleSetGoal = (bvid: string, goalRounds: number, goalDeadline?: string): void => {
-    void window.api.playRecords
+  /** 返回 Promise：进度页签等待落库完成后提示（错误由调用方展示） */
+  const handleSetGoal = (bvid: string, goalRounds: number, goalDeadline?: string): Promise<void> => {
+    return window.api.playRecords
       .setGoal(bvid, goalRounds, goalDeadline)
       .then(() => loadProgress(state.context?.bvid))
-      .catch((err) => message.error(`目标保存失败: ${err instanceof Error ? err.message : String(err)}`))
+      .then(() => undefined)
   }
 
   const closeVideo = (): void => {

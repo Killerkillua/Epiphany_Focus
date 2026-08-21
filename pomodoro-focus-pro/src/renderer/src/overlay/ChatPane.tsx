@@ -1,6 +1,6 @@
 import { Button, Input } from 'antd'
 import { SaveOutlined, SendOutlined } from '@ant-design/icons'
-import type { RefObject } from 'react'
+import { useEffect, type RefObject } from 'react'
 import ScrollArea, { type ScrollAreaHandle } from '../components/ScrollArea'
 import MarkdownView from '../components/MarkdownView'
 
@@ -41,6 +41,15 @@ function ChatPane({
   onSaveToNotes,
   noVideoContext = false
 }: ChatPaneProps): JSX.Element {
+  // AI 日志自动滚动到底部：流式逐字输出（log/asking 变化）时保持底部跟随；
+  // 内聚在本组件，悬浮面板（OverlayApp）与学习助手抽屉（LearningAssistantDrawer）共用
+  useEffect(() => {
+    const vp = logRef.current?.viewport
+    if (vp) {
+      vp.scrollTop = vp.scrollHeight
+    }
+  }, [log, asking, logRef])
+
   return (
     <div className="overlay-pane overlay-chat-pane">
       <ScrollArea className="overlay-ai-log" ref={logRef}>
@@ -90,6 +99,7 @@ function ChatPane({
           type="primary"
           size="small"
           icon={<SendOutlined />}
+          aria-label="发送"
           loading={asking}
           disabled={!input.trim()}
           onClick={onSend}
