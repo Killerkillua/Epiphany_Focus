@@ -6,6 +6,7 @@ import { warmupWbiCache, resetWbiCache } from './wbi'
 import { isAllowedBiliUrl } from './guard'
 import { getSettings } from '../storage/settings'
 import { assertExitSafety } from '../enforcement/emergencyExit'
+import { recordTelemetry } from '../telemetry'
 import {
   closeVideo,
   ensureOverlayOnTop,
@@ -32,7 +33,6 @@ import {
   loadNotesAll,
   loadNotesByVideo,
   markPlayRecordDone,
-  recordEvent,
   saveNotesAll,
   setPlayGoal,
   tickPlayRecord,
@@ -99,13 +99,18 @@ export function registerNavigationModule(
         ensureOverlayOnTop()
       } catch (err) {
         // P-2：强制会话启动失败（如恢复码前置校验异常）→ 回滚关闭视频窗口，
-        // 避免"窗口已创建但会话失败"的半开中间态
+        // 避免"窗口已创建但会话失败"的半开中间态。
+        // 注意：closeVideo 会同步 video.destroy()，而 openVideo 在 onOpen 返回后
+        // 仍会访问 video（如 isFullScreen() 上报状态）——销毁动作推迟到 openVideo
+        // 返回后再执行，避免"openVideo 继续访问已销毁窗口"抛错。
         console.error('[bili] 强制会话启动失败，关闭视频窗口:', err)
-        try {
-          closeVideo()
-        } catch {
-          /* 忽略 */
-        }
+        setImmediate(() => {
+          try {
+            closeVideo()
+          } catch {
+            /* 忽略 */
+          }
+        })
       } finally {
         // P-2：无论成功与否都挂起主窗口学习会话遮罩（视频窗口自身全屏锁定接管）；
         // 防止 onOpen 中途抛错导致 suspendOverlay 永不执行、主窗口遮罩永久残留盖住视频
@@ -237,12 +242,14 @@ export function registerNavigationModule(
   ipcMain.handle(IPC_CHANNELS.feedback.list, async (): Promise<FeedbackEntry[]> => listFeedback())
   ipcMain.handle(IPC_CHANNELS.feedback.stats, async (): Promise<FeedbackStats> => getFeedbackStats())
 
-  /* ===== 匿名遥测（R-2，opt-in；telemetry.ts 已按开关过滤） ===== */
+  /* ===== 匿名遥测（R-2，opt-in） ===== */
+  // 必须走 recordTelemetry（内部校验 telemetryEnabled 开关）：直接调用 storage.recordEvent
+  // 会绕过用户关闭采集的隐私选择，前端事件在开关关闭后仍被记录
   ipcMain.handle(
     IPC_CHANNELS.telemetry.record,
     async (_event, payload: { domain: string; action: string; data?: Record<string, unknown> }): Promise<void> => {
       if (!payload || typeof payload.domain !== 'string' || typeof payload.action !== 'string') return
-      recordEvent(payload.domain, payload.action, payload.data)
+      recordTelemetry(payload.domain, payload.action, payload.data)
     }
   )
 

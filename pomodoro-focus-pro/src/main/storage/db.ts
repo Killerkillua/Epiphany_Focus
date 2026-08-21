@@ -150,18 +150,36 @@ CREATE TABLE notes (
  *   旧行 id 经 CAST 转文本保留；新增 bvid / timestamp_s / is_key / source / parent_id 列。
  * - 新库直接走 SCHEMA 的 TEXT 主键建表，无需迁移。
  */
-function migrateNotesTable(d: SqliteLike): void {
+/**
+ * 迁移实现（测试可见）：旧 INTEGER 主键 notes → TEXT 主键 + 新字段。
+ * 迁移必须原子：RENAME → CREATE → INSERT → DROP 四步包裹在事务中，
+ * 任一步骤失败即整体 ROLLBACK，保留原 notes 表与数据，避免留下
+ * "旧表已改名但新表为空/不全" 的半迁移状态（用户笔记原地丢失）。
+ */
+export function migrateNotesTable(d: SqliteLike): void {
   const cols = d.prepare('PRAGMA table_info(notes)').all() as Array<{ name: string }>
   const names = new Set(cols.map((c) => c.name))
   if (names.has('bvid') && names.has('timestamp_s') && names.has('is_key') && names.has('source')) return
   try {
-    d.exec(`
-      ALTER TABLE notes RENAME TO notes_legacy;
-      ${NOTES_TABLE_DDL};
-      INSERT INTO notes (id, created_at, video_title, content, tags, bvid, timestamp_s, is_key, source, parent_id)
-        SELECT CAST(id AS TEXT), created_at, video_title, content, tags, '', 0, 0, 'main', '' FROM notes_legacy;
-      DROP TABLE notes_legacy;
-    `)
+    d.prepare('BEGIN').run()
+    try {
+      d.exec(`
+        ALTER TABLE notes RENAME TO notes_legacy;
+        ${NOTES_TABLE_DDL};
+        INSERT INTO notes (id, created_at, video_title, content, tags, bvid, timestamp_s, is_key, source, parent_id)
+          SELECT CAST(id AS TEXT), created_at, video_title, content, tags, '', 0, 0, 'main', '' FROM notes_legacy;
+        DROP TABLE notes_legacy;
+      `)
+      d.prepare('COMMIT').run()
+    } catch (inner) {
+      // 失败回滚：notes_legacy 改名与新建表全部撤销，原 notes 表与数据完整保留
+      try {
+        d.prepare('ROLLBACK').run()
+      } catch {
+        // 回滚失败（连接级异常）时原样抛出内层错误
+      }
+      throw inner
+    }
     console.info('[storage] notes 表已迁移：TEXT 主键 + bvid/timestamp_s/is_key/source 字段')
   } catch (err) {
     console.warn('[storage] notes 表迁移失败，沿用旧结构:', err instanceof Error ? err.message : err)
