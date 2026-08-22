@@ -59,7 +59,8 @@ function ModeTooltip({ active, payload }: ModeTooltipProps): JSX.Element | null 
     <div className="chart-tooltip">
       <div className="chart-tooltip-date">{p.name}</div>
       <div>
-        累计 <span className="chart-tooltip-value">{Math.round(p.minutes)} 分钟</span> · {p.pomos} 番茄
+        累计 <span className="chart-tooltip-value">{Math.round(p.minutes)} 分钟</span> · {p.pomos}{' '}
+        番茄
       </div>
     </div>
   )
@@ -67,7 +68,9 @@ function ModeTooltip({ active, payload }: ModeTooltipProps): JSX.Element | null 
 
 function StatsPage(): JSX.Element {
   const [range, setRange] = useState<TrendRange>(14)
-  const [hover, setHover] = useState<{ label: string; minutes: number; sessions: number } | null>(null)
+  const [hover, setHover] = useState<{ label: string; minutes: number; sessions: number } | null>(
+    null
+  )
 
   const trend = useStatsStore((s) => s.trend)
   const modes = useStatsStore((s) => s.modes)
@@ -84,7 +87,11 @@ function StatsPage(): JSX.Element {
 
   useEffect(() => {
     let alive = true
-    void Promise.all([window.api.playRecords.list(), window.api.feedback.stats(), window.api.notes.load()])
+    void Promise.all([
+      window.api.playRecords.list(),
+      window.api.feedback.stats(),
+      window.api.notes.load()
+    ])
       .then(([records, feedback, notes]) => {
         if (alive) setBiliReview({ records, feedback, notes })
       })
@@ -150,7 +157,9 @@ function StatsPage(): JSX.Element {
   return (
     <div className="page-dashboard">
       <h1 className="page-title">学习统计</h1>
-      <p className="page-sub">专注时长趋势 · 时段热力图 · 模式对比（数据源 study_stats / sessions）</p>
+      <p className="page-sub">
+        专注时长趋势 · 时段热力图 · 模式对比（数据源 study_stats / sessions）
+      </p>
 
       {error && (
         <Alert
@@ -195,7 +204,13 @@ function StatsPage(): JSX.Element {
                   <XAxis dataKey="name" tick={AXIS_TICK} interval="preserveStartEnd" />
                   <YAxis tick={AXIS_TICK} />
                   <Tooltip content={<TrendTooltip />} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
-                  <Bar dataKey="minutes" name="专注分钟" fill={TREND_COLOR} radius={[4, 4, 0, 0]} maxBarSize={36} />
+                  <Bar
+                    dataKey="minutes"
+                    name="专注分钟"
+                    fill={TREND_COLOR}
+                    radius={[4, 4, 0, 0]}
+                    maxBarSize={36}
+                  />
                 </BarChart>
               </ResponsiveContainer>
             )}
@@ -206,10 +221,19 @@ function StatsPage(): JSX.Element {
               <Empty description="暂无数据" />
             ) : (
               <ResponsiveContainer width="100%" height={Math.max(140, modeData.length * 52)}>
-                <BarChart data={modeData} layout="vertical" margin={{ top: 4, right: 24, left: 0, bottom: 4 }}>
+                <BarChart
+                  data={modeData}
+                  layout="vertical"
+                  margin={{ top: 4, right: 24, left: 0, bottom: 4 }}
+                >
                   <CartesianGrid strokeDasharray="3 3" stroke={GRID_STROKE} horizontal={false} />
                   <XAxis type="number" tick={AXIS_TICK} allowDecimals={false} />
-                  <YAxis type="category" dataKey="name" width={76} tick={{ fontSize: 12, fill: '#e8ebf2' }} />
+                  <YAxis
+                    type="category"
+                    dataKey="name"
+                    width={76}
+                    tick={{ fontSize: 12, fill: '#e8ebf2' }}
+                  />
                   <Tooltip content={<ModeTooltip />} cursor={{ fill: 'rgba(255,255,255,0.05)' }} />
                   <Bar dataKey="minutes" name="累计分钟" radius={[0, 6, 6, 0]} barSize={22}>
                     {modeData.map((entry) => (
@@ -238,22 +262,34 @@ function StatsPage(): JSX.Element {
                       <div className="heatmap-wd">周{wd}</div>
                       {Array.from({ length: 24 }, (_, h) => {
                         const cell = heatMap.get(`${wi}-${h}`)
-                        const alpha = cell ? Math.min(0.9, 0.12 + (cell.minutes / heatMax) * 0.78) : 0
+                        const alpha = cell
+                          ? Math.min(0.9, 0.12 + (cell.minutes / heatMax) * 0.78)
+                          : 0
                         return (
                           <div
                             className="heatmap-cell"
                             key={h}
                             title={
-                              cell ? `周${wd} ${h}:00 · ${cell.minutes} 分钟 · ${cell.sessions} 次` : `周${wd} ${h}:00`
+                              cell
+                                ? `周${wd} ${h}:00 · ${cell.minutes} 分钟 · ${cell.sessions} 次`
+                                : `周${wd} ${h}:00`
                             }
                             onMouseEnter={() =>
                               setHover(
-                                cell ? { label: `周${wd} ${h}:00`, minutes: cell.minutes, sessions: cell.sessions } : null
+                                cell
+                                  ? {
+                                      label: `周${wd} ${h}:00`,
+                                      minutes: cell.minutes,
+                                      sessions: cell.sessions
+                                    }
+                                  : null
                               )
                             }
                             onMouseLeave={() => setHover(null)}
                             style={{
-                              background: cell ? `rgba(255, 107, 74, ${alpha})` : 'rgba(42, 49, 60, 0.35)'
+                              background: cell
+                                ? `rgba(255, 107, 74, ${alpha})`
+                                : 'rgba(42, 49, 60, 0.35)'
                             }}
                           />
                         )
@@ -264,8 +300,9 @@ function StatsPage(): JSX.Element {
                 <div className="heatmap-tip">
                   {hover ? (
                     <>
-                      {hover.label} · <span className="chart-tooltip-value">{hover.minutes} 分钟</span> · {hover.sessions}{' '}
-                      次
+                      {hover.label} ·{' '}
+                      <span className="chart-tooltip-value">{hover.minutes} 分钟</span> ·{' '}
+                      {hover.sessions} 次
                     </>
                   ) : (
                     '悬停色块查看该时段详情'
@@ -282,7 +319,11 @@ function StatsPage(): JSX.Element {
             {review ? (
               <div className="bili-review-grid">
                 <div className="bili-review-item">
-                  <div className="bili-review-value">{review.watchedMinutes >= 60 ? `${(review.watchedMinutes / 60).toFixed(1)}h` : `${Math.round(review.watchedMinutes)}min`}</div>
+                  <div className="bili-review-value">
+                    {review.watchedMinutes >= 60
+                      ? `${(review.watchedMinutes / 60).toFixed(1)}h`
+                      : `${Math.round(review.watchedMinutes)}min`}
+                  </div>
                   <div className="bili-review-label">累计观看</div>
                 </div>
                 <div className="bili-review-item">
@@ -296,7 +337,9 @@ function StatsPage(): JSX.Element {
                 <div className="bili-review-item">
                   <div className="bili-review-value">
                     {review.noteCount}
-                    {review.keyCount > 0 && <span className="bili-review-key">★{review.keyCount}</span>}
+                    {review.keyCount > 0 && (
+                      <span className="bili-review-key">★{review.keyCount}</span>
+                    )}
                   </div>
                   <div className="bili-review-label">笔记（重点）</div>
                 </div>
@@ -311,7 +354,8 @@ function StatsPage(): JSX.Element {
               <Empty description="暂无 B 站学习数据：打开视频学习后这里会生成复盘" />
             )}
             <Typography.Text type="secondary" style={{ fontSize: 11 }}>
-              数据源 play_records（按视频进度）+ notes（笔记/重点）+ feedback（本地自评），驱动每周迭代。
+              数据源 play_records（按视频进度）+ notes（笔记/重点）+
+              feedback（本地自评），驱动每周迭代。
             </Typography.Text>
           </Card>
         </div>

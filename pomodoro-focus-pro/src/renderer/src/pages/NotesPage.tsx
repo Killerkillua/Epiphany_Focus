@@ -136,9 +136,7 @@ function NotesPage(): JSX.Element {
   return (
     <div>
       <h1 className="page-title">记事本</h1>
-      <p className="page-sub">
-        学习笔记 · 自动保存 · 图片 OCR 识别 · Markdown 导出
-      </p>
+      <p className="page-sub">学习笔记 · 自动保存 · 图片 OCR 识别 · Markdown 导出</p>
 
       <Card size="small" className="notes-card">
         {/* 工具栏 */}
@@ -146,7 +144,12 @@ function NotesPage(): JSX.Element {
           <Button type="primary" size="small" icon={<SaveOutlined />} onClick={() => void save()}>
             保存
           </Button>
-          <Button size="small" icon={<FileImageOutlined />} loading={ocrBusy} onClick={() => fileRef.current?.click()}>
+          <Button
+            size="small"
+            icon={<FileImageOutlined />}
+            loading={ocrBusy}
+            onClick={() => fileRef.current?.click()}
+          >
             图片 OCR
           </Button>
           <Button size="small" icon={<ScanOutlined />} onClick={() => void newNote()}>
@@ -194,7 +197,9 @@ function NotesPage(): JSX.Element {
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={() => void save(false)}
-          placeholder={'记录学习要点…\n\n提示：复制任意截图/图片后直接 Ctrl+V，将自动调用 OCR 识别并插入文字。'}
+          placeholder={
+            '记录学习要点…\n\n提示：复制任意截图/图片后直接 Ctrl+V，将自动调用 OCR 识别并插入文字。'
+          }
           autoSize={{ minRows: 14, maxRows: 26 }}
           className="notes-editor"
         />

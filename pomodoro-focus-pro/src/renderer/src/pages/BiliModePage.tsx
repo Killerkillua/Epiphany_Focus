@@ -158,7 +158,11 @@ function BiliModePage(): JSX.Element {
         autoFullscreen,
         topic: keyword.trim() || undefined,
         title: item.title, // I-2：标题快照注入 AI 上下文 / 笔记归档 / 进度记录
-        plannedMs
+        plannedMs,
+        // M2：封面（bili-image:// 代理地址）与 UP 主快照写入进度记录卡片
+        coverUrl: item.picProxied || undefined,
+        author: item.author || undefined,
+        source: 'search'
       })
       .then(() => {
         message.success(`已打开 ${item.title}（${autoFullscreen ? '全屏' : '窗口'}播放）`)
@@ -170,13 +174,15 @@ function BiliModePage(): JSX.Element {
 
   // 订阅主进程事件：导航拦截 / 视频窗口开关
   useEffect(() => {
-    const offBlocked = window.api.on<{ reason: string; url: string; level: string; category?: string }>(
-      window.api.events.bili.navBlocked,
-      (verdict) => {
-        const cat = verdict.category ? `「${verdict.category}」` : ''
-        message.warning(`导航已拦截（${verdict.level}）: ${cat}${verdict.reason}`, 4)
-      }
-    )
+    const offBlocked = window.api.on<{
+      reason: string
+      url: string
+      level: string
+      category?: string
+    }>(window.api.events.bili.navBlocked, (verdict) => {
+      const cat = verdict.category ? `「${verdict.category}」` : ''
+      message.warning(`导航已拦截（${verdict.level}）: ${cat}${verdict.reason}`, 4)
+    })
     const offOpened = window.api.on<{ open: boolean }>(window.api.events.bili.videoOpened, () => {
       setVideoOpen(true)
       // 打开视频后自动关闭学习助手抽屉（与悬浮面板互斥，避免重复）
@@ -211,14 +217,18 @@ function BiliModePage(): JSX.Element {
   const handleCloseVideo = (): void => {
     void window.api.bili
       .closeVideo()
-      .catch((err) => message.error(`关闭视频失败: ${err instanceof Error ? err.message : String(err)}`))
+      .catch((err) =>
+        message.error(`关闭视频失败: ${err instanceof Error ? err.message : String(err)}`)
+      )
   }
 
   // 学习助手显示 / 隐藏切换（overlayToggleHide 已由 preload 桥接；快捷键失败时此按钮为兜底入口）
   const handleToggleOverlay = (): void => {
     void window.api.bili
       .overlayToggleHide()
-      .catch((err) => message.error(`切换失败: ${err instanceof Error ? err.message : String(err)}`))
+      .catch((err) =>
+        message.error(`切换失败: ${err instanceof Error ? err.message : String(err)}`)
+      )
   }
 
   return (
@@ -227,7 +237,8 @@ function BiliModePage(): JSX.Element {
         <div>
           <h1 className="page-title">B 站学习模式</h1>
           <p className="page-sub">
-            输入学习主题 → WBI 签名搜索 → 结果网格 → 点击视频自动全屏；全屏时右侧悬浮学习助手（对话 / 笔记 / 进度，可拖拽、最小化）。
+            输入学习主题 → WBI 签名搜索 → 结果网格 → 点击视频自动全屏；全屏时右侧悬浮学习助手（对话
+            / 笔记 / 进度，可拖拽、最小化）。
           </p>
         </div>
         {/* 问题 3：顶部导航栏右侧"学习助手"入口（非视频模式抽屉；反馈已迁移至设置页） */}
@@ -331,7 +342,11 @@ function BiliModePage(): JSX.Element {
               }}
             >
               <div className="bili-card-cover-wrap">
-                <CoverImage src={item.picProxied || item.pic} fallbackSrc={item.pic} alt={item.title} />
+                <CoverImage
+                  src={item.picProxied || item.pic}
+                  fallbackSrc={item.pic}
+                  alt={item.title}
+                />
                 {item.duration && <span className="bili-card-duration">{item.duration}</span>}
                 <span className="bili-card-play">
                   <PlayCircleOutlined /> {formatCount(item.play)}

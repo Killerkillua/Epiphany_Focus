@@ -40,7 +40,14 @@ export function ProgressRing({
       aria-label={label}
       className="progress-ring"
     >
-      <circle cx={size / 2} cy={size / 2} r={r} stroke={trackColor} strokeWidth={stroke} fill="none" />
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={r}
+        stroke={trackColor}
+        strokeWidth={stroke}
+        fill="none"
+      />
       <circle
         cx={size / 2}
         cy={size / 2}

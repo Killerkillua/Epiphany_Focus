@@ -1,163 +1,115 @@
 import { useEffect, useState } from 'react'
-import { Button, Input, InputNumber, Progress, Tag, Tooltip, message } from 'antd'
-import { CheckCircleOutlined, FlagOutlined, ReloadOutlined } from '@ant-design/icons'
+import { Modal, message } from 'antd'
 import type { PlayRecord } from '../../../shared/stats'
-import { ProgressRing, formatSeconds } from './ProgressRing'
+import { useProgressStore } from '../store/progressStore'
+import ProgressOverview from '../components/progress/ProgressOverview'
+import ProgressCharts from '../components/progress/ProgressCharts'
+import ProgressRecordList from '../components/progress/ProgressRecordList'
+import ProgressEditDialog from '../components/progress/ProgressEditDialog'
 
 interface ProgressPaneProps {
-  /** 当前视频进度记录 */
-  current: PlayRecord | null
-  /** 全部学习进度 */
-  all: PlayRecord[]
+  /** 当前视频 bvid（决定"当前视频"高亮与续学/标记快捷操作；无视频时 undefined） */
   bvid?: string
-  onMarkDone(bvid: string): void
-  /** 返回 Promise：调用方在落库完成后 resolve，供保存提示等待真实结果 */
-  onSetGoal(bvid: string, goalRounds: number, goalDeadline?: string): Promise<void>
-  /** 时间点跳转（跳当前视频的指定进度） */
+  /** 当前视频时间点跳转（续学降级 / 重点回跳共用） */
   onSeek(seconds: number): void
-  onRefresh(): void
-}
-
-const STATUS_META: Record<PlayRecord['status'], { label: string; color: string }> = {
-  planned: { label: '计划中', color: 'default' },
-  learning: { label: '学习中', color: 'processing' },
-  done: { label: '已学完', color: 'success' }
-}
-
-function percent(rec: PlayRecord): number {
-  if (!rec.durationS || rec.durationS <= 0) return 0
-  return Math.min(100, Math.round((rec.watchedS / rec.durationS) * 100))
 }
 
 /**
- * 进度页签（I-1 + F-3）：当前视频「已看 x / 总时长 y · 进度 % · 看过 n 遍」，
- * 全部视频按状态分组展示；支持标记学完与学习目标设定（F-5）。
+ * 进度页签（M1 记录管理 + M2 快捷访问 + M3 进度追踪增强）。
+ * 悬浮面板（610px）与学习助手抽屉（420px）共享；数据由 progressStore 统一管理，
+ * 会话心跳 tick 由宿主（OverlayApp）落库后经 store.applyTick 推送本地即时更新。
+ *
+ * 布局：列表区（筛选栏 + 批量栏 + 记录卡片）→ 概览区（统计 + 全局目标 + 继续学习）→ 图表区。
+ * 整个面板单一滚动条，避免狭小容器（420px 抽屉）中子区域争抢空间导致内容截断。
  */
-function ProgressPane({ current, all, bvid, onMarkDone, onSetGoal, onSeek, onRefresh }: ProgressPaneProps): JSX.Element {
-  const [goalRounds, setGoalRounds] = useState<number>(current?.goalRounds ?? 0)
-  const [goalDeadline, setGoalDeadline] = useState<string>(current?.goalDeadline ?? '')
+function ProgressPane({ bvid, onSeek }: ProgressPaneProps): JSX.Element {
+  const load = useProgressStore((s) => s.load)
+  const removeRecords = useProgressStore((s) => s.removeRecords)
+  const selection = useProgressStore((s) => s.selection)
+  const setSelectMode = useProgressStore((s) => s.setSelectMode)
 
-  // 当前视频切换时同步目标表单
+  const [editing, setEditing] = useState<PlayRecord | null>(null)
+  const [deleting, setDeleting] = useState<PlayRecord | null>(null)
+  const [batchDeleting, setBatchDeleting] = useState(false)
+
+  // 挂载 / 当前视频切换时加载（列表 + 统计 + 标签；两个入口复用同一 store）
   useEffect(() => {
-    setGoalRounds(current?.goalRounds ?? 0)
-    setGoalDeadline(current?.goalDeadline ?? '')
-  }, [current?.bvid, current?.goalRounds, current?.goalDeadline])
+    void load()
+  }, [bvid, load])
 
-  /** 保存目标：等 setGoal 落库完成后再提示，成功/失败提示可靠 */
-  const saveGoal = async (): Promise<void> => {
-    if (!bvid) return
+  const confirmDelete = async (): Promise<void> => {
+    if (!deleting) return
     try {
-      await onSetGoal(bvid, goalRounds || 0, goalDeadline || undefined)
-      message.success('学习目标已保存')
+      await removeRecords([deleting.bvid])
+      setDeleting(null)
+      message.success('已删除')
     } catch (err) {
-      message.error(err instanceof Error ? err.message : '目标保存失败')
+      message.error(`删除失败: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }
+
+  const confirmBatchDelete = async (): Promise<void> => {
+    try {
+      await removeRecords(selection)
+      setSelectMode(false)
+      setBatchDeleting(false)
+      message.success(`已删除 ${selection.length} 条记录`)
+    } catch (err) {
+      message.error(`删除失败: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
 
   return (
-    <div className="overlay-pane overlay-progress-pane">
-      {/* 当前视频 */}
-      <div className="overlay-progress-current">
-        {current ? (
-          <>
-            <div className="overlay-progress-head">
-              <ProgressRing ratio={percent(current) / 100} size={44} stroke={4} label={`当前视频学习进度 ${percent(current)}%`} />
-              <div className="overlay-progress-info">
-                <div className="overlay-progress-title" title={current.title}>
-                  {current.title || current.bvid}
-                </div>
-                <div className="overlay-progress-meta">
-                  已看 {formatSeconds(current.watchedS)} / {current.durationS > 0 ? formatSeconds(current.durationS) : '未知'} · 看过{' '}
-                  {current.viewedCount} 遍
-                  <Tag color={STATUS_META[current.status].color} style={{ marginLeft: 6 }}>
-                    {STATUS_META[current.status].label}
-                  </Tag>
-                </div>
-              </div>
-            </div>
-            <Progress
-              percent={percent(current)}
-              size="small"
-              strokeColor="var(--brand, #ff6b4a)"
-              trailColor="var(--bg-hover, #232a36)"
-            />
-            {current.lastPositionS > 0 && (
-              <Tooltip title="跳转到上次离开位置">
-                <Button
-                  size="small"
-                  className="overlay-progress-seek"
-                  onClick={() => onSeek(current.lastPositionS)}
-                >
-                  ⏱ 回到 {formatSeconds(current.lastPositionS)}
-                </Button>
-              </Tooltip>
-            )}
-            {current.status !== 'done' && (
-              <Button
-                size="small"
-                type="primary"
-                ghost
-                icon={<CheckCircleOutlined />}
-                onClick={() => onMarkDone(current.bvid)}
-              >
-                标记已学完
-              </Button>
-            )}
-            {/* 学习目标（F-5） */}
-            <div className="overlay-progress-goal">
-              <span className="overlay-progress-goal-label">
-                <FlagOutlined /> 目标
-              </span>
-              <InputNumber
-                size="small"
-                min={0}
-                max={99}
-                value={goalRounds}
-                onChange={(v) => setGoalRounds(v ?? 0)}
-                addonAfter="遍"
-                style={{ width: 96 }}
-              />
-              <Input
-                size="small"
-                type="date"
-                value={goalDeadline}
-                onChange={(e) => setGoalDeadline(e.target.value)}
-                style={{ width: 132 }}
-              />
-              <Button size="small" onClick={() => void saveGoal()}>
-                保存
-              </Button>
-            </div>
-          </>
-        ) : (
-          <div className="overlay-progress-empty">暂无当前视频学习进度</div>
-        )}
-      </div>
+    <div className="overlay-pane progress-pane">
+      <ProgressRecordList
+        bvid={bvid}
+        onSeek={onSeek}
+        onEdit={setEditing}
+        onDelete={setDeleting}
+        onBatchDelete={() => setBatchDeleting(true)}
+      />
+      <ProgressOverview bvid={bvid} onSeek={onSeek} />
+      <ProgressCharts />
 
-      {/* 全部学习进度 */}
-      <div className="overlay-progress-list-head">
-        <span>全部学习记录</span>
-        <Tooltip title="刷新">
-          <Button type="text" size="small" icon={<ReloadOutlined />} onClick={onRefresh} />
-        </Tooltip>
-      </div>
-      <div className="overlay-progress-list">
-        {all.length === 0 ? (
-          <div className="overlay-progress-empty">打开视频开始记录学习进度</div>
-        ) : (
-          all.map((rec) => (
-            <div key={rec.bvid} className={`overlay-progress-row${rec.bvid === bvid ? ' active' : ''}`}>
-              <div className="overlay-progress-row-title" title={rec.title}>
-                {rec.title || rec.bvid}
-              </div>
-              <div className="overlay-progress-row-meta">
-                {percent(rec)}% · {formatSeconds(rec.watchedS)} · {rec.viewedCount} 遍
-                <Tag color={STATUS_META[rec.status].color}>{STATUS_META[rec.status].label}</Tag>
-              </div>
-            </div>
-          ))
+      <ProgressEditDialog record={editing} onClose={() => setEditing(null)} />
+
+      {/* 单条删除确认（M1）：提示不可恢复 + 笔记保留（决策：不级联删笔记） */}
+      <Modal
+        title="删除学习记录"
+        open={deleting !== null}
+        onOk={() => void confirmDelete()}
+        onCancel={() => setDeleting(null)}
+        okText="删除"
+        cancelText="取消"
+        okButtonProps={{ danger: true }}
+        width={380}
+        centered
+      >
+        {deleting && (
+          <div>
+            确定删除《{deleting.title || deleting.bvid}》的学习记录吗？此操作不可恢复。
+            <div className="progress-delete-hint">该视频的笔记将保留。</div>
+          </div>
         )}
-      </div>
+      </Modal>
+
+      {/* 批量删除确认（M1） */}
+      <Modal
+        title="批量删除"
+        open={batchDeleting}
+        onOk={() => void confirmBatchDelete()}
+        onCancel={() => setBatchDeleting(false)}
+        okText="删除"
+        cancelText="取消"
+        okButtonProps={{ danger: true }}
+        width={380}
+        centered
+      >
+        <div>
+          确定删除选中的 {selection.length} 条学习记录吗？此操作不可恢复。
+          <div className="progress-delete-hint">相关笔记将保留。</div>
+        </div>
+      </Modal>
     </div>
   )
 }

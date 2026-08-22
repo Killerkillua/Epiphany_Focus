@@ -81,7 +81,9 @@ function NotesPane({
         <Button size="small" type="primary" icon={<PlusOutlined />} onClick={onNewNote}>
           新建
         </Button>
-        <Tooltip title={hasBvid ? '记录当前视频时间点为重点，可随时跳回' : '需先打开视频才能记录时间点'}>
+        <Tooltip
+          title={hasBvid ? '记录当前视频时间点为重点，可随时跳回' : '需先打开视频才能记录时间点'}
+        >
           <Button size="small" icon={<StarFilled />} disabled={!hasBvid} onClick={onMarkKeyPoint}>
             记重点
           </Button>
@@ -123,7 +125,13 @@ function NotesPane({
                     size="small"
                     className="overlay-note-star"
                     aria-label={entry.isKey ? '取消重点标记' : '标记为重点'}
-                    icon={entry.isKey ? <StarFilled style={{ color: 'var(--brand, #ff6b4a)' }} /> : <StarOutlined />}
+                    icon={
+                      entry.isKey ? (
+                        <StarFilled style={{ color: 'var(--brand, #ff6b4a)' }} />
+                      ) : (
+                        <StarOutlined />
+                      )
+                    }
                     onClick={(ev) => {
                       ev.stopPropagation()
                       onToggleKey(entry)
