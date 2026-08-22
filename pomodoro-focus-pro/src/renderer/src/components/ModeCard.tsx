@@ -11,11 +11,7 @@ export interface ModeCardProps {
 
 function ModeCard(p: ModeCardProps): JSX.Element {
   return (
-    <button
-      className="mode-card"
-      onClick={p.onClick}
-      style={{ borderLeftColor: p.accent }}
-    >
+    <button className="mode-card" onClick={p.onClick} style={{ borderLeftColor: p.accent }}>
       <div className="mode-mark">{p.mark}</div>
       <div className="mode-title">{p.title}</div>
       <div className="mode-tagline">{p.tagline}</div>

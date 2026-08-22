@@ -7,12 +7,7 @@ import {
   useRef,
   useState
 } from 'react'
-import type {
-  CSSProperties,
-  MouseEvent as ReactMouseEvent,
-  ReactNode,
-  UIEvent
-} from 'react'
+import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode, UIEvent } from 'react'
 
 export interface ScrollAreaHandle {
   /** 原生滚动容器（viewport），供外部 scrollTop / scrollTo 等操作 */
@@ -161,7 +156,9 @@ const ScrollArea = forwardRef<ScrollAreaHandle, ScrollAreaProps>(function Scroll
       style={style}
     >
       <div ref={viewportRef} className="scroll-area__viewport" onScroll={update}>
-        <div ref={contentRef} className="scroll-area__content">{children}</div>
+        <div ref={contentRef} className="scroll-area__content">
+          {children}
+        </div>
       </div>
       {!horizontal && m.vRatio < 1 && (
         <div className="scroll-area__track scroll-area__track--v">

@@ -48,7 +48,12 @@ function StatsBar(): JSX.Element {
   )
 }
 
-function StatCard(p: { loading: boolean; dimmed?: boolean; label: string; value: string }): JSX.Element {
+function StatCard(p: {
+  loading: boolean
+  dimmed?: boolean
+  label: string
+  value: string
+}): JSX.Element {
   return (
     <div className={`stat-card${p.loading ? ' loading' : ''}`}>
       <div className={`stat-value${p.dimmed ? ' placeholder' : ''}`}>{p.value}</div>

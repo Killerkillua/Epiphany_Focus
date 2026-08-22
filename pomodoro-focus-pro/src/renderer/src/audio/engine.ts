@@ -2,7 +2,12 @@ import { CrossfadeLoop } from './seamlessLoop'
 import { createNoiseBuffer } from './synth'
 import { loadSettings, saveSettings } from './presets'
 import { CROSSFADE_SEC, SYNTH_BUFFER_SEC, getNoisePreset } from '../../../shared/audio'
-import type { NoisePreset, NoiseSettings, SampleKind, SyntheticNoiseKind } from '../../../shared/audio'
+import type {
+  NoisePreset,
+  NoiseSettings,
+  SampleKind,
+  SyntheticNoiseKind
+} from '../../../shared/audio'
 
 /**
  * 白噪音混音引擎（渲染层，Web Audio API）。
@@ -38,6 +43,10 @@ class NoiseEngine {
   private listeners = new Set<Listener>()
   private assetsCache: Record<string, { exists: boolean; url?: string }> | null = null
   private bufferCache = new Map<string, AudioBuffer>()
+  // H-08：emit 节流状态（rAF 合并同一帧内的多次通知）
+  private emitPending = false
+  private emitHandle: number | null = null
+  private emitUsesRaf = false
 
   /* ===== 只读状态 ===== */
 
@@ -64,8 +73,37 @@ class NoiseEngine {
     return () => this.listeners.delete(listener)
   }
 
+  /**
+   * H-08：通知节流。拖拽音量 Slider 时 onChange 每帧触发 setMasterVolume → emit，
+   * 用 requestAnimationFrame 把同一帧内的多次 emit 合并为一次通知（无 rAF 环境回退 setTimeout 16ms）。
+   * 内部状态始终同步更新（getSettings/readonly 取值为同步语义，不受影响），仅通知被合并；
+   * flush 时读取最新状态，因此最后一次变化一定被通知到（最终一致性）。
+   * 引擎销毁 / 组件卸载时调用 dispose() 取消挂起的通知。
+   */
   private emit(): void {
-    for (const listener of this.listeners) listener()
+    if (this.emitPending) return
+    this.emitPending = true
+    const raf = typeof requestAnimationFrame === 'function'
+    this.emitUsesRaf = raf
+    const flush = (): void => {
+      this.emitPending = false
+      this.emitHandle = null
+      for (const listener of this.listeners) listener()
+    }
+    this.emitHandle = raf ? requestAnimationFrame(flush) : setTimeout(flush, 16)
+  }
+
+  /** 取消挂起的节流通知。引擎无 destroy 方法，此为可选的清理入口；全局单例正常生命周期无需调用 */
+  dispose(): void {
+    if (this.emitHandle !== null) {
+      if (this.emitUsesRaf) {
+        cancelAnimationFrame(this.emitHandle)
+      } else {
+        clearTimeout(this.emitHandle)
+      }
+      this.emitHandle = null
+    }
+    this.emitPending = false
   }
 
   /* ===== 上下文 / 主音量 ===== */
@@ -205,9 +243,7 @@ class NoiseEngine {
   /** 采样素材可用性（主进程解析路径 + exists + url），进程内缓存 */
   private async getSampleAvailability(): Promise<Record<string, boolean>> {
     if (this.assetsCache) {
-      return Object.fromEntries(
-        Object.entries(this.assetsCache).map(([k, v]) => [k, v.exists])
-      )
+      return Object.fromEntries(Object.entries(this.assetsCache).map(([k, v]) => [k, v.exists]))
     }
     try {
       const assets = await window.api.audio.getAssets()
@@ -217,9 +253,7 @@ class NoiseEngine {
     } catch {
       this.assetsCache = {}
     }
-    return Object.fromEntries(
-      Object.entries(this.assetsCache).map(([k, v]) => [k, v.exists])
-    )
+    return Object.fromEntries(Object.entries(this.assetsCache).map(([k, v]) => [k, v.exists]))
   }
 
   /**

@@ -52,11 +52,7 @@ function DurationConfigModal({ open, mode, defaultMin, onCancel, onConfirm }: Pr
       </div>
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
         {presets.map((m) => (
-          <Button
-            key={m}
-            type={custom === m ? 'primary' : 'default'}
-            onClick={() => setCustom(m)}
-          >
+          <Button key={m} type={custom === m ? 'primary' : 'default'} onClick={() => setCustom(m)}>
             {m} 分钟
           </Button>
         ))}
