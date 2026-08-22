@@ -86,7 +86,9 @@ function makeConfig(overrides: Partial<AiConfig> = {}): AiConfig {
 }
 
 /** 发起一次 chat 并收集流式增量 */
-async function collectDeltas(gateway: EnglishGateway): Promise<{ content: string; deltas: string[] }> {
+async function collectDeltas(
+  gateway: EnglishGateway
+): Promise<{ content: string; deltas: string[] }> {
   const deltas: string[] = []
   const reply = await gateway.chat(QUESTION, [], (delta) => deltas.push(delta))
   return { content: reply.content, deltas }

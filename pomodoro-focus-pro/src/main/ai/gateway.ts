@@ -30,102 +30,115 @@ interface MockEntry {
 const MOCK_REPLIES: MockEntry[] = [
   {
     scenario: 'grammar',
-    reply: (q, sources) => [
-      '**规则摘要**：`suggest` 后接 that 从句（虚拟语气），不接 `sb. to do`。',
-      '',
-      '**详细讲解**（逐步推理）：',
-      '1. 拆解原句：*"I suggest him to go"* → suggest + 宾语 + to 不定式，这是中式英语常见结构。',
-      '2. 规则：suggest 后应接 **that 从句（should + 动词原形）** 或 **动名词**。',
-      '3. 结论：*I suggest (that) he go.*',
-      '',
-      '**例句**：',
-      '> I suggest that he take a break.（我建议他休息一下。）',
-      '> She suggested going to the library.（她建议去图书馆。）',
-      '',
-      '**常见错误**：`suggest sb. to do` ❌ → `suggest (that) sb. do` ✅',
-      '',
-      '**练习**：把 *He suggested me to study harder.* 改写为正确形式',
-      '',
-      '<details><summary>📝 查看答案</summary>',
-      '',
-      '*He suggested that I study harder.*',
-      '',
-      '</details>',
-      ...(sources.length ? ['', '**参考来源**：', ...sources.map((s) => `- [${s.title}](${s.url})`)] : []),
-      '',
-      `> 📚 演示模式（未配置 API Key）${q ? `，问题：${q}` : ''}。`
-    ].join('\n')
+    reply: (q, sources) =>
+      [
+        '**规则摘要**：`suggest` 后接 that 从句（虚拟语气），不接 `sb. to do`。',
+        '',
+        '**详细讲解**（逐步推理）：',
+        '1. 拆解原句：*"I suggest him to go"* → suggest + 宾语 + to 不定式，这是中式英语常见结构。',
+        '2. 规则：suggest 后应接 **that 从句（should + 动词原形）** 或 **动名词**。',
+        '3. 结论：*I suggest (that) he go.*',
+        '',
+        '**例句**：',
+        '> I suggest that he take a break.（我建议他休息一下。）',
+        '> She suggested going to the library.（她建议去图书馆。）',
+        '',
+        '**常见错误**：`suggest sb. to do` ❌ → `suggest (that) sb. do` ✅',
+        '',
+        '**练习**：把 *He suggested me to study harder.* 改写为正确形式',
+        '',
+        '<details><summary>📝 查看答案</summary>',
+        '',
+        '*He suggested that I study harder.*',
+        '',
+        '</details>',
+        ...(sources.length
+          ? ['', '**参考来源**：', ...sources.map((s) => `- [${s.title}](${s.url})`)]
+          : []),
+        '',
+        `> 📚 演示模式（未配置 API Key）${q ? `，问题：${q}` : ''}。`
+      ].join('\n')
   },
   {
     scenario: 'vocabulary',
-    reply: (q, sources) => [
-      `**${q || 'serendipity'}** | /ˌser.ənˈdɪp.ə.ti/ | 意外发现美好事物的运气`,
-      '',
-      '**英文定义**：the fact of finding interesting or valuable things by chance.',
-      '',
-      '**例句**：',
-      '> Meeting her was pure serendipity.（遇见她纯属机缘巧合。）',
-      '> The discovery was a happy serendipity.（这次发现是一次幸运的意外。）',
-      '',
-      '**搭配与词族**：serendipitous (adj.)；serendipitously (adv.)',
-      '',
-      '**同义词辨析**：chance（中性）/ fortune（更正式）/ coincidence（强调巧合）',
-      '',
-      ...(sources.length ? ['**参考来源**：', ...sources.map((s) => `- [${s.title}](${s.url})`)] : []),
-      '',
-      `> 📚 演示模式（未配置 API Key），查询词：${q}。`
-    ].join('\n')
+    reply: (q, sources) =>
+      [
+        `**${q || 'serendipity'}** | /ˌser.ənˈdɪp.ə.ti/ | 意外发现美好事物的运气`,
+        '',
+        '**英文定义**：the fact of finding interesting or valuable things by chance.',
+        '',
+        '**例句**：',
+        '> Meeting her was pure serendipity.（遇见她纯属机缘巧合。）',
+        '> The discovery was a happy serendipity.（这次发现是一次幸运的意外。）',
+        '',
+        '**搭配与词族**：serendipitous (adj.)；serendipitously (adv.)',
+        '',
+        '**同义词辨析**：chance（中性）/ fortune（更正式）/ coincidence（强调巧合）',
+        '',
+        ...(sources.length
+          ? ['**参考来源**：', ...sources.map((s) => `- [${s.title}](${s.url})`)]
+          : []),
+        '',
+        `> 📚 演示模式（未配置 API Key），查询词：${q}。`
+      ].join('\n')
   },
   {
     scenario: 'conversation',
-    reply: (q) => [
-      "Hi there! Lovely to chat with you. 😊 Let's talk about the weather today — how's the weather where you are?",
-      '',
-      '**纠错**：你说 *"I am agree"* → 正确是 *"I agree"*（agree 是动词，不加 be）。',
-      '',
-      "**更地道表达**：*\"I couldn't agree more\"*（完全同意）",
-      '',
-      `> 📚 演示模式（未配置 API Key）${q ? `，话题：${q}` : ''}。`
-    ].join('\n')
+    reply: (q) =>
+      [
+        "Hi there! Lovely to chat with you. 😊 Let's talk about the weather today — how's the weather where you are?",
+        '',
+        '**纠错**：你说 *"I am agree"* → 正确是 *"I agree"*（agree 是动词，不加 be）。',
+        '',
+        '**更地道表达**：*"I couldn\'t agree more"*（完全同意）',
+        '',
+        `> 📚 演示模式（未配置 API Key）${q ? `，话题：${q}` : ''}。`
+      ].join('\n')
   },
   {
     scenario: 'writing',
-    reply: (q, sources) => [
-      '**完整改写版**：',
-      '> *I believe that practicing English every day is the most effective way to improve.*',
-      '',
-      '**主要改动**：',
-      '1. 主谓一致：`practice` → `practicing`（动名词作主语）',
-      '2. 更正式表达：`very good` → `the most effective`',
-      '3. 精简冗余：去掉口头语',
-      '',
-      '**词汇升级**：`improve` → `enhance / sharpen`',
-      '',
-      '**可落地建议**：每天 15 分钟影子跟读 + 每周一篇短文写作。',
-      ...(sources.length ? ['', '**参考来源**：', ...sources.map((s) => `- [${s.title}](${s.url})`)] : []),
-      '',
-      `> 📚 演示模式（未配置 API Key）${q ? `，原文：${q}` : ''}。`
-    ].join('\n')
+    reply: (q, sources) =>
+      [
+        '**完整改写版**：',
+        '> *I believe that practicing English every day is the most effective way to improve.*',
+        '',
+        '**主要改动**：',
+        '1. 主谓一致：`practice` → `practicing`（动名词作主语）',
+        '2. 更正式表达：`very good` → `the most effective`',
+        '3. 精简冗余：去掉口头语',
+        '',
+        '**词汇升级**：`improve` → `enhance / sharpen`',
+        '',
+        '**可落地建议**：每天 15 分钟影子跟读 + 每周一篇短文写作。',
+        ...(sources.length
+          ? ['', '**参考来源**：', ...sources.map((s) => `- [${s.title}](${s.url})`)]
+          : []),
+        '',
+        `> 📚 演示模式（未配置 API Key）${q ? `，原文：${q}` : ''}。`
+      ].join('\n')
   },
   {
     scenario: 'free',
-    reply: (q, sources) => [
-      '**自由问答（演示回复）**',
-      '',
-      `你问：「${q || '（未输入内容）'}」`,
-      '',
-      '演示模式下，我先按通用框架回应：',
-      '',
-      '**要点**：',
-      '1. 先明确问题的核心概念或场景',
-      '2. 拆解关键要素，逐条解释',
-      '3. 给出 1–2 个可直接套用的例子',
-      '',
-      '配置硅基流动 API Key（BYOK）后，我会针对你的具体问题给出完整、深入的解答。',
-      ...(sources.length ? ['', '**参考来源**：', ...sources.map((s) => `- [${s.title}](${s.url})`)] : []),
-      '',
-      '> 📚 演示模式（未配置 API Key）。'
-    ].join('\n')
+    reply: (q, sources) =>
+      [
+        '**自由问答（演示回复）**',
+        '',
+        `你问：「${q || '（未输入内容）'}」`,
+        '',
+        '演示模式下，我先按通用框架回应：',
+        '',
+        '**要点**：',
+        '1. 先明确问题的核心概念或场景',
+        '2. 拆解关键要素，逐条解释',
+        '3. 给出 1–2 个可直接套用的例子',
+        '',
+        '配置硅基流动 API Key（BYOK）后，我会针对你的具体问题给出完整、深入的解答。',
+        ...(sources.length
+          ? ['', '**参考来源**：', ...sources.map((s) => `- [${s.title}](${s.url})`)]
+          : []),
+        '',
+        '> 📚 演示模式（未配置 API Key）。'
+      ].join('\n')
   }
 ]
 
@@ -253,7 +266,9 @@ export class EnglishGateway {
         `你问：「${question.message}」`,
         '',
         '配置 API Key（BYOK）后由真实模型回答。',
-        ...(sources.length ? ['', '**参考来源**：', ...sources.map((s) => `- [${s.title}](${s.url})`)] : [])
+        ...(sources.length
+          ? ['', '**参考来源**：', ...sources.map((s) => `- [${s.title}](${s.url})`)]
+          : [])
       ].join('\n')
     )
   }

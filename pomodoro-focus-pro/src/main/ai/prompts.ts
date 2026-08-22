@@ -116,9 +116,7 @@ export const BILI_STUDY_PROMPT = `# 角色
 回答末尾附一行：> 🖊️ 以上要点可直接一键存入笔记（面板提供「记入笔记」按钮，无需复制粘贴）`
 
 /** 清洗多轮历史：仅保留 user/assistant 且内容非空，截取最近 8 轮防 token 膨胀 */
-export function sanitizeHistory(
-  history?: Array<{ role: string; content: string }>
-): AiChatTurn[] {
+export function sanitizeHistory(history?: Array<{ role: string; content: string }>): AiChatTurn[] {
   if (!history || history.length === 0) return []
   return history
     .filter((t) => (t.role === 'user' || t.role === 'assistant') && t.content.trim())
@@ -140,9 +138,7 @@ export function buildMessages(
 
   const template = question.scenario === 'free' ? '' : SCENARIO_TEMPLATES[question.scenario]
   const cot =
-    question.scenario === 'grammar' || question.scenario === 'writing'
-      ? COT_INSTRUCTION
-      : ''
+    question.scenario === 'grammar' || question.scenario === 'writing' ? COT_INSTRUCTION : ''
   const wordLine = question.word ? `查询词：${question.word}\n` : ''
 
   return [
