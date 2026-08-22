@@ -44,7 +44,7 @@ export function attachFullscreenLock(win: BrowserWindow, opts: FullscreenLockOpt
 
   const assertFullscreen = (): void => {
     if (opts.active() && !win.isFullScreen()) {
-      win.setFullScreen(true)   // 兜底拉回：Esc / 缩小 / F11 之后立即恢复
+      win.setFullScreen(true) // 兜底拉回：Esc / 缩小 / F11 之后立即恢复
     }
   }
   win.on('enter-full-screen', () => {

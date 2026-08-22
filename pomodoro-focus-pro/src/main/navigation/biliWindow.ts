@@ -1,9 +1,10 @@
 import { BrowserWindow, globalShortcut, screen } from 'electron'
 import { join } from 'node:path'
-import { IPC_CHANNELS, IPC_EVENTS } from '../ipc'
+import { IPC_CHANNELS, IPC_EVENTS } from '../../shared/ipc'
 import { attachNavigationGuard, buildBlockPageHtml, isAllowedBiliUrl } from './guard'
 import { attachFullscreenLock } from './fullscreenLock'
 import { getSettings } from '../storage/settings'
+import { recordStudySessionEnd, recordStudySessionStart } from '../storage/db'
 import { recordTelemetry } from '../telemetry'
 import type {
   BiliContext,
@@ -239,7 +240,16 @@ function buildGuardContext(topic: string, currentBvs: string[]): BiliGuardContex
  * - 触发 onOpen 回调（启动强制会话）
  */
 export function openVideo(payload: OpenVideoPayload): void {
-  const { bvid, autoFullscreen, topic, title } = payload
+  const {
+    bvid,
+    autoFullscreen,
+    topic,
+    title,
+    seekSeconds,
+    source = 'manual',
+    coverUrl,
+    author
+  } = payload
   if (!bvid) throw new Error('缺少视频 BV 号')
   currentTopic = topic ?? ''
   currentVideoTitle = (title ?? '').trim()
@@ -255,6 +265,9 @@ export function openVideo(payload: OpenVideoPayload): void {
   // 重置悬浮面板状态机（新会话从展开态开始）
   overlayState = 'expanded'
   overlayOptions = buildOverlayOptions()
+
+  // M3：本次打开的视频窗口构成一个学习会话（关闭时结算时长）；来源写入 study_sessions.source
+  const studySessionId = recordStudySessionStart(bvid, source)
 
   const video = new BrowserWindow({
     width: 1280,
@@ -277,9 +290,11 @@ export function openVideo(payload: OpenVideoPayload): void {
     recordTelemetry('bili', 'nav.blocked', { level: verdict.level ?? '' })
     sendToMainWindow(IPC_EVENTS.bili.navBlocked, verdict)
     if (!video.isDestroyed()) {
-      video.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(buildBlockPageHtml(verdict))}`).catch(() => {
-        /* 忽略 */
-      })
+      video
+        .loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(buildBlockPageHtml(verdict))}`)
+        .catch(() => {
+          /* 忽略 */
+        })
     }
   }
 
@@ -311,13 +326,18 @@ export function openVideo(payload: OpenVideoPayload): void {
   // P-2：创建后立即显示（不等 ready-to-show：页面加载失败 / 需登录时窗口也不至于"永不显示"）
   video.show()
 
-  video.loadURL(`https://www.bilibili.com/video/${bvid}`).catch((err) => {
+  // M2 续学：seekSeconds > 0 时用 B 站原生 ?t= 参数加载，播放器就绪即定位到上次位置
+  const videoUrl =
+    seekSeconds && seekSeconds > 0
+      ? `https://www.bilibili.com/video/${bvid}?t=${Math.max(0, Math.round(seekSeconds))}`
+      : `https://www.bilibili.com/video/${bvid}`
+  video.loadURL(videoUrl).catch((err) => {
     sendToMainWindow(IPC_EVENTS.bili.navBlocked, {
       allowed: false,
       level: 'L1',
       category: '外部',
       reason: `视频页加载失败: ${err instanceof Error ? err.message : String(err)}`,
-      url: `https://www.bilibili.com/video/${bvid}`,
+      url: videoUrl,
       host: 'www.bilibili.com',
       path: `/video/${bvid}`
     } satisfies NavVerdict)
@@ -334,6 +354,8 @@ export function openVideo(payload: OpenVideoPayload): void {
     if (!overlay.isDestroyed()) overlay.destroy()
     active = null
     currentVideoTitle = ''
+    // M3：会话结束（幂等，duration_s = 打开窗口的墙钟时长）
+    if (studySessionId) recordStudySessionEnd(studySessionId)
     onCloseCallback?.()
     recordTelemetry('bili', 'video.close')
     sendToMainWindow(IPC_EVENTS.bili.videoClosed, { bvid })
@@ -420,6 +442,22 @@ export async function getVideoPosition(): Promise<number> {
       `(() => {
         const v = document.querySelector('video')
         return v ? Math.floor(v.currentTime || 0) : 0
+      })()`
+    )) as number
+    return typeof sec === 'number' && sec > 0 ? sec : 0
+  } catch {
+    return 0
+  }
+}
+
+/** 读取视频总时长（秒）：HTML5 video.duration（标准 API），未就绪 / 失败返回 0 */
+export async function getVideoDuration(): Promise<number> {
+  if (!active || active.video.isDestroyed()) return 0
+  try {
+    const sec = (await active.video.webContents.executeJavaScript(
+      `(() => {
+        const v = document.querySelector('video')
+        return v && Number.isFinite(v.duration) ? Math.floor(v.duration) : 0
       })()`
     )) as number
     return typeof sec === 'number' && sec > 0 ? sec : 0

@@ -72,7 +72,14 @@ const CONTENT_EXTRACTOR = `
   })()
 `
 
-function deny(url: string, level: 'L1' | 'L2' | 'L3' | 'L4', category: NavCategory, reason: string, host = '', path = ''): NavVerdict {
+function deny(
+  url: string,
+  level: 'L1' | 'L2' | 'L3' | 'L4',
+  category: NavCategory,
+  reason: string,
+  host = '',
+  path = ''
+): NavVerdict {
   return { allowed: false, level, category, reason, url, host, path }
 }
 
@@ -93,11 +100,7 @@ function tokenize(text: string): string[] {
 }
 
 /** 内容相关性判定：主题 token 命中标题/标签 */
-export function isRelevantContent(
-  title: string,
-  tags: string,
-  ctx: BiliGuardContext
-): boolean {
+export function isRelevantContent(title: string, tags: string, ctx: BiliGuardContext): boolean {
   const tokens = tokenize(ctx.topic)
   const hay = (title + ' ' + tags).toLowerCase()
   for (const t of tokens) {
@@ -147,7 +150,11 @@ export function isAllowedBiliUrl(rawUrl: string, ctx?: BiliGuardContext): NavVer
     return deny(rawUrl, 'L2', '番剧', '番剧内容已拦截', host, path)
   }
   // 影视：movie.bilibili.com 或 /movie 路径
-  if (host.startsWith('movie.') || path.startsWith('/movie') || path.startsWith('/bili_channel/movie')) {
+  if (
+    host.startsWith('movie.') ||
+    path.startsWith('/movie') ||
+    path.startsWith('/bili_channel/movie')
+  ) {
     return deny(rawUrl, 'L2', '影视', '影视内容已拦截', host, path)
   }
   // 动态：t.bilibili.com 或 /opus 动态详情、用户空间动态 tab
@@ -170,13 +177,16 @@ export function isAllowedBiliUrl(rawUrl: string, ctx?: BiliGuardContext): NavVer
 /** 生成拦截提示页 HTML（data URL 用） */
 export function buildBlockPageHtml(verdict: NavVerdict): string {
   const title =
-    verdict.level === 'L1' ? '外部站点已拦截'
-    : verdict.level === 'L4' ? '内容不相关已拦截'
-    : `「${verdict.category}」内容已拦截`
+    verdict.level === 'L1'
+      ? '外部站点已拦截'
+      : verdict.level === 'L4'
+        ? '内容不相关已拦截'
+        : `「${verdict.category}」内容已拦截`
   const host = verdict.host || '(无法解析)'
-  const markBtn = verdict.level === 'L4'
-    ? `<button class="mark-btn" onclick="window.__markRelevant?.()">标记为与主题相关</button>`
-    : ''
+  const markBtn =
+    verdict.level === 'L4'
+      ? `<button class="mark-btn" onclick="window.__markRelevant?.()">标记为与主题相关</button>`
+      : ''
   return `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -304,9 +314,10 @@ export function attachNavigationGuard(
     }
 
     try {
-      const extracted = (await target.executeJavaScript(CONTENT_EXTRACTOR)) as
-        | { title: string; tags: string }
-        | null
+      const extracted = (await target.executeJavaScript(CONTENT_EXTRACTOR)) as {
+        title: string
+        tags: string
+      } | null
       if (!extracted) return
       if (extracted.title) callbacks?.onTitleExtracted?.(extracted.title)
       judgeIrrelevant(extracted.title, isRelevantContent(extracted.title, extracted.tags, ctx))

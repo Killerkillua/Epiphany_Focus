@@ -29,9 +29,9 @@ const FALLBACK_WBI_KEYS: WbiKeys = {
 
 /** bilibili-API-collect 标准重排映射表 */
 const MIXIN_KEY_ENC_TAB = [
-  46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35, 27, 43, 5, 49, 33, 9, 42, 19, 29, 28, 14, 39,
-  12, 38, 41, 13, 37, 48, 7, 16, 24, 55, 40, 61, 26, 17, 0, 1, 60, 51, 30, 4, 22, 25, 54, 21, 56, 59, 6, 63,
-  57, 62, 11, 36, 20, 34, 44, 52
+  46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35, 27, 43, 5, 49, 33, 9, 42, 19, 29, 28,
+  14, 39, 12, 38, 41, 13, 37, 48, 7, 16, 24, 55, 40, 61, 26, 17, 0, 1, 60, 51, 30, 4, 22, 25, 54,
+  21, 56, 59, 6, 63, 57, 62, 11, 36, 20, 34, 44, 52
 ]
 
 const COMMON_HEADERS = {
@@ -73,7 +73,9 @@ async function fetchKeysFromNav(): Promise<WbiKeyCache> {
   try {
     res = await net.fetch(NAV_URL, { headers: COMMON_HEADERS })
   } catch (err) {
-    throw new Error(`WBI 密钥获取失败（nav 请求异常）: ${err instanceof Error ? err.message : String(err)}`)
+    throw new Error(
+      `WBI 密钥获取失败（nav 请求异常）: ${err instanceof Error ? err.message : String(err)}`
+    )
   }
   if (!res.ok) {
     throw new Error(`WBI 密钥获取失败（nav HTTP ${res.status}）`)
@@ -128,7 +130,9 @@ export function warmupWbiCache(): void {
  * 对请求参数签名：追加 wts / w_rid。
  * @returns 可直接拼入 query 的完整参数（含 wts 与 w_rid）
  */
-export async function signParams(params: Record<string, string | number>): Promise<Record<string, string>> {
+export async function signParams(
+  params: Record<string, string | number>
+): Promise<Record<string, string>> {
   const { imgKey, subKey } = await getWbiKeys()
   const mixinKey = buildMixinKey(imgKey, subKey)
   const wts = Math.floor(Date.now() / 1000)
@@ -143,10 +147,15 @@ export async function signParams(params: Record<string, string | number>): Promi
   const query = Object.keys(merged)
     .sort()
     .filter((key) => key !== 'w_rid')
-    .map((key) => `${encodeURIComponent(key)}=${encodeURIComponent(merged[key].replace(/[!'()*]/g, ''))}`)
+    .map(
+      (key) =>
+        `${encodeURIComponent(key)}=${encodeURIComponent(merged[key].replace(/[!'()*]/g, ''))}`
+    )
     .join('&')
 
-  merged['w_rid'] = createHash('md5').update(query + mixinKey).digest('hex')
+  merged['w_rid'] = createHash('md5')
+    .update(query + mixinKey)
+    .digest('hex')
   return merged
 }
 
