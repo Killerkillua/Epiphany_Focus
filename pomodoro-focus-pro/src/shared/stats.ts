@@ -49,9 +49,9 @@ export interface PlayRecord {
   title: string
   /** 视频总时长（秒，0 = 未知） */
   durationS: number
-  /** 累计已观看时长（秒，会话级撮合，非逐帧跟踪） */
+  /** 累计已观看时长（秒，会话级撮合，非逐帧跟踪；用于学习时长统计与"看过几遍"） */
   watchedS: number
-  /** 最近一次离开时的播放位置（秒） */
+  /** 最近一次离开时的播放位置（秒；进度百分比以此为准，避免重复观看虚高） */
   lastPositionS: number
   /** 学习状态 */
   status: PlayStatus
@@ -63,6 +63,99 @@ export interface PlayRecord {
   goalDeadline: string
   createdAt: number
   updatedAt: number
+  /** 用户手动打的标签（play_record_tags 关联表聚合；M1 筛选维度） */
+  tags: string[]
+  /** 视频封面图 URL（bili-image:// 代理地址，记录卡片封面） */
+  coverUrl: string
+  /** UP 主名称 */
+  author: string
+}
+
+/** 学习记录可修改字段（play-records:update / 「调整进度」对话框；M1） */
+export interface PlayRecordUpdate {
+  title?: string
+  /** 视频总时长（秒） */
+  durationS?: number
+  /** 已观看时长（秒） */
+  watchedS?: number
+  /** 上次播放位置（秒） */
+  lastPositionS?: number
+  /** 学习状态 */
+  status?: PlayStatus
+  /** 观看次数 */
+  viewedCount?: number
+  /** 目标精读遍数（0 = 清除） */
+  goalRounds?: number
+  /** 目标截止日期（YYYY-MM-DD，空 = 清除） */
+  goalDeadline?: string
+  coverUrl?: string
+  author?: string
+}
+
+/** 学习会话来源（study_sessions.source） */
+export type SessionSource = 'manual' | 'resume' | 'search'
+
+/** 学习会话明细（study_sessions：一次打开视频 → 关闭视频，M3） */
+export interface StudySession {
+  id: number
+  bvid: string
+  /** 会话开始时间戳（ms） */
+  startAt: number
+  /** 会话结束时间戳（ms；0 = 进行中） */
+  endAt: number
+  /** 有效学习时长（秒；本期取窗口打开墙钟时长，精度依赖会话心跳） */
+  durationS: number
+  /** 来源：manual / resume（续学）/ search（搜索结果） */
+  source: SessionSource
+  createdAt: number
+}
+
+/** 进度页筛选条件（M1：多维度筛选 + 排序） */
+export interface ProgressFilter {
+  /** 标题关键词模糊匹配 */
+  keyword?: string
+  /** 学习状态；'all' = 不过滤 */
+  status?: PlayStatus | 'all'
+  /** 标签多选（至少命中其一） */
+  tags?: string[]
+  /** 更新时间范围（ms 时间戳） */
+  dateRange?: { start: number; end: number } | null
+  sortBy: 'updated_at' | 'progress' | 'duration' | 'title'
+  sortOrder: 'asc' | 'desc'
+}
+
+/** 每日学习时长点（近 N 天，无数据日补 0；M4 柱状图数据源） */
+export interface DailyStat {
+  /** 本地日期 YYYY-MM-DD */
+  date: string
+  /** 当日学习分钟数 */
+  minutes: number
+}
+
+/** 进度页概览统计（M3：play_records + study_sessions 聚合） */
+export interface ProgressStats {
+  /** 今日学习时长（分钟） */
+  todayMinutes: number
+  /** 本周（近 7 天）学习时长（分钟） */
+  weekMinutes: number
+  /** 本月学习时长（分钟） */
+  monthMinutes: number
+  /** 连续学习天数（今天未学则从昨天起算） */
+  streakDays: number
+  /** 本周已学习天数（近 7 天内有 ≥1 分钟会话的天数，周目标进度用） */
+  weekDaysStudied: number
+  /** 总课程数 */
+  totalCourses: number
+  /** 已完成课程数 */
+  doneCourses: number
+  /** 学习中课程数 */
+  learningCourses: number
+  /** 待学课程数 */
+  plannedCourses: number
+  /** 全局每日学习目标（分钟，0 = 未设定；settings.studyGoals） */
+  dailyGoalMinutes: number
+  /** 全局每周学习天数目标（0 = 未设定；settings.studyGoals） */
+  weeklyGoalDays: number
 }
 
 /** 学习进度心跳（renderer → 主进程，会话级撮合） */
@@ -80,12 +173,7 @@ export interface PlayRecordTick {
 
 /** 反馈分类（与反馈弹窗选项一致） */
 export type FeedbackCategory =
-  | '卡顿'
-  | '遮不住视频'
-  | '退出不便'
-  | '笔记丢失'
-  | 'AI 回答质量'
-  | '其他'
+  '卡顿' | '遮不住视频' | '退出不便' | '笔记丢失' | 'AI 回答质量' | '其他'
 
 export interface FeedbackEntry {
   id: number

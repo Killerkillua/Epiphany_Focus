@@ -16,24 +16,24 @@
   --rc-virtual-list-scrollbar-bg: rgba(255, 255, 255, 0.3);
 
   /* ===== 间距尺度（流体 · 窗口 ↔ 全屏连续过渡） ===== */
-  --space-xs:  clamp(0.25rem, 0.2rem + 0.15vw, 0.375rem);  /*  4px –  6px */
-  --space-sm:  clamp(0.5rem,  0.45rem + 0.25vw, 0.75rem);  /*  8px – 12px */
-  --space-md:  clamp(0.75rem, 0.65rem + 0.5vw, 1.25rem);   /* 12px – 20px */
-  --space-lg:  clamp(1rem,    0.8rem + 1vw, 1.75rem);      /* 16px – 28px */
-  --space-xl:  clamp(1.5rem,  1.1rem + 2vw, 2.5rem);       /* 24px – 40px */
-  --space-2xl: clamp(2rem,    1.5rem + 3vw, 3.5rem);       /* 32px – 56px */
+  --space-xs: clamp(0.25rem, 0.2rem + 0.15vw, 0.375rem); /*  4px –  6px */
+  --space-sm: clamp(0.5rem, 0.45rem + 0.25vw, 0.75rem); /*  8px – 12px */
+  --space-md: clamp(0.75rem, 0.65rem + 0.5vw, 1.25rem); /* 12px – 20px */
+  --space-lg: clamp(1rem, 0.8rem + 1vw, 1.75rem); /* 16px – 28px */
+  --space-xl: clamp(1.5rem, 1.1rem + 2vw, 2.5rem); /* 24px – 40px */
+  --space-2xl: clamp(2rem, 1.5rem + 3vw, 3.5rem); /* 32px – 56px */
 
   /* ===== 字号尺度（流体） ===== */
-  --text-xs:   clamp(0.75rem, 0.72rem + 0.15vw, 0.875rem); /* 12px – 14px */
-  --text-sm:   clamp(0.85rem, 0.82rem + 0.15vw, 0.95rem);  /* ~14px – 15px */
-  --text-base: clamp(0.95rem, 0.9rem + 0.3vw, 1.1rem);     /* ~15px – 18px */
-  --text-lg:   clamp(1.1rem,  1rem + 0.4vw, 1.35rem);      /* ~18px – 22px */
-  --text-xl:   clamp(1.4rem,  1rem + 1.8vw, 2.2rem);       /* ~22px – 35px */
-  --text-2xl:  clamp(1.75rem, 1.2rem + 2.5vw, 3rem);       /* ~28px – 48px */
+  --text-xs: clamp(0.75rem, 0.72rem + 0.15vw, 0.875rem); /* 12px – 14px */
+  --text-sm: clamp(0.85rem, 0.82rem + 0.15vw, 0.95rem); /* ~14px – 15px */
+  --text-base: clamp(0.95rem, 0.9rem + 0.3vw, 1.1rem); /* ~15px – 18px */
+  --text-lg: clamp(1.1rem, 1rem + 0.4vw, 1.35rem); /* ~18px – 22px */
+  --text-xl: clamp(1.4rem, 1rem + 1.8vw, 2.2rem); /* ~22px – 35px */
+  --text-2xl: clamp(1.75rem, 1.2rem + 2.5vw, 3rem); /* ~28px – 48px */
 
   /* ===== 内容宽度上限 ===== */
-  --content-max: 1200px;     /* 阅读型内容上限 */
-  --dashboard-max: 1600px;   /* 数据密集型上限 */
+  --content-max: 1200px; /* 阅读型内容上限 */
+  --dashboard-max: 1600px; /* 数据密集型上限 */
 
   /* ===== 断点引用（文档性 token；@media 条件不能引用 var()，仅作对齐参考） ===== */
   --bp-compact: 768px;
@@ -310,8 +310,12 @@ body {
 }
 
 @keyframes stat-pulse {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 .stat-label {
@@ -796,7 +800,6 @@ body {
   width: clamp(200px, 18vw, 300px);
 }
 
-
 /* ===== B 站学习模式 ===== */
 
 /* 页面头（标题 + 反馈入口，R-1） */
@@ -864,7 +867,10 @@ body {
   border-radius: 10px;
   overflow: hidden;
   cursor: pointer;
-  transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+  transition:
+    border-color 0.2s,
+    transform 0.2s,
+    box-shadow 0.2s;
 }
 
 .bili-card:hover {
@@ -1220,7 +1226,9 @@ body,
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 }
 
 .overlay-tab:hover {
@@ -1390,7 +1398,9 @@ body,
   border-radius: 6px;
   padding: 4px 6px;
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
 }
 
 .overlay-note-item:hover {
@@ -1829,7 +1839,10 @@ body,
   padding: var(--space-lg);
   text-align: left;
   cursor: pointer;
-  transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+  transition:
+    border-color 0.2s,
+    transform 0.2s,
+    box-shadow 0.2s;
   color: var(--ink);
   font-family: var(--font);
   display: flex;
@@ -2017,4 +2030,591 @@ body,
 .app-fluid-modal .ant-modal {
   width: clamp(320px, 50vw, 600px) !important;
   max-width: calc(100vw - 32px);
+}
+
+/* ===== 进度页签新版（M1 记录管理 + M2 快捷访问 + M3 统计 / 目标） =====
+ * 悬浮面板（~590 内容宽）与抽屉（~400 内容宽）共用：
+ * 统计卡 auto-fit 网格自动换列；筛选栏 flex-wrap 自动换行；列表区内滚动。 */
+
+.progress-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* ---- 概览区 ---- */
+
+.progress-overview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.progress-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: 8px;
+}
+
+.progress-stat-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 6px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.18);
+  min-width: 0;
+}
+
+.progress-stat-icon {
+  font-size: 13px;
+  color: var(--accent2, #5aa2ff);
+  line-height: 1;
+}
+
+.progress-stat-value {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+
+.progress-stat-label {
+  font-size: 10px;
+  color: var(--muted);
+  text-align: center;
+  line-height: 1.3;
+}
+
+/* 全局目标行（M3） */
+.progress-goal-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 11px;
+  color: var(--muted);
+  background: rgba(90, 162, 255, 0.07);
+  border: 1px dashed rgba(90, 162, 255, 0.35);
+  border-radius: 8px;
+  padding: 4px 8px;
+}
+
+.progress-goal-item {
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-goal-edit.ant-btn {
+  font-size: 11px;
+  margin-left: auto;
+  height: 22px;
+}
+
+/* 继续学习卡片（M2 快速续学） */
+.progress-continue {
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.progress-continue.current {
+  border-color: rgba(255, 107, 74, 0.45);
+  background: rgba(255, 107, 74, 0.07);
+}
+
+.progress-continue-cover {
+  width: 72px;
+  height: 48px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  color: var(--muted);
+}
+
+.progress-continue-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.progress-continue-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.progress-continue-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progress-continue-meta {
+  font-size: 10px;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+
+.progress-continue-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+
+.progress-continue-time {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.progress-continue-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.progress-continue-actions .ant-btn {
+  font-size: 11px;
+  height: 22px;
+}
+
+/* 截止日期倒计时（M3） */
+.progress-deadline {
+  color: var(--accent2, #5aa2ff);
+}
+
+.progress-deadline-overdue {
+  color: #ff4d4f;
+  font-weight: 600;
+}
+
+/* ---- 列表区 ---- */
+
+.progress-record-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.progress-list-toolbar {
+  flex-shrink: 0;
+}
+
+.progress-filter-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.progress-filter-search {
+  flex: 1 1 130px;
+  min-width: 110px;
+}
+
+.progress-filter-search .ant-input-affix-wrapper {
+  font-size: 12px;
+  height: 24px;
+}
+
+.progress-filter-status {
+  width: 92px;
+}
+
+.progress-filter-tags {
+  width: 120px;
+}
+
+.progress-filter-range {
+  width: 96px;
+}
+
+.progress-filter-custom {
+  width: 210px;
+}
+
+.progress-filter-sort {
+  width: 116px;
+}
+
+/* 批量操作栏（M1） */
+.progress-batch-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 1px solid rgba(255, 107, 74, 0.4);
+  border-radius: 8px;
+  background: rgba(255, 107, 74, 0.08);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--ink);
+}
+
+.progress-batch-count {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 卡片列表 */
+.progress-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 1px;
+}
+
+.progress-empty {
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+  padding: 18px 0;
+}
+
+.progress-list-foot {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.progress-list-count {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 单条记录卡片（M1/M2） */
+.progress-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.progress-card:hover {
+  background: rgba(0, 0, 0, 0.28);
+}
+
+.progress-card.current {
+  border-color: rgba(255, 107, 74, 0.45);
+}
+
+.progress-card.select-mode {
+  cursor: default;
+}
+
+.progress-card.selected {
+  border-color: var(--accent2, #5aa2ff);
+  background: rgba(90, 162, 255, 0.08);
+}
+
+.progress-card-check {
+  flex-shrink: 0;
+}
+
+.progress-card-cover {
+  width: 56px;
+  height: 38px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  color: var(--muted);
+}
+
+.progress-card-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.progress-card-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.progress-card-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  line-height: 1.35;
+}
+
+.progress-card-meta {
+  font-size: 10px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progress-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.progress-card-stats {
+  font-size: 10px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-card-tags {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
+  font-size: 10px;
+}
+
+.progress-tag.ant-tag {
+  font-size: 10px;
+  line-height: 16px;
+  padding: 0 4px;
+  margin: 0;
+}
+
+.progress-status-tag.ant-tag {
+  font-size: 10px;
+  line-height: 16px;
+  margin: 0;
+}
+
+.progress-card-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.progress-card-actions .ant-btn {
+  font-size: 11px;
+  height: 22px;
+}
+
+/* 删除确认提示 */
+.progress-delete-hint {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* ---- 「调整进度」对话框（M1） ---- */
+
+.progress-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.progress-edit-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.progress-edit-label {
+  width: 84px;
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.progress-edit-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.progress-edit-tags {
+  flex: 1;
+  min-width: 0;
+}
+
+.progress-hms {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.progress-hms .ant-input-number {
+  width: 52px;
+}
+
+.progress-hms-sep {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+/* 目标编辑弹窗 */
+.progress-goal-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.progress-goal-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--ink);
+}
+
+/* ---- M4 数据可视化（进度页图表区） ---- */
+
+.progress-charts {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.progress-charts-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.progress-charts-title {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.progress-charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 8px;
+}
+
+.progress-chart-card {
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  padding: 6px 8px 4px;
+  background: rgba(0, 0, 0, 0.18);
+  min-width: 0;
+}
+
+.progress-chart-card-title {
+  font-size: 10px;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+
+.progress-chart-empty {
+  height: 150px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* ---- M5 恢复预览弹窗 ---- */
+
+.restore-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.restore-preview-line {
+  font-size: 12px;
+  color: var(--ink);
+}
+
+.restore-preview-value {
+  font-variant-numeric: tabular-nums;
+  color: var(--accent2, #5aa2ff);
+}
+
+/* ---- M5 最近备份列表（设置页数据管理） ---- */
+
+.backup-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 6px;
+  padding: 6px 8px;
+  border: 1px dashed var(--rule);
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.12);
+}
+
+.backup-list-title {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.backup-list-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--ink);
+  min-width: 0;
+}
+
+.backup-list-item .ant-tag {
+  margin: 0;
+  font-size: 10px;
+  line-height: 16px;
+}
+
+.backup-list-meta {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }

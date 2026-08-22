@@ -107,7 +107,9 @@ function App(): JSX.Element {
         setEmergencyCode('')
       } else {
         setEmergencyHint(
-          result.retryInSec ? `${result.error}（${result.retryInSec}s）` : (result.error ?? '恢复码错误')
+          result.retryInSec
+            ? `${result.error}（${result.retryInSec}s）`
+            : (result.error ?? '恢复码错误')
         )
       }
     } catch (err) {
@@ -153,21 +155,21 @@ function App(): JSX.Element {
           onBreakpoint={(broken) => setSiderCollapsed(broken)}
           className="app-sider"
         >
-        <div className="app-logo">
-          <span className="app-logo-mark">🍅</span>
-          <Typography.Text strong className="app-logo-text">
-            番茄专注 Pro
-          </Typography.Text>
-        </div>
-        <Menu
-          theme="dark"
-          mode="inline"
-          selectedKeys={[page]}
-          items={NAV_ITEMS}
-          onClick={({ key }) => setPage(key as PageKey)}
-          className="app-menu"
-        />
-      </Sider>
+          <div className="app-logo">
+            <span className="app-logo-mark">🍅</span>
+            <Typography.Text strong className="app-logo-text">
+              番茄专注 Pro
+            </Typography.Text>
+          </div>
+          <Menu
+            theme="dark"
+            mode="inline"
+            selectedKeys={[page]}
+            items={NAV_ITEMS}
+            onClick={({ key }) => setPage(key as PageKey)}
+            className="app-menu"
+          />
+        </Sider>
         <Content className="app-content">
           {/* key=page：切换页面时重挂载滚动区，重置滚动位置并重新计算滚动条——
               否则旧页面的滚动位置/滚动条指标会残留到新页面（非可滑动页出现幽灵滑块或滑块消失） */}

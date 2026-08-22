@@ -4,6 +4,7 @@
  */
 
 import type { BiliStrictness } from './settings'
+import type { SessionSource } from './stats'
 
 /** 搜索结果排序方式 */
 export type BiliOrder = 'totalrank' | 'click' | 'pubdate'
@@ -79,6 +80,14 @@ export interface OpenVideoPayload {
   title?: string
   /** 会话上限时长（毫秒，来自首页时长浮层） */
   plannedMs?: number
+  /** 打开后跳转到指定进度（秒，续学入口；B 站原生 ?t= 参数，加载即定位） */
+  seekSeconds?: number
+  /** 打开来源：manual / resume（续学）/ search（搜索结果）；写入 study_sessions.source（M3） */
+  source?: SessionSource
+  /** 封面图 URL（bili-image:// 代理地址，搜索结果页快照；写入 play_records.cover_url） */
+  coverUrl?: string
+  /** UP 主名称（搜索结果页快照；写入 play_records.author） */
+  author?: string
 }
 
 /** 标记某 BV 为"与主题相关" */
@@ -180,7 +189,8 @@ export interface AiAskRequest {
   history?: AiMessage[]
 }
 
-export interface AiReply {
+/** B 站学习助手完整回复（与英语模式 shared/ai.ts 的 AiReply 命名区分，避免同名异构冲突） */
+export interface BiliAiReply {
   role: 'assistant'
   content: string
   /** 引用来源（RAG 接入后填充） */

@@ -52,6 +52,28 @@ export interface EnforcedState {
   sessionId: number
 }
 
+/** 学习目标设置（M3：全局粒度；课程级目标 = 精读遍数 + 截止日期，存 play_records） */
+export interface StudyGoalSettings {
+  /** 每日学习时长目标（分钟），0 = 未设定 */
+  dailyMinutes: number
+  /** 每周学习天数目标，0 = 未设定 */
+  weeklyDays: number
+}
+
+/** 自动备份设置（M5：本地 JSON 备份到指定目录，保留最近 N 份） */
+export interface BackupSettings {
+  /** 启用自动备份（默认开启） */
+  enabled: boolean
+  /** 备份频率：每日 / 每周（每周在目标时刻所在的那一天执行） */
+  frequency: 'daily' | 'weekly'
+  /** 备份时刻 HH:mm（24 小时制，默认 03:00） */
+  time: string
+  /** 保留份数（0 = 全部保留，默认 7） */
+  keepCount: number
+  /** 备份目录（空 = 默认 文档/番茄专注备份） */
+  directory: string
+}
+
 export interface AppSettings {
   lockLevel: LockLevel
   pomodoro: PomodoroSettings
@@ -68,6 +90,10 @@ export interface AppSettings {
   recoveryCodeHash: string | null
   /** 强制会话持久化状态 */
   enforced: EnforcedState | null
+  /** 学习目标（M3：全局每日时长 / 每周天数） */
+  studyGoals: StudyGoalSettings
+  /** 自动备份（M5） */
+  backup: BackupSettings
   /**
    * 匿名使用统计（R-2）：默认关闭；开启后仅记录本地计数/时长事件
    * （打开视频数、会话时长、提问数、导航拦截次数、面板显隐次数），
@@ -102,5 +128,7 @@ export const SETTINGS_DEFAULTS: AppSettings = {
   noisePreset: 'rain',
   recoveryCodeHash: null,
   enforced: null,
+  studyGoals: { dailyMinutes: 60, weeklyDays: 5 },
+  backup: { enabled: true, frequency: 'daily', time: '03:00', keepCount: 7, directory: '' },
   telemetryEnabled: false
 }
