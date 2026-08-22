@@ -35,24 +35,24 @@
 
 窗口模式与全屏模式之间的布局不一致，**根因在于视口尺寸的剧烈变化**，而非简单的"放大缩小"。
 
-| 维度 | 窗口模式 | 全屏模式 |
-|---|---|---|
-| 视口宽度 | 通常 800px – 1600px | 通常 1920px – 2560px+ |
-| 浏览器 Chrome | 占用空间 | 消失，额外垂直空间 |
-| 尺寸调整 | 用户可随时拖拽 | 固定（显示器分辨率） |
-| 并列显示 | 常有其他窗口并列 | 独占全屏 |
-| 用户预期 | 对"紧凑感"有预期 | 对"空间感"有预期 |
+| 维度          | 窗口模式            | 全屏模式              |
+| ------------- | ------------------- | --------------------- |
+| 视口宽度      | 通常 800px – 1600px | 通常 1920px – 2560px+ |
+| 浏览器 Chrome | 占用空间            | 消失，额外垂直空间    |
+| 尺寸调整      | 用户可随时拖拽      | 固定（显示器分辨率）  |
+| 并列显示      | 常有其他窗口并列    | 独占全屏              |
+| 用户预期      | 对"紧凑感"有预期    | 对"空间感"有预期      |
 
 ### 1.2 现有代码中的具体表现
 
-| 问题类型 | 窗口模式表现 | 全屏模式表现 | 影响程度 |
-|---|---|---|---|
-| 内容区域宽度 | 内容充满可用空间，布局紧凑 | 内容过度拉伸，文本行过长 | 高 |
-| 网格列数 | 卡片大小适中 | 列数未增加，卡片巨大或间距过大 | 高 |
-| 导航栏 | Sider 220px 正常 | Sider 220px 在超宽屏下比例失调 | 中 |
-| 间距系统 | 固定 px 间距，视觉节奏正常 | 间距保持不变，大屏下显得空旷 | 中 |
-| 字体大小 | 固定字号，可读性正常 | 字号未随视口缩放，大屏偏小 | 中 |
-| 侧栏宽度 | 320px/300px 合理 | 固定值在超宽屏下比例失调 | 中 |
+| 问题类型     | 窗口模式表现               | 全屏模式表现                   | 影响程度 |
+| ------------ | -------------------------- | ------------------------------ | -------- |
+| 内容区域宽度 | 内容充满可用空间，布局紧凑 | 内容过度拉伸，文本行过长       | 高       |
+| 网格列数     | 卡片大小适中               | 列数未增加，卡片巨大或间距过大 | 高       |
+| 导航栏       | Sider 220px 正常           | Sider 220px 在超宽屏下比例失调 | 中       |
+| 间距系统     | 固定 px 间距，视觉节奏正常 | 间距保持不变，大屏下显得空旷   | 中       |
+| 字体大小     | 固定字号，可读性正常       | 字号未随视口缩放，大屏偏小     | 中       |
+| 侧栏宽度     | 320px/300px 合理           | 固定值在超宽屏下比例失调       | 中       |
 
 ### 1.3 根本原因
 
@@ -68,16 +68,16 @@
 
 ### 2.1 技术栈
 
-| 层级 | 技术 | 版本 |
-|---|---|---|
-| 运行时 | Electron | 33 |
-| 框架 | React | 18 |
-| 语言 | TypeScript | 5.7 |
-| 构建 | electron-vite (Vite 6) | 3.1.0 |
+| 层级      | 技术                              | 版本   |
+| --------- | --------------------------------- | ------ |
+| 运行时    | Electron                          | 33     |
+| 框架      | React                             | 18     |
+| 语言      | TypeScript                        | 5.7    |
+| 构建      | electron-vite (Vite 6)            | 3.1.0  |
 | UI 组件库 | Ant Design (antd, dark algorithm) | 5.24.2 |
-| 状态管理 | Zustand | 5.0.3 |
-| 图表 | Recharts | 2.15.4 |
-| 测试 | Vitest | 4.1.10 |
+| 状态管理  | Zustand                           | 5.0.3  |
+| 图表      | Recharts                          | 2.15.4 |
+| 测试      | Vitest                            | 4.1.10 |
 
 ### 2.2 样式架构
 
@@ -100,23 +100,23 @@ App.tsx
 
 ### 2.4 现有自适应能力（极度有限）
 
-| 技术 | 使用情况 | 位置 |
-|---|---|---|
-| `@media` 媒体查询 | **零** | — |
-| `@container` 容器查询 | **零** | — |
-| `clamp()` | **仅 1 处** | `.focus-timer { font-size: clamp(72px, 12vw, 120px) }` (L350) |
-| `max-width` | **仅 3 处**（局部约束） | `.chat-msg-bubble` (L552), `.bili-search-input` (L768), `.overlay-msg` (L1088) |
-| Grid `auto-fill` | 3 处 | `.bili-grid` (L803), `.mode-grid` (L1330), `.settings-layout` (L1227) |
-| `calc()` | 1 处 | `.english-layout { height: calc(100vh - 200px) }` (L517) |
-| antd 断点覆盖 | **无** | main.tsx ConfigProvider 未配置 |
+| 技术                  | 使用情况                | 位置                                                                           |
+| --------------------- | ----------------------- | ------------------------------------------------------------------------------ |
+| `@media` 媒体查询     | **零**                  | —                                                                              |
+| `@container` 容器查询 | **零**                  | —                                                                              |
+| `clamp()`             | **仅 1 处**             | `.focus-timer { font-size: clamp(72px, 12vw, 120px) }` (L350)                  |
+| `max-width`           | **仅 3 处**（局部约束） | `.chat-msg-bubble` (L552), `.bili-search-input` (L768), `.overlay-msg` (L1088) |
+| Grid `auto-fill`      | 3 处                    | `.bili-grid` (L803), `.mode-grid` (L1330), `.settings-layout` (L1227)          |
+| `calc()`              | 1 处                    | `.english-layout { height: calc(100vh - 200px) }` (L517)                       |
+| antd 断点覆盖         | **无**                  | main.tsx ConfigProvider 未配置                                                 |
 
 ### 2.5 多窗口架构
 
-| 窗口 | 尺寸 | 最小尺寸 | 可全屏 | 可调整大小 |
-|---|---|---|---|---|
-| 主窗口 | 1200×800 | 940×640 | — | 是 |
-| B 站视频窗口 | 1280×760 | 900×560 | 是 | 是 |
-| 悬浮面板 | 340×560 / 64×240 | — | — | **否（固定）** |
+| 窗口         | 尺寸             | 最小尺寸 | 可全屏 | 可调整大小     |
+| ------------ | ---------------- | -------- | ------ | -------------- |
+| 主窗口       | 1200×800         | 940×640  | —      | 是             |
+| B 站视频窗口 | 1280×760         | 900×560  | 是     | 是             |
+| 悬浮面板     | 340×560 / 64×240 | —        | —      | **否（固定）** |
 
 > 实际视口宽度范围：主窗口 940px–2560px+，B 站窗口 900px–全屏。悬浮面板固定尺寸，排除出自适应范围。
 
@@ -165,10 +165,10 @@ App.tsx
 └─────────────────────────────────────────────────────┘
 ```
 
-| 层级 | 技术 | 职责 | 改动位置 |
-|---|---|---|---|
-| 页面级 | `@media (min-width: ...)` | 整体布局结构切换 | global.css |
-| 区域级 | `@container (min-width: ...)` | 组件内部布局调整 | global.css + 页面容器 |
+| 层级   | 技术                          | 职责             | 改动位置                   |
+| ------ | ----------------------------- | ---------------- | -------------------------- |
+| 页面级 | `@media (min-width: ...)`     | 整体布局结构切换 | global.css                 |
+| 区域级 | `@container (min-width: ...)` | 组件内部布局调整 | global.css + 页面容器      |
 | 元素级 | `clamp()` / `min()` / `max()` | 字号、间距、尺寸 | global.css + `:root` token |
 
 ---
@@ -177,12 +177,12 @@ App.tsx
 
 采用**内容驱动**的断点体系，而非传统的设备尺寸断点：
 
-| 断点名称 | 视口宽度 | 典型场景 | 布局策略 | 对本项目的实际触发 |
-|---|---|---|---|---|
-| Compact | < 768px | 小窗口、平板竖屏 | 单栏布局，导航折叠 | 主窗口 min 940，**实际不触发**；保留供未来 |
-| Medium | 768px – 1200px | 标准窗口模式 | 双栏布局，侧栏可折叠，网格 2–3 列 | 主窗口 940px 时触发 |
-| Wide | 1200px – 1600px | 大窗口/小屏全屏 | 多栏布局，侧栏常驻，max-width 生效 | 主窗口默认 1200px 及以上 |
-| Ultrawide | > 1600px | 全屏/超宽显示器 | 内容 max-width 居中，侧栏封顶 | 全屏模式 (1920px+) |
+| 断点名称  | 视口宽度        | 典型场景         | 布局策略                           | 对本项目的实际触发                         |
+| --------- | --------------- | ---------------- | ---------------------------------- | ------------------------------------------ |
+| Compact   | < 768px         | 小窗口、平板竖屏 | 单栏布局，导航折叠                 | 主窗口 min 940，**实际不触发**；保留供未来 |
+| Medium    | 768px – 1200px  | 标准窗口模式     | 双栏布局，侧栏可折叠，网格 2–3 列  | 主窗口 940px 时触发                        |
+| Wide      | 1200px – 1600px | 大窗口/小屏全屏  | 多栏布局，侧栏常驻，max-width 生效 | 主窗口默认 1200px 及以上                   |
+| Ultrawide | > 1600px        | 全屏/超宽显示器  | 内容 max-width 居中，侧栏封顶      | 全屏模式 (1920px+)                         |
 
 ---
 
@@ -201,24 +201,24 @@ App.tsx
   /* ===== 现有颜色/字体 token 保持不变 ===== */
 
   /* ===== 间距尺度（流体） ===== */
-  --space-xs:  clamp(0.25rem, 0.2rem + 0.15vw, 0.375rem);   /*  4px –  6px */
-  --space-sm:  clamp(0.5rem,  0.45rem + 0.25vw, 0.75rem);   /*  8px – 12px */
-  --space-md:  clamp(0.75rem, 0.65rem + 0.5vw, 1.25rem);    /* 12px – 20px */
-  --space-lg:  clamp(1rem,    0.8rem + 1vw, 1.75rem);       /* 16px – 28px */
-  --space-xl:  clamp(1.5rem,  1.1rem + 2vw, 2.5rem);        /* 24px – 40px */
-  --space-2xl: clamp(2rem,    1.5rem + 3vw, 3.5rem);        /* 32px – 56px */
+  --space-xs: clamp(0.25rem, 0.2rem + 0.15vw, 0.375rem); /*  4px –  6px */
+  --space-sm: clamp(0.5rem, 0.45rem + 0.25vw, 0.75rem); /*  8px – 12px */
+  --space-md: clamp(0.75rem, 0.65rem + 0.5vw, 1.25rem); /* 12px – 20px */
+  --space-lg: clamp(1rem, 0.8rem + 1vw, 1.75rem); /* 16px – 28px */
+  --space-xl: clamp(1.5rem, 1.1rem + 2vw, 2.5rem); /* 24px – 40px */
+  --space-2xl: clamp(2rem, 1.5rem + 3vw, 3.5rem); /* 32px – 56px */
 
   /* ===== 字号尺度（流体） ===== */
-  --text-xs:   clamp(0.75rem, 0.72rem + 0.15vw, 0.875rem);  /* 12px – 14px */
-  --text-sm:   clamp(0.85rem, 0.82rem + 0.15vw, 0.95rem);   /* ~14px – 15px */
-  --text-base: clamp(0.95rem, 0.9rem + 0.3vw, 1.1rem);      /* ~15px – 18px */
-  --text-lg:   clamp(1.1rem,  1rem + 0.4vw, 1.35rem);       /* ~18px – 22px */
-  --text-xl:   clamp(1.4rem,  1rem + 1.8vw, 2.2rem);        /* ~22px – 35px */
-  --text-2xl:  clamp(1.75rem, 1.2rem + 2.5vw, 3rem);        /* ~28px – 48px */
+  --text-xs: clamp(0.75rem, 0.72rem + 0.15vw, 0.875rem); /* 12px – 14px */
+  --text-sm: clamp(0.85rem, 0.82rem + 0.15vw, 0.95rem); /* ~14px – 15px */
+  --text-base: clamp(0.95rem, 0.9rem + 0.3vw, 1.1rem); /* ~15px – 18px */
+  --text-lg: clamp(1.1rem, 1rem + 0.4vw, 1.35rem); /* ~18px – 22px */
+  --text-xl: clamp(1.4rem, 1rem + 1.8vw, 2.2rem); /* ~22px – 35px */
+  --text-2xl: clamp(1.75rem, 1.2rem + 2.5vw, 3rem); /* ~28px – 48px */
 
   /* ===== 内容宽度上限 ===== */
-  --content-max: 1200px;     /* 阅读型内容上限 */
-  --dashboard-max: 1600px;   /* 数据密集型上限 */
+  --content-max: 1200px; /* 阅读型内容上限 */
+  --dashboard-max: 1600px; /* 数据密集型上限 */
 
   /* ===== 断点引用 ===== */
   --bp-compact: 768px;
@@ -229,41 +229,41 @@ App.tsx
 
 ### 6.2 流体排版 — 替换固定字号
 
-| 当前规则 | 行号 | 当前值 | 目标值 |
-|---|---|---|---|
-| `.page-title` | L222 | `font-size: 20px` | `font-size: var(--text-lg)` |
-| `.app-logo-text` | L189 | `font-size: 15px` | `font-size: var(--text-sm)` |
-| `.app-logo-mark` | L184 | `font-size: 20px` | `font-size: var(--text-lg)` |
-| `.focus-timer` | L350 | `clamp(72px, 12vw, 120px)` | 对齐到 `--text-2xl` 尺度或保留独立 clamp |
-| `.mode-card` 标题 | — | 固定值 | `font-size: var(--text-lg)` |
-| `.bili-card` 标题 | — | 固定值 | `font-size: var(--text-sm)` |
-| `.stats-card` 标题 | — | 固定值 | `font-size: var(--text-lg)` |
-| `.field-label` | L420 | `font-size: 12px` | `font-size: var(--text-xs)` |
-| `.session-bar-title` | L448 | `font-size: 14px` | `font-size: var(--text-sm)` |
-| `.vocab-def` | L740 | `font-size: 12px` | `font-size: var(--text-xs)` |
-| `.grammar-summary` | L746 | `font-size: 12.5px` | `font-size: var(--text-xs)` |
-| `.heatmap-wd` | L1316 | `font-size: 11px` | `font-size: var(--text-xs)` |
+| 当前规则             | 行号  | 当前值                     | 目标值                                   |
+| -------------------- | ----- | -------------------------- | ---------------------------------------- |
+| `.page-title`        | L222  | `font-size: 20px`          | `font-size: var(--text-lg)`              |
+| `.app-logo-text`     | L189  | `font-size: 15px`          | `font-size: var(--text-sm)`              |
+| `.app-logo-mark`     | L184  | `font-size: 20px`          | `font-size: var(--text-lg)`              |
+| `.focus-timer`       | L350  | `clamp(72px, 12vw, 120px)` | 对齐到 `--text-2xl` 尺度或保留独立 clamp |
+| `.mode-card` 标题    | —     | 固定值                     | `font-size: var(--text-lg)`              |
+| `.bili-card` 标题    | —     | 固定值                     | `font-size: var(--text-sm)`              |
+| `.stats-card` 标题   | —     | 固定值                     | `font-size: var(--text-lg)`              |
+| `.field-label`       | L420  | `font-size: 12px`          | `font-size: var(--text-xs)`              |
+| `.session-bar-title` | L448  | `font-size: 14px`          | `font-size: var(--text-sm)`              |
+| `.vocab-def`         | L740  | `font-size: 12px`          | `font-size: var(--text-xs)`              |
+| `.grammar-summary`   | L746  | `font-size: 12.5px`        | `font-size: var(--text-xs)`              |
+| `.heatmap-wd`        | L1316 | `font-size: 11px`          | `font-size: var(--text-xs)`              |
 
 ### 6.3 内容区域 max-width 约束
 
-| 规则 | 行号 | 当前值 | 目标值 |
-|---|---|---|---|
+| 规则           | 行号 | 当前值               | 目标值                                                                                |
+| -------------- | ---- | -------------------- | ------------------------------------------------------------------------------------- |
 | `.app-content` | L215 | `padding: 28px 32px` | `max-width: var(--content-max); margin-inline: auto; padding: clamp(1rem, 3vw, 3rem)` |
-| 统计页容器 | — | 无 max-width | `max-width: var(--dashboard-max); margin-inline: auto` |
-| B 站页容器 | — | 无 max-width | `max-width: var(--dashboard-max); margin-inline: auto` |
+| 统计页容器     | —    | 无 max-width         | `max-width: var(--dashboard-max); margin-inline: auto`                                |
+| B 站页容器     | —    | 无 max-width         | `max-width: var(--dashboard-max); margin-inline: auto`                                |
 
 ### 6.4 流体间距 — 替换固定 gap/margin/padding
 
-| 规则 | 行号 | 当前值 | 目标值 |
-|---|---|---|---|
-| `.app-content` padding | L215 | `28px 32px` | `var(--space-lg) var(--space-xl)` |
-| `.mode-grid` gap | L1331 | `16px` | `var(--space-md)` |
-| `.bili-grid` gap | L805 | `16px` | `var(--space-md)` |
-| `.settings-layout` gap | L1228 | `14px` | `var(--space-sm)` |
-| `.focus-side` gap | L412 | `16px` | `var(--space-md)` |
-| `.english-layout` gap | L516 | `16px` | `var(--space-md)` |
-| `.focus-controls` gap | L403 | `12px` | `var(--space-sm)` |
-| `.session-bar-inner` gap | L439 | `20px` | `var(--space-md)` |
+| 规则                     | 行号  | 当前值      | 目标值                            |
+| ------------------------ | ----- | ----------- | --------------------------------- |
+| `.app-content` padding   | L215  | `28px 32px` | `var(--space-lg) var(--space-xl)` |
+| `.mode-grid` gap         | L1331 | `16px`      | `var(--space-md)`                 |
+| `.bili-grid` gap         | L805  | `16px`      | `var(--space-md)`                 |
+| `.settings-layout` gap   | L1228 | `14px`      | `var(--space-sm)`                 |
+| `.focus-side` gap        | L412  | `16px`      | `var(--space-md)`                 |
+| `.english-layout` gap    | L516  | `16px`      | `var(--space-md)`                 |
+| `.focus-controls` gap    | L403  | `12px`      | `var(--space-sm)`                 |
+| `.session-bar-inner` gap | L439  | `20px`      | `var(--space-md)`                 |
 
 ---
 
@@ -305,11 +305,11 @@ App.tsx
 
 **断点行为**：
 
-| 视口范围 | Sider 形态 | 宽度策略 |
-|---|---|---|
-| Compact (< 768px) | 折叠为图标栏 | 56px |
-| Medium (768–1200px) | 折叠为图标模式 | 56px (collapsedWidth) |
-| Wide (1200–1600px) | 常驻展开 | 240px |
+| 视口范围             | Sider 形态         | 宽度策略               |
+| -------------------- | ------------------ | ---------------------- |
+| Compact (< 768px)    | 折叠为图标栏       | 56px                   |
+| Medium (768–1200px)  | 折叠为图标模式     | 56px (collapsedWidth)  |
+| Wide (1200–1600px)   | 常驻展开           | 240px                  |
 | Ultrawide (> 1600px) | 常驻展开，不再增大 | 280px (max-width 封顶) |
 
 ### 7.2 页面级布局切换（@media）
@@ -368,19 +368,19 @@ App.tsx
 
 ### 7.3 固定侧栏 → 流体宽度
 
-| 规则 | 行号 | 当前值 | 目标值 |
-|---|---|---|---|
-| `.focus-side` | L408 | `width: 320px; flex-shrink: 0` | `width: clamp(240px, 22vw, 340px); flex-shrink: 0` |
+| 规则            | 行号 | 当前值                         | 目标值                                             |
+| --------------- | ---- | ------------------------------ | -------------------------------------------------- |
+| `.focus-side`   | L408 | `width: 320px; flex-shrink: 0` | `width: clamp(240px, 22vw, 340px); flex-shrink: 0` |
 | `.english-side` | L725 | `width: 300px; flex-shrink: 0` | `width: clamp(220px, 20vw, 320px); flex-shrink: 0` |
-| `.ai-settings` | L752 | `width: 280px` | `width: clamp(200px, 18vw, 300px)` |
+| `.ai-settings`  | L752 | `width: 280px`                 | `width: clamp(200px, 18vw, 300px)`                 |
 
 ### 7.4 增强网格系统
 
-| 规则 | 行号 | 当前 minmax | 目标 minmax | 当前 gap | 目标 gap |
-|---|---|---|---|---|---|
-| `.bili-grid` | L803 | `minmax(200px, 1fr)` | `minmax(min(100%, 200px), 1fr)` | `16px` | `var(--space-md)` |
-| `.mode-grid` | L1330 | `minmax(260px, 1fr)` | `minmax(min(100%, 260px), 1fr)` | `16px` | `var(--space-md)` |
-| `.settings-layout` | L1227 | `minmax(340px, 1fr)` | `minmax(min(100%, 340px), 1fr)` | `14px` | `var(--space-sm)` |
+| 规则               | 行号  | 当前 minmax          | 目标 minmax                     | 当前 gap | 目标 gap          |
+| ------------------ | ----- | -------------------- | ------------------------------- | -------- | ----------------- |
+| `.bili-grid`       | L803  | `minmax(200px, 1fr)` | `minmax(min(100%, 200px), 1fr)` | `16px`   | `var(--space-md)` |
+| `.mode-grid`       | L1330 | `minmax(260px, 1fr)` | `minmax(min(100%, 260px), 1fr)` | `16px`   | `var(--space-md)` |
+| `.settings-layout` | L1227 | `minmax(340px, 1fr)` | `minmax(min(100%, 340px), 1fr)` | `14px`   | `var(--space-sm)` |
 
 `min(100%, Xpx)` 的作用：当容器宽度小于 Xpx 时，取容器宽度（100%），防止网格溢出。
 
@@ -410,13 +410,13 @@ App.tsx
 
 ### 8.2 组件级 @container 规则
 
-| 组件 | 所在页面 | 容器条件 | 布局变化 |
-|---|---|---|---|
-| ModeCard | 首页 | `@container page (min-width: 600px)` | 竖排 → 横排内容布局 |
-| BiliCard | B 站学习 | `@container page (min-width: 500px)` | 紧凑模式 → 展示完整元数据 |
-| 表单字段 | 设置 | `@container (min-width: 500px)` | 单列堆叠 → 多列并排 |
-| Session bar | B 站/英语 | `@container (min-width: 400px)` | 换行排列 → 水平排列 |
-| Stats card 内部 | 统计 | `@container page (min-width: 800px)` | 紧凑间距 → 宽松间距 |
+| 组件            | 所在页面  | 容器条件                             | 布局变化                  |
+| --------------- | --------- | ------------------------------------ | ------------------------- |
+| ModeCard        | 首页      | `@container page (min-width: 600px)` | 竖排 → 横排内容布局       |
+| BiliCard        | B 站学习  | `@container page (min-width: 500px)` | 紧凑模式 → 展示完整元数据 |
+| 表单字段        | 设置      | `@container (min-width: 500px)`      | 单列堆叠 → 多列并排       |
+| Session bar     | B 站/英语 | `@container (min-width: 400px)`      | 换行排列 → 水平排列       |
+| Stats card 内部 | 统计      | `@container page (min-width: 800px)` | 紧凑间距 → 宽松间距       |
 
 **示例 — ModeCard 容器查询**：
 
@@ -459,12 +459,12 @@ App.tsx
 
 ### 8.3 全屏专项优化
 
-| 场景 | 优化策略 |
-|---|---|
-| Ultrawide (> 1600px) 内容区域 | `max-width` 居中，两侧留白 |
-| Ultrawide 侧栏 | 封顶 280px，不随视口继续增大 |
-| Hero/计时器区域 | 通过 clamp 放大（`.focus-timer` 已有 clamp，对齐新尺度） |
-| 弹窗/模态框 | `width: clamp(320px, 50vw, 600px)` 保持比例一致 |
+| 场景                          | 优化策略                                                 |
+| ----------------------------- | -------------------------------------------------------- |
+| Ultrawide (> 1600px) 内容区域 | `max-width` 居中，两侧留白                               |
+| Ultrawide 侧栏                | 封顶 280px，不随视口继续增大                             |
+| Hero/计时器区域               | 通过 clamp 放大（`.focus-timer` 已有 clamp，对齐新尺度） |
+| 弹窗/模态框                   | `width: clamp(320px, 50vw, 600px)` 保持比例一致          |
 
 ### 8.4 antd ConfigProvider 断点对齐
 
@@ -499,71 +499,71 @@ main.tsx ConfigProvider 扩展，使 antd 内置组件的响应式行为与项�
 
 ### 9.1 首页（HomePage）
 
-| 元素 | 当前 | 目标 |
-|---|---|---|
-| `.mode-grid` | auto-fill, minmax(260px), gap 16px | minmax(min(100%, 260px)), gap var(--space-md) |
-| `.mode-card` padding | `20px 22px` | `var(--space-lg)` |
-| ModeCard 布局 | 固定竖排 | `@container page (min-width: 600px)` → 横排 |
-| `.stats-bar` 间距 | 固定 | 流体 clamp |
-| 内容区域 | 无 max-width | max-width: var(--content-max) |
+| 元素                 | 当前                               | 目标                                          |
+| -------------------- | ---------------------------------- | --------------------------------------------- |
+| `.mode-grid`         | auto-fill, minmax(260px), gap 16px | minmax(min(100%, 260px)), gap var(--space-md) |
+| `.mode-card` padding | `20px 22px`                        | `var(--space-lg)`                             |
+| ModeCard 布局        | 固定竖排                           | `@container page (min-width: 600px)` → 横排   |
+| `.stats-bar` 间距    | 固定                               | 流体 clamp                                    |
+| 内容区域             | 无 max-width                       | max-width: var(--content-max)                 |
 
 ### 9.2 专注模式（FocusPage）
 
-| 元素 | 当前 | 目标 |
-|---|---|---|
-| `.focus-layout` | flex row, 固定 | @media 堆叠/双栏切换 |
-| `.focus-side` | width: 320px | clamp(240px, 22vw, 340px) |
-| `.focus-timer` | clamp(72px, 12vw, 120px) | 对齐 --text-2xl 尺度 |
-| `.focus-controls` gap | 12px | var(--space-sm) |
-| 内容区域 | 无 max-width | max-width: var(--content-max) |
+| 元素                  | 当前                     | 目标                          |
+| --------------------- | ------------------------ | ----------------------------- |
+| `.focus-layout`       | flex row, 固定           | @media 堆叠/双栏切换          |
+| `.focus-side`         | width: 320px             | clamp(240px, 22vw, 340px)     |
+| `.focus-timer`        | clamp(72px, 12vw, 120px) | 对齐 --text-2xl 尺度          |
+| `.focus-controls` gap | 12px                     | var(--space-sm)               |
+| 内容区域              | 无 max-width             | max-width: var(--content-max) |
 
 ### 9.3 英语学习（EnglishModePage）
 
-| 元素 | 当前 | 目标 |
-|---|---|---|
-| `.english-layout` | flex row, height: calc(100vh - 200px) | @media 堆叠/双栏 + 保留 height calc |
-| `.english-side` | width: 300px | clamp(220px, 20vw, 320px) |
-| `.english-layout` gap | 16px | var(--space-md) |
-| `.ai-settings` | width: 280px | clamp(200px, 18vw, 300px) |
-| `.chat-msg-bubble` max-width | 82% | 保留 |
-| 内容区域 | 无 max-width | max-width: var(--dashboard-max) |
+| 元素                         | 当前                                  | 目标                                |
+| ---------------------------- | ------------------------------------- | ----------------------------------- |
+| `.english-layout`            | flex row, height: calc(100vh - 200px) | @media 堆叠/双栏 + 保留 height calc |
+| `.english-side`              | width: 300px                          | clamp(220px, 20vw, 320px)           |
+| `.english-layout` gap        | 16px                                  | var(--space-md)                     |
+| `.ai-settings`               | width: 280px                          | clamp(200px, 18vw, 300px)           |
+| `.chat-msg-bubble` max-width | 82%                                   | 保留                                |
+| 内容区域                     | 无 max-width                          | max-width: var(--dashboard-max)     |
 
 ### 9.4 B 站学习（BiliModePage）
 
-| 元素 | 当前 | 目标 |
-|---|---|---|
-| `.bili-grid` | auto-fill, minmax(200px), gap 16px | minmax(min(100%, 200px)), gap var(--space-md) |
-| `.bili-search-input` | max-width: 460px | 保留 |
-| `.bili-search-bar` gap | 10px | var(--space-sm) |
-| BiliCard 内部 | 固定布局 | @container 适配紧凑/展开 |
-| Session bar | 固定布局 | @container 适配换行/水平 |
-| 内容区域 | 无 max-width | max-width: var(--dashboard-max) |
-| 全屏模式 | win.setFullScreen(true) | 内容居中 + max-width 约束 |
+| 元素                   | 当前                               | 目标                                          |
+| ---------------------- | ---------------------------------- | --------------------------------------------- |
+| `.bili-grid`           | auto-fill, minmax(200px), gap 16px | minmax(min(100%, 200px)), gap var(--space-md) |
+| `.bili-search-input`   | max-width: 460px                   | 保留                                          |
+| `.bili-search-bar` gap | 10px                               | var(--space-sm)                               |
+| BiliCard 内部          | 固定布局                           | @container 适配紧凑/展开                      |
+| Session bar            | 固定布局                           | @container 适配换行/水平                      |
+| 内容区域               | 无 max-width                       | max-width: var(--dashboard-max)               |
+| 全屏模式               | win.setFullScreen(true)            | 内容居中 + max-width 约束                     |
 
 ### 9.5 学习统计（StatsPage）
 
-| 元素 | 当前 | 目标 |
-|---|---|---|
-| `.stats-layout` gap | 14px | var(--space-sm) |
-| `.stats-card` 标题 | 固定字号 | var(--text-lg) |
-| 图表区域 | 无 max-width | max-width: var(--dashboard-max) |
-| 热力图单元格 | 固定 | 保持 aspect-ratio，clamp 间距 |
+| 元素                | 当前         | 目标                            |
+| ------------------- | ------------ | ------------------------------- |
+| `.stats-layout` gap | 14px         | var(--space-sm)                 |
+| `.stats-card` 标题  | 固定字号     | var(--text-lg)                  |
+| 图表区域            | 无 max-width | max-width: var(--dashboard-max) |
+| 热力图单元格        | 固定         | 保持 aspect-ratio，clamp 间距   |
 
 ### 9.6 记事本（NotesPage）
 
-| 元素 | 当前 | 目标 |
-|---|---|---|
+| 元素     | 当前         | 目标                          |
+| -------- | ------------ | ----------------------------- |
 | 内容区域 | 无 max-width | max-width: var(--content-max) |
-| 字号 | 固定 | 流体 clamp |
-| 间距 | 固定 | 流体 clamp |
+| 字号     | 固定         | 流体 clamp                    |
+| 间距     | 固定         | 流体 clamp                    |
 
 ### 9.7 设置（SettingsPage）
 
-| 元素 | 当前 | 目标 |
-|---|---|---|
+| 元素               | 当前                              | 目标                                          |
+| ------------------ | --------------------------------- | --------------------------------------------- |
 | `.settings-layout` | auto-fit, minmax(340px), gap 14px | minmax(min(100%, 340px)), gap var(--space-sm) |
-| `.settings-row` | 固定 row | @container 单列/多列切换 |
-| `.settings-label` | font-size: 13px | var(--text-sm) |
+| `.settings-row`    | 固定 row                          | @container 单列/多列切换                      |
+| `.settings-label`  | font-size: 13px                   | var(--text-sm)                                |
 
 ---
 
@@ -571,14 +571,14 @@ main.tsx ConfigProvider 扩展，使 antd 内置组件的响应式行为与项�
 
 ### 10.1 CSS 技术选型矩阵
 
-| 技术 | 适用场景 | 解决的核心问题 | Electron 33 支持 |
-|---|---|---|---|
-| Container Queries | 组件级自适应 | 同一组件在不同容器中呈现不同布局 | Chromium 130+ ✅ |
-| `clamp()` | 字号、间距、尺寸 | 无级连续缩放，消除断点跳跃 | ✅ |
-| `min()` / `max()` | 尺寸上下限控制 | 确保元素不小于/不大于某个值 | ✅ |
-| CSS Grid `auto-fit` | 卡片网格 | 零断点自动列数调整 | ✅ |
-| Viewport Units (vw/vh) | Hero、全屏面板 | 元素尺寸与视口联动 | ✅ |
-| Media Queries | 页面级布局 | 整体结构切换 | ✅ |
+| 技术                   | 适用场景         | 解决的核心问题                   | Electron 33 支持 |
+| ---------------------- | ---------------- | -------------------------------- | ---------------- |
+| Container Queries      | 组件级自适应     | 同一组件在不同容器中呈现不同布局 | Chromium 130+ ✅ |
+| `clamp()`              | 字号、间距、尺寸 | 无级连续缩放，消除断点跳跃       | ✅               |
+| `min()` / `max()`      | 尺寸上下限控制   | 确保元素不小于/不大于某个值      | ✅               |
+| CSS Grid `auto-fit`    | 卡片网格         | 零断点自动列数调整               | ✅               |
+| Viewport Units (vw/vh) | Hero、全屏面板   | 元素尺寸与视口联动               | ✅               |
+| Media Queries          | 页面级布局       | 整体结构切换                     | ✅               |
 
 ### 10.2 关键技术模式
 
@@ -627,13 +627,13 @@ main.tsx ConfigProvider 扩展，使 antd 内置组件的响应式行为与项�
 
 ### 10.3 布局模式对比
 
-| 维度 | 当前方案（固定 px） | 目标方案（流体 + 容器查询） |
-|---|---|---|
-| 宽度定义 | 固定 px 值 | 百分比 + max-width + clamp() |
-| 网格列数 | auto-fill 固定 minmax | auto-fit + min(100%, ...) |
-| 组件复用 | 同一组件不同位置需覆写样式 | 容器查询自动适配，一处定义处处可用 |
-| 窗口↔全屏 | 无适配，布局失调 | 平滑过渡，无感知切换 |
-| 维护成本 | 高：间距/字号散落各处 | 低：token 集中管理 |
+| 维度      | 当前方案（固定 px）        | 目标方案（流体 + 容器查询）        |
+| --------- | -------------------------- | ---------------------------------- |
+| 宽度定义  | 固定 px 值                 | 百分比 + max-width + clamp()       |
+| 网格列数  | auto-fill 固定 minmax      | auto-fit + min(100%, ...)          |
+| 组件复用  | 同一组件不同位置需覆写样式 | 容器查询自动适配，一处定义处处可用 |
+| 窗口↔全屏 | 无适配，布局失调           | 平滑过渡，无感知切换               |
+| 维护成本  | 高：间距/字号散落各处      | 低：token 集中管理                 |
 
 ---
 
@@ -641,19 +641,19 @@ main.tsx ConfigProvider 扩展，使 antd 内置组件的响应式行为与项�
 
 ### 11.1 分阶段推进
 
-| 阶段 | 周期 | 目标 | 关键产出 | 风险 |
-|---|---|---|---|---|
-| 一·基础 | 5 天 | 建立流体基础 | Design Token 系统、clamp() 排版、app-content max-width | 低：改动集中在 CSS 变量和全局样式 |
-| 二·核心 | 10 天 | 核心布局改造 | Sider 自适应、@media 断点、侧栏 clamp、网格增强 | 中：涉及核心组件，需回归测试 |
-| 三·增强 | 8 天 | 精细化增强 | @container 容器查询、全屏优化、antd 断点对齐 | 中：需验证组件级适配效果 |
+| 阶段    | 周期  | 目标         | 关键产出                                               | 风险                              |
+| ------- | ----- | ------------ | ------------------------------------------------------ | --------------------------------- |
+| 一·基础 | 5 天  | 建立流体基础 | Design Token 系统、clamp() 排版、app-content max-width | 低：改动集中在 CSS 变量和全局样式 |
+| 二·核心 | 10 天 | 核心布局改造 | Sider 自适应、@media 断点、侧栏 clamp、网格增强        | 中：涉及核心组件，需回归测试      |
+| 三·增强 | 8 天  | 精细化增强   | @container 容器查询、全屏优化、antd 断点对齐           | 中：需验证组件级适配效果          |
 
 ### 11.2 各阶段关键交付物
 
-| 阶段 | 交付物 |
-|---|---|
-| 一 | `:root` Design Token（间距/字号/上限/断点）、流体排版规则、内容区域 max-width 规范 |
-| 二 | 自适应 Sider（App.tsx + global.css）、3 条 @media 断点规则、侧栏 clamp 宽度、网格 clamp gap + min() |
-| 三 | @container 定义与组件级规则、全屏专项优化、antd ConfigProvider 断点对齐 |
+| 阶段 | 交付物                                                                                              |
+| ---- | --------------------------------------------------------------------------------------------------- |
+| 一   | `:root` Design Token（间距/字号/上限/断点）、流体排版规则、内容区域 max-width 规范                  |
+| 二   | 自适应 Sider（App.tsx + global.css）、3 条 @media 断点规则、侧栏 clamp 宽度、网格 clamp gap + min() |
+| 三   | @container 定义与组件级规则、全屏专项优化、antd ConfigProvider 断点对齐                             |
 
 ---
 
@@ -661,13 +661,13 @@ main.tsx ConfigProvider 扩展，使 antd 内置组件的响应式行为与项�
 
 ### 12.1 测试矩阵
 
-| 测试维度 | 覆盖范围 | 验证要点 |
-|---|---|---|
-| 视口宽度 | 940px, 1024px, 1280px, 1440px, 1920px, 2560px | 每个宽度下布局完整、无溢出、无过度拉伸 |
-| 窗口↔全屏切换 | F11 全屏切换、窗口拖拽缩放 | 切换过程平滑无跳变，布局立即重新计算 |
-| 浏览器 | Electron 内置 Chromium | Container Queries、clamp() 等新特性兼容 |
-| 操作系统 | Windows | 字体渲染、滚动条宽度差异不影响布局 |
-| 设备像素比 | 1x, 2x, 3x (HiDPI) | 布局精度不受影响 |
+| 测试维度      | 覆盖范围                                      | 验证要点                                |
+| ------------- | --------------------------------------------- | --------------------------------------- |
+| 视口宽度      | 940px, 1024px, 1280px, 1440px, 1920px, 2560px | 每个宽度下布局完整、无溢出、无过度拉伸  |
+| 窗口↔全屏切换 | F11 全屏切换、窗口拖拽缩放                    | 切换过程平滑无跳变，布局立即重新计算    |
+| 浏览器        | Electron 内置 Chromium                        | Container Queries、clamp() 等新特性兼容 |
+| 操作系统      | Windows                                       | 字体渲染、滚动条宽度差异不影响布局      |
+| 设备像素比    | 1x, 2x, 3x (HiDPI)                            | 布局精度不受影响                        |
 
 ### 12.2 关键检查点
 
@@ -690,55 +690,55 @@ main.tsx ConfigProvider 扩展，使 antd 内置组件的响应式行为与项�
 
 ## 13. 边界条件与风险
 
-| 类别 | 说明 | 缓解措施 |
-|---|---|---|
-| 边界条件 | 主窗口 minWidth 940px，Compact 断点 (<768px) 实际不触发 | 保留 Compact 在 token 中供未来；Medium 断点为实际最小触发点 |
-| 浏览器兼容 | Electron 33 内置 Chromium 130+，完全支持 @container | 无需 polyfill，已验证 |
-| antd Sider 覆盖 | antd Sider 宽度由组件 prop 控制，非纯 CSS | 协调 TSX prop (collapsible/collapsedWidth) + CSS max-width |
-| ScrollArea 兼容 | ScrollArea.tsx 用 ResizeObserver + 固定像素计算 | ResizeObserver 已感知容器变化；流体尺寸通过 token 传入 |
-| 悬浮面板 | 固定 340x560 窗口排除 | 内部内容可复用流体排版 token，但不做容器查询 |
-| 性能 | 频繁重算属性中过多 clamp() 可能导致布局抖动 | 限制 clamp 在排版/间距/尺寸，不在 ScrollArea JS 计算中使用 |
-| 回归风险 | 同时改变所有间距/字号值可能导致视觉回归 | 严格分三阶段推进，每阶段完成后回归测试 |
-| antd 内部样式 | antd 组件有内联断点，可能与自定义断点冲突 | 在 ConfigProvider 中统一 screenXS/screenMD/screenLG |
+| 类别            | 说明                                                    | 缓解措施                                                    |
+| --------------- | ------------------------------------------------------- | ----------------------------------------------------------- |
+| 边界条件        | 主窗口 minWidth 940px，Compact 断点 (<768px) 实际不触发 | 保留 Compact 在 token 中供未来；Medium 断点为实际最小触发点 |
+| 浏览器兼容      | Electron 33 内置 Chromium 130+，完全支持 @container     | 无需 polyfill，已验证                                       |
+| antd Sider 覆盖 | antd Sider 宽度由组件 prop 控制，非纯 CSS               | 协调 TSX prop (collapsible/collapsedWidth) + CSS max-width  |
+| ScrollArea 兼容 | ScrollArea.tsx 用 ResizeObserver + 固定像素计算         | ResizeObserver 已感知容器变化；流体尺寸通过 token 传入      |
+| 悬浮面板        | 固定 340x560 窗口排除                                   | 内部内容可复用流体排版 token，但不做容器查询                |
+| 性能            | 频繁重算属性中过多 clamp() 可能导致布局抖动             | 限制 clamp 在排版/间距/尺寸，不在 ScrollArea JS 计算中使用  |
+| 回归风险        | 同时改变所有间距/字号值可能导致视觉回归                 | 严格分三阶段推进，每阶段完成后回归测试                      |
+| antd 内部样式   | antd 组件有内联断点，可能与自定义断点冲突               | 在 ConfigProvider 中统一 screenXS/screenMD/screenLG         |
 
 ---
 
 ## 14. 验收标准
 
-| 编号 | 标准 | 验证方法 |
-|---|---|---|
-| AC-1 | global.css `:root` 包含完整设计 token 系统 | grep `--space-` 和 `--text-` 变量返回 ≥ 10 条 |
-| AC-2 | global.css 中 `font-size` 固定 `px` 值为 0（排除 `--font-mono` 和 antd 内部） | 全部替换为 clamp() 或 var(--text-*) |
-| AC-3 | `.app-content` 规则包含 `max-width` 和 `margin-inline: auto` | DevTools 计算样式验证 |
-| AC-4 | global.css 中至少 3 条 `@media` 规则（Medium/Wide/Ultrawide） | grep `@media` |
-| AC-5 | global.css 中至少 2 条 `@container` 规则 | grep `@container` |
-| AC-6 | App.tsx 中 `<Sider>` 使用 `collapsible` 属性 | 代码检查 |
-| AC-7 | `.focus-side`、`.english-side`、`.ai-settings` 使用 clamp()-based width | CSS 规则检查 |
-| AC-8 | 全部 3 个网格类 gap 使用 clamp/var()，minmax 使用 `min(100%, ...)` | CSS 规则检查 |
-| AC-9 | 1920px 全屏下内容区域居中，max-width 生效（阅读 ≤1200px，数据 ≤1600px） | DevTools 验证 |
-| AC-10 | 940px 最小窗口下，任何页面无横向滚动条 | DevTools 验证 |
-| AC-11 | 从 940px 到 2560px 拖拽过程布局过渡平滑 | 手动验证 |
-| AC-12 | `npx tsc --noEmit` 通过无类型错误 | 命令验证 |
+| 编号  | 标准                                                                          | 验证方法                                      |
+| ----- | ----------------------------------------------------------------------------- | --------------------------------------------- |
+| AC-1  | global.css `:root` 包含完整设计 token 系统                                    | grep `--space-` 和 `--text-` 变量返回 ≥ 10 条 |
+| AC-2  | global.css 中 `font-size` 固定 `px` 值为 0（排除 `--font-mono` 和 antd 内部） | 全部替换为 clamp() 或 var(--text-*)           |
+| AC-3  | `.app-content` 规则包含 `max-width` 和 `margin-inline: auto`                  | DevTools 计算样式验证                         |
+| AC-4  | global.css 中至少 3 条 `@media` 规则（Medium/Wide/Ultrawide）                 | grep `@media`                                 |
+| AC-5  | global.css 中至少 2 条 `@container` 规则                                      | grep `@container`                             |
+| AC-6  | App.tsx 中 `<Sider>` 使用 `collapsible` 属性                                  | 代码检查                                      |
+| AC-7  | `.focus-side`、`.english-side`、`.ai-settings` 使用 clamp()-based width       | CSS 规则检查                                  |
+| AC-8  | 全部 3 个网格类 gap 使用 clamp/var()，minmax 使用 `min(100%, ...)`            | CSS 规则检查                                  |
+| AC-9  | 1920px 全屏下内容区域居中，max-width 生效（阅读 ≤1200px，数据 ≤1600px）       | DevTools 验证                                 |
+| AC-10 | 940px 最小窗口下，任何页面无横向滚动条                                        | DevTools 验证                                 |
+| AC-11 | 从 940px 到 2560px 拖拽过程布局过渡平滑                                       | 手动验证                                      |
+| AC-12 | `npx tsc --noEmit` 通过无类型错误                                             | 命令验证                                      |
 
 ---
 
 ## 15. 术语表
 
-| 术语 | 含义 | 备注 |
-|---|---|---|
-| Sider | antd Layout 侧边导航栏，当前固定 220px | 目标：collapsible + clamp |
-| app-content | 主内容区域 CSS 类 | 目标：max-width + 居中 |
-| focus-layout | 专注页两栏布局（主区 + .focus-side） | 目标：clamp + @media |
-| focus-side | 专注页右侧栏，固定 320px | 目标：clamp(240px, 22vw, 340px) |
-| english-layout | 英语学习页两栏布局 | 目标：clamp + @media |
-| english-side | 英语页右侧栏，固定 300px | 目标：clamp(220px, 20vw, 320px) |
-| bili-grid | B 站搜索结果卡片网格 | 目标：clamp gap + min() |
-| mode-grid | 首页模式卡片网格 | 目标：同 bili-grid |
-| settings-layout | 设置页卡片网格 | 目标：同 bili-grid |
-| DesignToken | CSS 自定义属性，定义间距/字号/尺寸流体尺度 | 新增 |
-| Breakpoint | 内容驱动的视口宽度阈值 | 新增：768/1200/1600px |
-| ContainerContext | 容器查询上下文 | 新增：container-name: page |
-| OverlayApp | 悬浮面板独立应用，固定 340x560 | 排除出自适应范围 |
+| 术语             | 含义                                       | 备注                            |
+| ---------------- | ------------------------------------------ | ------------------------------- |
+| Sider            | antd Layout 侧边导航栏，当前固定 220px     | 目标：collapsible + clamp       |
+| app-content      | 主内容区域 CSS 类                          | 目标：max-width + 居中          |
+| focus-layout     | 专注页两栏布局（主区 + .focus-side）       | 目标：clamp + @media            |
+| focus-side       | 专注页右侧栏，固定 320px                   | 目标：clamp(240px, 22vw, 340px) |
+| english-layout   | 英语学习页两栏布局                         | 目标：clamp + @media            |
+| english-side     | 英语页右侧栏，固定 300px                   | 目标：clamp(220px, 20vw, 320px) |
+| bili-grid        | B 站搜索结果卡片网格                       | 目标：clamp gap + min()         |
+| mode-grid        | 首页模式卡片网格                           | 目标：同 bili-grid              |
+| settings-layout  | 设置页卡片网格                             | 目标：同 bili-grid              |
+| DesignToken      | CSS 自定义属性，定义间距/字号/尺寸流体尺度 | 新增                            |
+| Breakpoint       | 内容驱动的视口宽度阈值                     | 新增：768/1200/1600px           |
+| ContainerContext | 容器查询上下文                             | 新增：container-name: page      |
+| OverlayApp       | 悬浮面板独立应用，固定 340x560             | 排除出自适应范围                |
 
 ---
 
@@ -778,9 +778,9 @@ main.tsx ConfigProvider 扩展，使 antd 内置组件的响应式行为与项�
 
 ## 范围声明
 
-| 范围 | 内容 |
-|---|---|
-| **In scope** | 全部 7 个页面、主窗口布局、B 站视频窗口、4 个核心原则、3 层策略架构、组件级适配、流体 token 系统、global.css 重构 |
+| 范围             | 内容                                                                                                                                      |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| **In scope**     | 全部 7 个页面、主窗口布局、B 站视频窗口、4 个核心原则、3 层策略架构、组件级适配、流体 token 系统、global.css 重构                         |
 | **Out of scope** | 实际代码实现（本轮仅设计）、悬浮面板窗口（固定尺寸）、940px 以下窄屏/移动端、antd 主题色变更、主进程窗口管理变更、ScrollArea.tsx 内部重构 |
 
 ## 假设

@@ -13,15 +13,15 @@ B 站学习模式打开视频后，学习助手以 56×56 悬浮球（collapsed 
 
 ### 1.2 现状代码定位
 
-| 位置 | 文件 | 说明 |
-| --- | --- | --- |
-| 尺寸常量 | `src/shared/bili.ts` | `OVERLAY_EXPANDED_SIZE = {340,560}`、`OVERLAY_COLLAPSED_SIZE = {56,56}`、`OverlayState` 含 `collapsed` |
-| 状态机 | `src/main/navigation/biliWindow.ts` | `applyOverlayState()` 4 态分支（expanded/collapsed/minimized/hidden） |
-| 窗口配置 | `src/main/navigation/biliWindow.ts` | `createOverlay()`：`resizable:false`、`minimizable:opts.allowMinimize` |
-| 球体渲染 | `src/renderer/src/overlay/OverlayApp.tsx` | `state.phase === 'collapsed'` 分支渲染球体 + 快捷按钮 |
-| 球体拖拽 | `src/renderer/src/overlay/useWindowDrag.ts` | 指针事件 → `overlayMoveBy` → `setPosition` |
-| 头部按钮 | `src/renderer/src/overlay/OverlayApp.tsx` | 最小化 / 隐藏 / **缩小为球** / 关闭视频 |
-| 球体样式 | `src/renderer/src/styles/global.css` | `.overlay-ball*` 系列 |
+| 位置     | 文件                                        | 说明                                                                                                   |
+| -------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
+| 尺寸常量 | `src/shared/bili.ts`                        | `OVERLAY_EXPANDED_SIZE = {340,560}`、`OVERLAY_COLLAPSED_SIZE = {56,56}`、`OverlayState` 含 `collapsed` |
+| 状态机   | `src/main/navigation/biliWindow.ts`         | `applyOverlayState()` 4 态分支（expanded/collapsed/minimized/hidden）                                  |
+| 窗口配置 | `src/main/navigation/biliWindow.ts`         | `createOverlay()`：`resizable:false`、`minimizable:opts.allowMinimize`                                 |
+| 球体渲染 | `src/renderer/src/overlay/OverlayApp.tsx`   | `state.phase === 'collapsed'` 分支渲染球体 + 快捷按钮                                                  |
+| 球体拖拽 | `src/renderer/src/overlay/useWindowDrag.ts` | 指针事件 → `overlayMoveBy` → `setPosition`                                                             |
+| 头部按钮 | `src/renderer/src/overlay/OverlayApp.tsx`   | 最小化 / 隐藏 / **缩小为球** / 关闭视频                                                                |
+| 球体样式 | `src/renderer/src/styles/global.css`        | `.overlay-ball*` 系列                                                                                  |
 
 ### 1.3 重构方案
 
@@ -36,27 +36,28 @@ B 站学习模式打开视频后，学习助手以 56×56 悬浮球（collapsed 
 
 ```typescript
 const overlay = new BrowserWindow({
-  width: 610,               // 默认展开尺寸（≥ 最小 610×940）
+  width: 610, // 默认展开尺寸（≥ 最小 610×940）
   height: 940,
-  minWidth: 610,            // 最小窗口 610×940
+  minWidth: 610, // 最小窗口 610×940
   minHeight: 940,
   frame: false,
   transparent: true,
-  resizable: true,          // 允许缩放（配合 minWidth/minHeight 约束）
-  movable: true,            // 允许拖拽
-  minimizable: opts.allowMinimize,  // L0/L1 可最小化
+  resizable: true, // 允许缩放（配合 minWidth/minHeight 约束）
+  movable: true, // 允许拖拽
+  minimizable: opts.allowMinimize, // L0/L1 可最小化
   maximizable: false,
   alwaysOnTop: true,
   skipTaskbar: !opts.showInTaskbar,
   show: false,
   hasShadow: false,
   backgroundColor: '#00000000',
-  webPreferences: { /* 保持不变 */ }
+  webPreferences: {/* 保持不变 */}
 })
 overlay.setMinimumSize(610, 940)
 ```
 
 > 说明：
+>
 > - **拖拽**：展开态 header 已通过 `-webkit-app-region: drag` 原生拖拽（`global.css` `.overlay-header`），`overlay.on('move')` 记录 `panelPosition`，无需新增逻辑。
 > - **最小化**：`minimizable: opts.allowMinimize` 已支持（L0/L1），`applyOverlayState('minimized')` 已有实现；展开态头部"最小化"按钮保留。
 > - **缩放**：`resizable:true` + `setMinimumSize(610,940)` 支持系统级缩放；若需"四角以对角为锚点等比例缩放"，可在渲染层增加四角 resize 手柄（pointer 事件 → 上报增量 → 主进程 `resizeOverlay` 同步 x/y/width/height），并保持最小 610×940。
@@ -131,6 +132,7 @@ bili.openVideo（点击视频）
 > **实现状态（P-2 已落地）**：`session.suspendOverlay()` 已前置到 `onBeforeOpen`（创建视频窗口之前），
 > `onOpen` 回调整体 `try/catch/finally`，`finally` 中再次 `suspendOverlay()` 幂等兜底——
 > 即使 `enterBiliSession` 抛错（如未设恢复码），主窗口遮罩也必然释放。
+
 ```
 
 ### 2.3 根本原因分析
@@ -188,10 +190,12 @@ bili.openVideo（点击视频）
 #### 3.3.1 顶部导航栏入口（BiliModePage）
 
 ```
+
 ┌──────────────────────────────────────────────────────────────────┐
-│  B 站学习模式                                     [学习助手 ▾]     │
-│  输入学习主题 → WBI 签名搜索 → 结果网格 → 点击视频自动全屏…          │
+│ B 站学习模式 [学习助手 ▾] │
+│ 输入学习主题 → WBI 签名搜索 → 结果网格 → 点击视频自动全屏… │
 └──────────────────────────────────────────────────────────────────┘
+
 ```
 
 - **入口形态**：`Button` + `RobotOutlined` 图标 + 文案"学习助手"，带下拉箭头。
@@ -204,15 +208,17 @@ bili.openVideo（点击视频）
 #### 3.3.2 抽屉内容结构
 
 ```
+
 ┌──────────────────────────────┐
-│ 学习助手            [最小化] [×]│  ← 头部：标题 + 关闭
+│ 学习助手 [最小化] [×]│ ← 头部：标题 + 关闭
 ├──────────────────────────────┤
-│ [对话] [笔记 ●] [进度]         │  ← 三页签
+│ [对话] [笔记 ●] [进度] │ ← 三页签
 ├──────────────────────────────┤
 │ 对话页签：AI 问答（基于当前主题）│
-│ 笔记页签：笔记列表 + 编辑区     │
+│ 笔记页签：笔记列表 + 编辑区 │
 │ 进度页签：播放记录 / 目标 / 完成│
 └──────────────────────────────┘
+
 ```
 
 - **对话页签**：非视频模式无 `bvid` 上下文，AI 基于**当前学习主题**（搜索关键词）作答；`ChatPane` 增加"无视频上下文"空态提示。
@@ -241,19 +247,21 @@ bili.openVideo（点击视频）
 ### 3.5 组件结构
 
 ```
+
 src/renderer/src/
 ├── components/
-│   └── LearningAssistantDrawer.tsx   // 新增：顶部导航栏学习助手抽屉（三页签容器）
+│ └── LearningAssistantDrawer.tsx // 新增：顶部导航栏学习助手抽屉（三页签容器）
 ├── pages/
-│   └── BiliModePage.tsx              // 修改：反馈按钮 → 学习助手按钮 + 抽屉挂载
+│ └── BiliModePage.tsx // 修改：反馈按钮 → 学习助手按钮 + 抽屉挂载
 ├── pages/
-│   └── SettingsPage.tsx              // 修改：新增"反馈"入口（复用 FeedbackDialog）
+│ └── SettingsPage.tsx // 修改：新增"反馈"入口（复用 FeedbackDialog）
 ├── overlay/
-│   ├── ChatPane.tsx                  // 复用（增加无视频上下文空态）
-│   ├── NotesPane.tsx                 // 复用（非视频模式隐藏视频相关操作）
-│   └── ProgressPane.tsx              // 复用（非视频模式展示全部记录）
+│ ├── ChatPane.tsx // 复用（增加无视频上下文空态）
+│ ├── NotesPane.tsx // 复用（非视频模式隐藏视频相关操作）
+│ └── ProgressPane.tsx // 复用（非视频模式展示全部记录）
 └── components/
-    └── FeedbackDialog.tsx            // 复用（迁移到设置页）
+└── FeedbackDialog.tsx // 复用（迁移到设置页）
+
 ```
 
 - `LearningAssistantDrawer` 内部复用 `ChatPane` / `NotesPane` / `ProgressPane`，通过 props 传入 `context`（可为 null）与数据加载函数。
@@ -262,12 +270,14 @@ src/renderer/src/
 ### 3.6 数据流
 
 ```
+
 BiliModePage
-  ├─ 点击"学习助手" → assistantOpen=true → 渲染 LearningAssistantDrawer
-  ├─ Drawer 挂载 → loadNotesAll() / listPlayRecords() / getContext()（可为 null）
-  ├─ 笔记修改/删除 → window.api.notes.upsert / notes.delete → SQLite → 刷新列表
-  ├─ 对话 → window.api.ai.ask（基于 topic，无 bvid 时降级）
-  └─ 监听 IPC_EVENTS.bili.videoOpened/videoClosed → 自动关闭/允许打开抽屉
+├─ 点击"学习助手" → assistantOpen=true → 渲染 LearningAssistantDrawer
+├─ Drawer 挂载 → loadNotesAll() / listPlayRecords() / getContext()（可为 null）
+├─ 笔记修改/删除 → window.api.notes.upsert / notes.delete → SQLite → 刷新列表
+├─ 对话 → window.api.ai.ask（基于 topic，无 bvid 时降级）
+└─ 监听 IPC_EVENTS.bili.videoOpened/videoClosed → 自动关闭/允许打开抽屉
+
 ```
 
 ### 3.7 反馈模块迁移（设置页）
@@ -302,3 +312,4 @@ BiliModePage
 | `src/renderer/src/pages/BiliModePage.tsx` | 3 | 反馈按钮 → 学习助手入口 |
 | `src/renderer/src/components/LearningAssistantDrawer.tsx` | 3 | 新增 |
 | `src/renderer/src/pages/SettingsPage.tsx` | 3 | 新增反馈入口 |
+```
