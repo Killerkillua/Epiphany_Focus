@@ -1,8 +1,11 @@
 /**
- * IPC 通道声明。
- * 仅包含通道名常量与白名单，不含任何业务实现。
+ * IPC 通道声明（共享层，CR-04）。
+ * 纯类型 + 常量 + 纯函数，不依赖任何 Node / Electron 运行时能力，
+ * 供主进程（ipcMain 注册）与 preload（白名单守卫）共同导入。
  * - IPC_CHANNELS：渲染层 invoke 通道（经 preload 白名单守卫）
  * - IPC_EVENTS  ：主进程 → 渲染层事件通道（经 preload on() 白名单守卫）
+ * 分层约定：preload 属于渲染进程沙箱，严禁反向依赖主进程代码；
+ * 因此通道声明收敛在本文件，main / preload 均从这里导入。
  */
 
 export const IPC_CHANNELS = {
@@ -51,7 +54,9 @@ export const IPC_CHANNELS = {
     /** 时间点标记跳转：让视频窗口 seek 到指定进度（F-2） */
     seekTo: 'bili:seek-to',
     /** 读取视频当前播放位置（秒，HTML5 video.currentTime，标准 API） */
-    getVideoPosition: 'bili:get-video-position'
+    getVideoPosition: 'bili:get-video-position',
+    /** 读取视频总时长（秒，HTML5 video.duration；用于进度百分比与"回到上次位置"） */
+    getVideoDuration: 'bili:get-video-duration'
   },
   /** AI 网关 */
   ai: {
@@ -89,7 +94,7 @@ export const IPC_CHANNELS = {
     /** 按视频归档读取 */
     loadByVideo: 'notes:load-by-video'
   },
-  /** 按视频学习进度（F-3） */
+  /** 按视频学习进度（F-3 / M1 / M2 / M3 / M4 / M5） */
   playRecords: {
     /** 会话心跳累计观看时长 / 播放位置 */
     tick: 'play-records:tick',
@@ -98,7 +103,37 @@ export const IPC_CHANNELS = {
     /** 标记某视频已学完 */
     markDone: 'play-records:mark-done',
     /** 学习目标设定（F-5） */
-    setGoal: 'play-records:set-goal'
+    setGoal: 'play-records:set-goal',
+    /** 单条进度读取 */
+    get: 'play-records:get',
+    /** 删除单条学习记录（默认不级联删笔记） */
+    delete: 'play-records:delete',
+    /** 批量删除（事务原子） */
+    batchDelete: 'play-records:batch-delete',
+    /** 修改学习记录（watchedS / lastPositionS / status / viewedCount / 目标等） */
+    update: 'play-records:update',
+    /** 批量修改（批量改状态等） */
+    batchUpdate: 'play-records:batch-update',
+    /** 多维度筛选 + 排序 */
+    search: 'play-records:search',
+    /** 设置标签（整体替换） */
+    setTags: 'play-records:set-tags',
+    /** 全部标签（筛选下拉用） */
+    getTags: 'play-records:get-tags',
+    /** 概览统计（今日/本周/本月/streak/课程计数/全局目标） */
+    getStats: 'play-records:get-stats',
+    /** 某视频的学习会话明细 */
+    getSessions: 'play-records:get-sessions',
+    /** 近 N 天每日学习时长（M4 柱状图） */
+    getDailyStats: 'play-records:get-daily-stats',
+    /** 手动备份：弹保存对话框 → 写 JSON（M5） */
+    exportData: 'play-records:export',
+    /** 选择备份文件并解析校验，返回恢复预览（M5） */
+    importPreview: 'play-records:import-preview',
+    /** 执行恢复（merge / replace，M5） */
+    importData: 'play-records:import',
+    /** 备份元数据列表（M5） */
+    listBackups: 'play-records:list-backups'
   },
   /** 用户反馈（R-1） */
   feedback: {
@@ -127,7 +162,7 @@ export const IPC_CHANNELS = {
   /** 紧急退出 */
   emergency: {
     exit: 'emergency:exit',
-    /** 设置/修改紧急恢复码 */
+    /** 设置/修改紧急恢复码（已设置过时需携带旧码验证，强制会话中禁止修改） */
     setCode: 'emergency:set-code',
     /** 紧急退出弹窗期间暂停窗口守卫的失焦拉回（避免视频窗口抢焦点，输入不了恢复码） */
     setPullBackPaused: 'emergency:set-pull-back-paused'
@@ -146,7 +181,9 @@ export const IPC_CHANNELS = {
   /** 全局设置（electron-store，即时生效） */
   settings: {
     get: 'settings:get',
-    set: 'settings:set'
+    set: 'settings:set',
+    /** 选择备份目录（M5：dialog 目录选择，返回路径；取消返回 null） */
+    pickBackupDir: 'settings:pick-backup-dir'
   },
   /** 应用级信息 */
   app: {
@@ -200,13 +237,13 @@ export const IPC_EVENTS = {
 } as const
 
 /** 扁平化全部 invoke 通道名（白名单） */
-export const IPC_WHITELIST: readonly string[] = Object.values(IPC_CHANNELS).flatMap(
-  (group) => Object.values(group)
+export const IPC_WHITELIST: readonly string[] = Object.values(IPC_CHANNELS).flatMap((group) =>
+  Object.values(group)
 )
 
 /** 扁平化全部事件通道名（白名单） */
-export const IPC_EVENT_WHITELIST: readonly string[] = Object.values(IPC_EVENTS).flatMap(
-  (group) => Object.values(group)
+export const IPC_EVENT_WHITELIST: readonly string[] = Object.values(IPC_EVENTS).flatMap((group) =>
+  Object.values(group)
 )
 
 /** 校验 invoke 通道名是否在声明白名单内 */
