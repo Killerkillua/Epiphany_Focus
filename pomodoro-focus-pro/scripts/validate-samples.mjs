@@ -78,12 +78,11 @@ function probeOgg(filePath) {
 
 /** 用 ffmpeg 探测文件峰值 */
 function probePeak(filePath) {
-  const result = spawnSync('ffmpeg', [
-    '-i', filePath,
-    '-af', 'volumedetect',
-    '-vn', '-sn', '-dn',
-    '-f', 'null', '-'
-  ], { stdio: 'pipe' })
+  const result = spawnSync(
+    'ffmpeg',
+    ['-i', filePath, '-af', 'volumedetect', '-vn', '-sn', '-dn', '-f', 'null', '-'],
+    { stdio: 'pipe' }
+  )
   const output = result.stderr.toString()
   const match = output.match(/max_volume:\s*([-\d.]+)\s*dB/)
   if (match) return parseFloat(match[1])
@@ -156,12 +155,16 @@ for (const spec of SPECS) {
   if (errors.length === 0) {
     const durStr = duration !== null ? ` ${duration.toFixed(1)}s` : ''
     const peakStr = peak !== null ? ` ${peak.toFixed(1)}dB` : ''
-    console.log(`✓ ${spec.key} (${isOgg ? 'ogg' : 'wav'}${durStr}${peakStr} ${sizeMB.toFixed(1)}MB)`)
+    console.log(
+      `✓ ${spec.key} (${isOgg ? 'ogg' : 'wav'}${durStr}${peakStr} ${sizeMB.toFixed(1)}MB)`
+    )
   } else {
     console.log(`✗ ${spec.key}: ${errors.join('; ')}`)
     totalErrors += errors.length
   }
 }
 
-console.log(`\n${totalErrors === 0 ? '✓ 全部通过' : `✗ ${totalErrors} 个错误, ${totalWarnings} 个警告`}`)
+console.log(
+  `\n${totalErrors === 0 ? '✓ 全部通过' : `✗ ${totalErrors} 个错误, ${totalWarnings} 个警告`}`
+)
 process.exit(totalErrors > 0 ? 1 : 0)
