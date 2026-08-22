@@ -7,6 +7,11 @@
 # ---- npm 缓存与日志 ----
 # 通过 --cache 参数重定向到本地的 npm 包缓存
 .npm-cache/
+.npm-cache-tmp/
+
+# ---- Node 依赖 ----
+# 根目录偶发产生的 node_modules（子项目自身有 .gitignore 排除）
+node_modules/
 
 # ---- Electron 缓存 ----
 # electron-download 下载的 Electron 二进制包缓存
