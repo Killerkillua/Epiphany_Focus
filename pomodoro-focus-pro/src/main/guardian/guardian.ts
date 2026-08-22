@@ -13,6 +13,7 @@
 
 import { spawn } from 'child_process'
 import { readFileSync, existsSync } from 'fs'
+import { createHmac } from 'crypto'
 
 function parseArgs(): Record<string, string> {
   const args: Record<string, string> = {}
@@ -31,11 +32,35 @@ function killTaskmgr(): void {
   spawn('taskkill', ['/F', '/IM', 'taskmgr.exe'], { stdio: 'ignore', windowsHide: true }).unref()
 }
 
-function isAlive(pidFile: string): boolean {
+/**
+ * H-04：读取并校验 PID 文件。
+ * 主进程在写入 enforced.pid 时会附加 HMAC-SHA256 签名（密钥经环境变量
+ * POMODORO_GUARDIAN_SECRET 传给守护进程），守护进程据此校验文件是否被伪造/篡改。
+ * 返回 { pid, valid }：valid=false 表示无密钥、无签名或签名不匹配（视为不可信）。
+ */
+function readPidFile(pidFile: string): { pid: number; valid: boolean } {
   try {
-    if (!existsSync(pidFile)) return true // 无 pid 文件视为未在强制会话（不拉起）
-    const pid = Number(readFileSync(pidFile, 'utf-8').trim())
-    if (!Number.isFinite(pid) || pid <= 0) return true
+    const lines = readFileSync(pidFile, 'utf-8').trim().split(/\r?\n/)
+    const pid = Number(lines[0])
+    if (!Number.isFinite(pid) || pid <= 0) return { pid: 0, valid: false }
+    // 无密钥（非本应用拉起）或无签名 → 不可信
+    if (!GUARDIAN_SECRET || lines.length < 2) return { pid, valid: false }
+    const expected = createHmac('sha256', GUARDIAN_SECRET).update(String(pid)).digest('hex')
+    return { pid, valid: lines[1] === expected }
+  } catch {
+    return { pid: 0, valid: false }
+  }
+}
+
+function isAlive(pidFile: string): boolean {
+  if (!existsSync(pidFile)) return true // 无 pid 文件视为未在强制会话（不拉起）
+  const { pid, valid } = readPidFile(pidFile)
+  if (!valid) {
+    // 签名无效（被伪造 / 篡改 / 密钥不匹配）：不据此判定死活，也不触发拉起
+    console.warn('[guardian] pid 文件签名无效，忽略（可能被伪造）')
+    return true
+  }
+  try {
     process.kill(pid, 0)
     return true
   } catch {
@@ -46,19 +71,50 @@ function isAlive(pidFile: string): boolean {
 const args = parseArgs()
 const pidFile = args.watch ?? ''
 const intervalMs = Number(args.interval ?? 2000) || 2000
-const relaunchCmd = args.relaunchCmd
+/** H-04：relaunch 目标改为显式 exe + 参数数组，不再接受任意命令行字符串 */
+const relaunchExe = args['relaunch-exe'] ?? ''
+let relaunchArgs: string[] = []
+try {
+  const parsed = JSON.parse(args['relaunch-args'] ?? '[]') as unknown
+  if (Array.isArray(parsed)) relaunchArgs = parsed.map((x) => String(x))
+} catch {
+  relaunchArgs = []
+}
 /** --kill-taskmgr=false 可显式关闭；默认开启 */
 const killTaskmgrEnabled = args['kill-taskmgr'] !== 'false'
+/** 主进程经环境变量注入的签名密钥 */
+const GUARDIAN_SECRET = process.env.POMODORO_GUARDIAN_SECRET ?? ''
+
+/**
+ * H-04：安全拉起。仅在 pid 文件签名有效（确属本应用的强制会话）且 relaunch-exe
+ * 是真实存在的文件时执行；spawn 使用参数数组（不经 shell），杜绝命令注入/任意命令执行。
+ */
+function tryRelaunch(): void {
+  const { valid } = readPidFile(pidFile)
+  if (!valid) {
+    console.warn('[guardian] 跳过拉起：pid 文件签名无效')
+    return
+  }
+  if (!relaunchExe || !existsSync(relaunchExe)) {
+    console.warn('[guardian] 无有效 relaunch-exe，跳过拉起')
+    return
+  }
+  console.log('[guardian] 主进程已退出，执行拉起:', relaunchExe, relaunchArgs.join(' '))
+  const child = spawn(relaunchExe, relaunchArgs, {
+    detached: true,
+    stdio: 'ignore',
+    windowsHide: true
+  })
+  child.unref()
+}
 
 function run(): void {
-  console.log(`[guardian] 守护进程启动 pid=${process.pid} watch=${pidFile} interval=${intervalMs}ms`)
+  console.log(
+    `[guardian] 守护进程启动 pid=${process.pid} watch=${pidFile} interval=${intervalMs}ms`
+  )
   setInterval(() => {
     if (killTaskmgrEnabled) killTaskmgr()
-    if (pidFile && !isAlive(pidFile) && relaunchCmd) {
-      console.log('[guardian] 主进程已退出，执行拉起:', relaunchCmd)
-      const child = spawn(relaunchCmd, { detached: true, stdio: 'ignore', windowsHide: true })
-      child.unref()
-    }
+    if (pidFile && !isAlive(pidFile)) tryRelaunch()
   }, intervalMs)
 }
 

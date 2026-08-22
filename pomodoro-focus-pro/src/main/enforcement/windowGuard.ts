@@ -3,6 +3,7 @@ import { spawn } from 'child_process'
 import type { DistractionPolicy } from '../../shared/types'
 import type { LockLevel } from '../../shared/settings'
 import { LEVEL_CAPS } from './level'
+import { isLevelWindowTransitioning } from './lockScreen'
 
 /**
  * 窗口守卫（方案 2.5）：
@@ -24,13 +25,18 @@ const NEVER_KILL = new Set([
 ])
 
 function normalize(name: string): string {
-  return name.toLowerCase().replace(/\.exe$/, '').trim()
+  return name
+    .toLowerCase()
+    .replace(/\.exe$/, '')
+    .trim()
 }
 
 /** 枚举当前有可见窗口的进程名 */
 function listWindowProcessNames(): Promise<string[]> {
   return new Promise((resolve, reject) => {
-    const child = spawn('tasklist', ['/FI', 'WINDOWTITLE ne N/A', '/FO', 'CSV', '/NH'], { windowsHide: true })
+    const child = spawn('tasklist', ['/FI', 'WINDOWTITLE ne N/A', '/FO', 'CSV', '/NH'], {
+      windowsHide: true
+    })
     let out = ''
     child.stdout.on('data', (chunk: Buffer) => {
       out += chunk.toString()
@@ -73,7 +79,12 @@ export class WindowGuard {
   }
 
   /** 启动守卫（level 决定是否启用各能力；policy 来自渲染层配置） */
-  start(win: BrowserWindow, level: LockLevel, policy: DistractionPolicy, opts?: WindowGuardStartOpts): void {
+  start(
+    win: BrowserWindow,
+    level: LockLevel,
+    policy: DistractionPolicy,
+    opts?: WindowGuardStartOpts
+  ): void {
     this.win = win
     this.policy = {
       enabled: policy.enabled === true,
@@ -96,6 +107,9 @@ export class WindowGuard {
           const w = this.win
           if (w && !w.isDestroyed() && !w.isFocused()) {
             if (this.paused) return
+            // P2-1：全屏切换过渡期（applyLevelWindow 进入/退出全屏）暂停拉回，
+            // 避免 show()+focus() 干扰系统全屏状态正确应用（如任务栏覆盖）
+            if (isLevelWindowTransitioning(w)) return
             // 聚焦窗口命中豁免（如悬浮面板）→ 不拉回，避免抢走面板交互
             if (opts?.exemptFromPullBack?.(BrowserWindow.getFocusedWindow())) return
             w.show()

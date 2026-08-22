@@ -1,23 +1,19 @@
 import { app, BrowserWindow, ipcMain, Notification } from 'electron'
 import { spawn } from 'child_process'
 import { writeFileSync, unlinkSync, existsSync } from 'fs'
+import { randomBytes, createHmac } from 'crypto'
 import { join } from 'path'
-import { IPC_CHANNELS, IPC_EVENTS } from '../ipc'
+import { IPC_CHANNELS, IPC_EVENTS } from '../../shared/ipc'
 import { TimerService } from '../timer'
 import { getSettings, setSettings } from '../storage/settings'
-import {
-  recordSessionEnd,
-  recordSessionStart,
-  recordStudyStats,
-  todayLocal
-} from '../storage/db'
-import { LEVEL_CAPS } from './level'
+import { recordSessionEnd, recordSessionStart, recordStudyStats, todayLocal } from '../storage/db'
+import { isEnforcedLevel, LEVEL_CAPS } from './level'
 import * as emergency from './emergencyExit'
 import { registerShortcutGuard, unregisterShortcutGuard } from './shortcutGuard'
 import { WindowGuard } from './windowGuard'
 import { startTaskmgrKill, stopTaskmgrKill } from './processGuard'
 import { applyLevelWindow, releaseLevelWindow, lockWorkstation } from './lockScreen'
-import { closeVideo } from '../navigation/biliWindow'
+import { ValidationError, str, num, bool, arr, oneOf } from '../validate'
 import type { DistractionPolicy, TimerOptions, TimerSnapshot } from '../../shared/types'
 import type { EmergencyExitResult, LockLevel } from '../../shared/settings'
 
@@ -38,6 +34,15 @@ interface ActiveSession {
 
 const DEFAULT_POLICY: DistractionPolicy = { enabled: false, blacklist: [], whitelist: [] }
 
+/**
+ * 强制引擎外部依赖（CR-05：由装配层注入，enforcement 不再反向 import navigation）。
+ * 依赖方向约定：navigation → enforcement；enforcement 需要导航能力时经此回调获取。
+ */
+export interface EnforcementDeps {
+  /** 紧急退出时销毁 B 站视频窗口（由主进程入口注入 closeVideo 实现） */
+  closeVideo?: () => void
+}
+
 /** 强制引擎句柄（供导航模块接入） */
 export interface EnforcementHandle {
   restoreAfterRestart: () => void
@@ -57,7 +62,10 @@ export interface EnforcementHandle {
   setPullBackPaused: (paused: boolean) => void
 }
 
-export function registerEnforcementModule(getWindow: () => BrowserWindow | null): EnforcementHandle {
+export function registerEnforcementModule(
+  getWindow: () => BrowserWindow | null,
+  deps: EnforcementDeps = {}
+): EnforcementHandle {
   const timer = new TimerService(
     (snap) => {
       getWindow()?.webContents.send(IPC_EVENTS.timer.tick, snap)
@@ -75,6 +83,8 @@ export function registerEnforcementModule(getWindow: () => BrowserWindow | null)
   let currentPolicy: DistractionPolicy = { ...DEFAULT_POLICY }
   /** B 站悬浮面板窗口：失焦拉回豁免对象（面板交互时视频窗口不抢焦点） */
   let overlayExemptWindow: BrowserWindow | null = null
+  /** 主进程 5×Esc 兜底检测处理器（主窗口强制会话专用，B站视频窗口由 fullscreenLock.ts 负责） */
+  let escSpamHandler: ((_e: Electron.Event, input: Electron.Input) => void) | null = null
 
   /** 失焦拉回豁免判定：当前聚焦窗口是悬浮面板时不拉回视频窗口 */
   const overlayExempt = (focused: BrowserWindow | null): boolean =>
@@ -92,9 +102,35 @@ export function registerEnforcementModule(getWindow: () => BrowserWindow | null)
     const sessionId =
       recordSessionStart({ mode, level, startedAt: Date.now(), durationPlanned: plannedMs }) ?? 0
 
-    // B 站模式：视频窗口不设置置顶（悬浮面板须浮于视频之上；全屏由 attachFullscreenLock 管理），
-    // 其余锁定属性（禁缩放 / 隐藏任务栏 / 拦截关闭）照常施加
-    applyLevelWindow(win, { skipAlwaysOnTop: mode === 'bili' })
+    // 按锁定级别能力施加强制：L0 仅置顶，L1/L2 才施加全屏遮罩（LEVEL_CAPS[level].fullscreenOverlay）
+    if (LEVEL_CAPS[level].fullscreenOverlay) {
+      // B 站模式：视频窗口不设置顶（悬浮面板须浮于视频之上；全屏由 attachFullscreenLock 管理），
+      // 其余锁定属性（禁缩放 / 隐藏任务栏 / 拦截关闭）照常施加
+      applyLevelWindow(win, { skipAlwaysOnTop: mode === 'bili' })
+      // 主窗口 L1/L2 强制会话：主进程兜底 5×Esc 检测（3 秒窗口）
+      // 渲染层也有 keydown 检测，但全屏时主进程兜底更可靠（与 fullscreenLock.ts B站视频窗口对齐）
+      if (mode !== 'bili') {
+        const ESC_COUNT = 5
+        const ESC_WINDOW_MS = 3000
+        let escTimes: number[] = []
+        escSpamHandler = (_e, input): void => {
+          if (!active || input.key !== 'Escape') return
+          const now = Date.now()
+          escTimes = [...escTimes.filter((t) => now - t < ESC_WINDOW_MS), now]
+          if (escTimes.length >= ESC_COUNT) {
+            escTimes = []
+            // 通知渲染层唤起紧急退出弹窗（复用 bili.emergencyRequest 事件，弹窗是通用的）
+            getWindow()?.webContents.send(IPC_EVENTS.bili.emergencyRequest)
+          }
+          // 消费单次 Esc：防止系统退全屏触发"退出→拉回"闪烁（与 assertFullscreen 三重兜底配合）
+          _e.preventDefault()
+        }
+        win.webContents.on('before-input-event', escSpamHandler)
+      }
+    } else if (LEVEL_CAPS[level].alwaysOnTop && mode !== 'bili') {
+      // L0 轻量级别：仅置顶，不进入全屏遮罩（bili 模式跳过置顶，与 L1/L2 一致）
+      win.setAlwaysOnTop(true)
+    }
     if (LEVEL_CAPS[level].globalShortcuts) registerShortcutGuard()
     windowGuard.start(win, level, currentPolicy, { exemptFromPullBack: overlayExempt })
     if (LEVEL_CAPS[level].killTaskmgr) startTaskmgrKill()
@@ -107,8 +143,13 @@ export function registerEnforcementModule(getWindow: () => BrowserWindow | null)
     })
   }
 
-  function endEnforcement(reason: 'manual' | 'completed' | 'emergency' | 'expired', target?: BrowserWindow): void {
+  function endEnforcement(
+    reason: 'manual' | 'completed' | 'emergency' | 'expired',
+    target?: BrowserWindow
+  ): void {
     const win = target ?? getWindow()
+    // 在 active 置空前保存 level（用于后续 L0 置顶还原等判定）
+    const level = active ? active.level : getSettings().lockLevel
     if (active) {
       const after = timer.getSnapshot()
       const status = after.completedPomodoros > lastPomos ? 'done' : 'abandoned'
@@ -120,13 +161,19 @@ export function registerEnforcementModule(getWindow: () => BrowserWindow | null)
       })
       active = null
     }
-    if (win) releaseLevelWindow(win)
+    if (win && !win.isDestroyed()) {
+      releaseLevelWindow(win)
+      // L0 轻量级别：beginEnforcement 中直接 setAlwaysOnTop(true)，此处对称还原
+      if (!LEVEL_CAPS[level].fullscreenOverlay && LEVEL_CAPS[level].alwaysOnTop) {
+        win.setAlwaysOnTop(false)
+      }
+    }
     // P-2：紧急退出兜底销毁 B 站视频窗口——video.destroy() 绕过 applyLevelWindow 的
     // close 拦截，销毁后 'closed' 事件自动清理其遮罩引用计数，
     // 避免紧急退出成功后视频窗口仍保持全屏 + 拦截关闭 + 隐藏任务栏，把用户困在全屏
     if (reason === 'emergency') {
       try {
-        closeVideo()
+        deps.closeVideo?.()
       } catch {
         /* 忽略 */
       }
@@ -135,6 +182,11 @@ export function registerEnforcementModule(getWindow: () => BrowserWindow | null)
     windowGuard.stop()
     stopTaskmgrKill()
     stopGuardian()
+    // 清理主进程 5×Esc 兜底检测（主窗口强制会话）
+    if (escSpamHandler && win && !win.isDestroyed()) {
+      win.webContents.removeListener('before-input-event', escSpamHandler)
+      escSpamHandler = null
+    }
     setSettings({ enforced: null })
     if (reason === 'emergency' && LEVEL_CAPS[getSettings().lockLevel].guardian) {
       emergency.startL2CoolDown()
@@ -158,17 +210,41 @@ export function registerEnforcementModule(getWindow: () => BrowserWindow | null)
     try {
       if (guardian) return
       const pidFile = join(app.getPath('userData'), 'enforced.pid')
-      writeFileSync(pidFile, String(process.pid))
+      // H-04：PID 文件附 HMAC 签名（密钥经环境变量传给守护进程），
+      // 防止本地程序伪造 pid 文件触发守护进程任意拉起。
+      const secret = randomBytes(32).toString('hex')
+      const signature = createHmac('sha256', secret).update(String(process.pid)).digest('hex')
+      writeFileSync(pidFile, `${process.pid}\n${signature}`)
       const script = join(__dirname, 'guardian.js')
       if (!existsSync(script)) {
         console.warn('[enforcement] guardian.js 未构建，L2 守护能力降级（跳过拉起）')
         return
       }
+      // H-04：relaunch 目标改为显式 exe + 参数数组（不经 shell），杜绝任意命令执行。
+      // 打包态：应用可执行文件直接拉起；开发态：electron + 应用目录。
+      const relaunchExe = process.execPath
+      const relaunchArgs = app.isPackaged ? [] : [app.getAppPath()]
       // 独立 Node 进程（模拟系统服务行为；真实 Windows Service 注册见 guardian.ts --install-service）
       guardian = spawn(
         process.env.ELECTRON_RUN_AS_NODE ? process.execPath : 'node',
-        [script, '--watch', pidFile, '--kill-taskmgr', '--interval', '2000'],
-        { stdio: 'ignore', detached: true, windowsHide: true }
+        [
+          script,
+          '--watch',
+          pidFile,
+          '--kill-taskmgr',
+          '--interval',
+          '2000',
+          '--relaunch-exe',
+          relaunchExe,
+          '--relaunch-args',
+          JSON.stringify(relaunchArgs)
+        ],
+        {
+          stdio: 'ignore',
+          detached: true,
+          windowsHide: true,
+          env: { ...process.env, POMODORO_GUARDIAN_SECRET: secret }
+        }
       )
       guardian.unref()
     } catch (err) {
@@ -226,7 +302,28 @@ export function registerEnforcementModule(getWindow: () => BrowserWindow | null)
     // 恢复：施加级别 + 续时（单调时钟剩余量）。
     // 与 beginEnforcement 对齐：bili 模式跳过置顶（悬浮面板须浮于视频之上）、
     // 登记失焦拉回豁免，避免重启恢复后的强制配置与运行时不一致
-    applyLevelWindow(win, { skipAlwaysOnTop: enforced.mode === 'bili' })
+    if (LEVEL_CAPS[enforced.level].fullscreenOverlay) {
+      applyLevelWindow(win, { skipAlwaysOnTop: enforced.mode === 'bili' })
+      // 重启恢复：主进程兜底 5×Esc 检测（与 beginEnforcement 对齐）
+      if (enforced.mode !== 'bili') {
+        const ESC_COUNT = 5
+        const ESC_WINDOW_MS = 3000
+        let escTimes: number[] = []
+        escSpamHandler = (_e, input): void => {
+          if (!active || input.key !== 'Escape') return
+          const now = Date.now()
+          escTimes = [...escTimes.filter((t) => now - t < ESC_WINDOW_MS), now]
+          if (escTimes.length >= ESC_COUNT) {
+            escTimes = []
+            getWindow()?.webContents.send(IPC_EVENTS.bili.emergencyRequest)
+          }
+          _e.preventDefault()
+        }
+        win.webContents.on('before-input-event', escSpamHandler)
+      }
+    } else if (LEVEL_CAPS[enforced.level].alwaysOnTop && enforced.mode !== 'bili') {
+      win.setAlwaysOnTop(true)
+    }
     if (LEVEL_CAPS[enforced.level].globalShortcuts) registerShortcutGuard()
     windowGuard.start(win, enforced.level, currentPolicy, { exemptFromPullBack: overlayExempt })
     if (LEVEL_CAPS[enforced.level].killTaskmgr) startTaskmgrKill()
@@ -251,12 +348,26 @@ export function registerEnforcementModule(getWindow: () => BrowserWindow | null)
 
   // ---- 计时通道（专注模式，会话开始/结束联动强制引擎） ----
   ipcMain.handle(IPC_CHANNELS.timer.start, (_event, options: TimerOptions) => {
-    beginEnforcement('focus', options.durationMs)
-    return timer.start(options)
+    // H-01：运行时校验计时参数（mode 白名单 + durationMs 有限非负）
+    const opts = options ?? ({} as TimerOptions)
+    const mode = oneOf(opts.mode, 'timer.mode', ['countdown', 'countup'] as const)
+    if (!mode) throw new ValidationError('timer.mode 必须是 countdown/countup')
+    const durationMs = num(opts.durationMs, 'timer.durationMs')
+    if (durationMs < 0 || durationMs > 24 * 60 * 60 * 1000) {
+      throw new ValidationError('timer.durationMs 超出允许范围')
+    }
+    beginEnforcement('focus', durationMs)
+    return timer.start({ mode, durationMs })
   })
 
   ipcMain.handle(IPC_CHANNELS.timer.stop, () => {
     const before = timer.getSnapshot()
+    // CR-01：强制会话（L1/L2）中禁止通过 timer:stop 直接解除强制——
+    // 若渲染进程被攻破，一行调用即可绕过全部强制机制。正常路径只能走紧急退出码。
+    // 例外：计时已自然完成（status === 'finished'）时结束会话属正常流程（到点收尾）。
+    if (active && isEnforcedLevel(active.level) && before.status !== 'finished') {
+      throw new Error('强制会话中请使用紧急退出码（连按 5 次 Esc）结束')
+    }
     const result = timer.stop()
     // 正序手动结束计数的一段，补记统计（逆序到点已由 complete 记录）
     if (result.completedPomodoros > before.completedPomodoros) {
@@ -272,19 +383,25 @@ export function registerEnforcementModule(getWindow: () => BrowserWindow | null)
 
   // ---- 强制通道 ----
   ipcMain.handle(IPC_CHANNELS.enforce.setAlwaysOnTop, (_event, on: boolean) => {
-    getWindow()?.setAlwaysOnTop(on === true)
+    getWindow()?.setAlwaysOnTop(bool(on, 'enforce.alwaysOnTop'))
     return on === true
   })
 
   ipcMain.handle(
     IPC_CHANNELS.enforce.applyDistractionPolicy,
     (_event, policy: DistractionPolicy): DistractionPolicy => {
-      currentPolicy = policy
+      // H-01：运行时校验策略结构（blacklist/whitelist 必须是字符串数组，防 undefined.map 崩溃）
+      const p = policy ?? ({} as DistractionPolicy)
+      const enabled = bool(p.enabled, 'policy.enabled')
+      const blacklist = arr(p.blacklist, 'policy.blacklist', { itemString: true }) as string[]
+      const whitelist = arr(p.whitelist, 'policy.whitelist', { itemString: true }) as string[]
+      const safe: DistractionPolicy = { enabled, blacklist, whitelist }
+      currentPolicy = safe
       if (active) {
         const win = getWindow()
-        if (win) windowGuard.start(win, active.level, policy, { exemptFromPullBack: overlayExempt })
+        if (win) windowGuard.start(win, active.level, safe, { exemptFromPullBack: overlayExempt })
       }
-      return policy
+      return safe
     }
   )
 
@@ -294,36 +411,64 @@ export function registerEnforcementModule(getWindow: () => BrowserWindow | null)
   })
 
   ipcMain.handle(IPC_CHANNELS.enforce.unlock, (): boolean => {
+    // CR-01：强制会话（L1/L2）中禁用直接解锁，仅允许通过紧急退出码触发。
+    // 该通道本为 L0（可全绕过）会话的调试/清理入口，对强制级别一律拒绝。
+    if (active && isEnforcedLevel(active.level)) {
+      throw new Error('强制会话中请使用紧急退出码（连按 5 次 Esc）解锁')
+    }
     endEnforcement('manual')
     return true
   })
 
   // ---- 紧急退出 ----
-  ipcMain.handle(IPC_CHANNELS.emergency.exit, (_event, code: string): EmergencyExitResult => {
-    const level = active?.level ?? getSettings().lockLevel
-    const result = emergency.verifyRecoveryCode(code ?? '', level)
-    if (result.ok) {
-      endEnforcement('emergency')
+  ipcMain.handle(
+    IPC_CHANNELS.emergency.exit,
+    async (_event, code: string): Promise<EmergencyExitResult> => {
+      const level = active?.level ?? getSettings().lockLevel
+      const result = await emergency.verifyRecoveryCode(
+        str(code ?? '', 'emergency.code', { max: 100, allowEmpty: true }),
+        level
+      )
+      if (result.ok) {
+        endEnforcement('emergency')
+      }
+      return result
     }
-    return result
-  })
+  )
 
-  ipcMain.handle(IPC_CHANNELS.emergency.setCode, (_event, code: string): boolean => {
-    emergency.setRecoveryCode(code ?? '')
-    return true
-  })
+  ipcMain.handle(
+    IPC_CHANNELS.emergency.setCode,
+    async (_event, code: string, oldCode?: string): Promise<boolean> => {
+      // CR-02：强制会话中禁止修改恢复码——否则"设新码 → 验证退出"两步即可绕过强制。
+      if (active && isEnforcedLevel(active.level)) {
+        throw new Error('强制会话中无法修改恢复码，请先结束当前会话')
+      }
+      const newCode = str(code ?? '', 'emergency.code', { max: 100 })
+      const old =
+        oldCode === undefined
+          ? undefined
+          : str(oldCode, 'emergency.oldCode', { max: 100, allowEmpty: true })
+      // 已设置过恢复码时必须验证旧码：防止渲染进程被攻破后直接覆盖恢复码
+      // （绕过紧急退出的唯一凭据）。首次设置（无哈希）无需旧码。
+      if (!(await emergency.verifyOldCode(old ?? ''))) {
+        throw new Error('旧恢复码不正确')
+      }
+      await emergency.setRecoveryCode(newCode)
+      return true
+    }
+  )
   // P-2：紧急退出弹窗期间暂停窗口守卫的失焦拉回（渲染层随弹窗开合调用）
   ipcMain.handle(IPC_CHANNELS.emergency.setPullBackPaused, (_event, paused: boolean): void => {
-    windowGuard.setPaused(paused === true)
+    windowGuard.setPaused(bool(paused, 'emergency.paused'))
   })
 
   // ================= B 站强制会话句柄 =================
 
-  function enterBiliSession(videoWin: BrowserWindow, opts: { plannedMs: number; topic: string }): void {
-    const cap = Math.min(
-      opts.plannedMs || 0,
-      getSettings().sessionMaxHours * 3600_000
-    )
+  function enterBiliSession(
+    videoWin: BrowserWindow,
+    opts: { plannedMs: number; topic: string }
+  ): void {
+    const cap = Math.min(opts.plannedMs || 0, getSettings().sessionMaxHours * 3600_000)
     beginEnforcement('bili', cap, videoWin)
     timer.start({ mode: 'countup', durationMs: cap })
   }
