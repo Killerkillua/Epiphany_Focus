@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron'
-import { IPC_CHANNELS } from '../ipc'
+import { IPC_CHANNELS } from '../../shared/ipc'
 import { getDayTrend, getDb, getHomeSummary, getHourHeatmap, getModeCompare } from './db'
 import type { DayTrendPoint, HeatmapCell, HomeSummary, ModeStat } from '../../shared/stats'
 

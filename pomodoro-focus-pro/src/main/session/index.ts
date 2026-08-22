@@ -1,17 +1,17 @@
 import { BrowserWindow, Notification, ipcMain } from 'electron'
-import { IPC_CHANNELS, IPC_EVENTS } from '../ipc'
+import { IPC_CHANNELS, IPC_EVENTS } from '../../shared/ipc'
 import { TimerService } from '../timer'
-import {
-  recordSessionEnd,
-  recordSessionStart,
-  recordStudyStats,
-  todayLocal
-} from '../storage/db'
+import { recordSessionEnd, recordSessionStart, recordStudyStats, todayLocal } from '../storage/db'
 import { closeVideo, getVideoState } from '../navigation/biliWindow'
 import { applyLevelWindow, releaseLevelWindow } from '../enforcement/lockScreen'
 import { getSettings } from '../storage/settings'
 import { recordTelemetry } from '../telemetry'
-import type { SessionMode, SessionStartOptions, SessionState, TimerSnapshot } from '../../shared/types'
+import type {
+  SessionMode,
+  SessionStartOptions,
+  SessionState,
+  TimerSnapshot
+} from '../../shared/types'
 
 /**
  * 学习会话计时服务（B 站学习 / 英语学习模式）。
@@ -118,7 +118,10 @@ export function registerSessionModule(getWindow: () => BrowserWindow | null): Se
       Math.min(MAX_SESSION_MS, Number.isFinite(opts?.durationMs) ? opts.durationMs : 60 * 60_000)
     )
     currentMode = opts?.mode === 'bili' ? 'bili' : 'english'
-    recordTelemetry('session', 'start', { mode: currentMode, durationMinutes: Math.round(durationMs / 60_000) })
+    recordTelemetry('session', 'start', {
+      mode: currentMode,
+      durationMinutes: Math.round(durationMs / 60_000)
+    })
     sessionId =
       recordSessionStart({
         mode: currentMode,
@@ -128,7 +131,12 @@ export function registerSessionModule(getWindow: () => BrowserWindow | null): Se
       }) ?? null
     sessionTimer.start({ mode: 'countdown', durationMs })
     // 学习会话全屏遮罩（可配置，默认开启）：视频窗口打开 / 挂起期间不施加（由视频窗口全屏锁定接管）
-    if (getSettings().sessionOverlay && !overlayApplied && !overlaySuspended && !getVideoState().open) {
+    if (
+      getSettings().sessionOverlay &&
+      !overlayApplied &&
+      !overlaySuspended &&
+      !getVideoState().open
+    ) {
       applySessionOverlay()
     }
     return { mode: currentMode, timer: sessionTimer.getSnapshot() }

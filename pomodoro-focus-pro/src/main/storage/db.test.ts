@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdtempSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createRequire } from 'node:module'
@@ -20,14 +20,25 @@ vi.mock('electron', () => ({
 
 import {
   addFeedback,
+  batchDeletePlayRecords,
+  batchUpdatePlayRecords,
   closeDb,
   deleteNote,
+  deletePlayRecord,
+  exportBackupData,
+  getAllPlayRecordTags,
+  getDailyStudyMinutes,
   getDayTrend,
+  getDb,
   getFeedbackStats,
   getHomeSummary,
   getHourHeatmap,
   getModeCompare,
   getPlayRecord,
+  getProgressStats,
+  getStudySessionsByVideo,
+  importBackupData,
+  listBackupMeta,
   listFeedback,
   listPlayRecords,
   loadNotesAll,
@@ -36,14 +47,23 @@ import {
   migrateNotesTable,
   recordSessionEnd,
   recordSessionStart,
+  recordStudySessionEnd,
+  recordStudySessionStart,
   recordStudyStats,
   saveNotesAll,
+  searchPlayRecords,
   setPlayGoal,
+  setPlayRecordTags,
   tickPlayRecord,
   todayLocal,
+  updatePlayRecord,
   upsertNote,
   upsertPlayRecord
 } from './db'
+import { setSettings } from './settings'
+import { buildBackupFile, parseBackupFile, pruneBackups, writeBackupFile } from './backup'
+import type { PlayStatus } from '../../shared/stats'
+import type { PlayRecord } from '../../shared/stats'
 
 function localDateStr(d: Date): string {
   const mm = String(d.getMonth() + 1).padStart(2, '0')
@@ -84,7 +104,11 @@ describe('recordStudyStats（study_stats UPSERT）', () => {
 
     const modes = getModeCompare()
     expect(modes.find((m) => m.mode === 'focus')).toEqual({ mode: 'focus', minutes: 50, pomos: 2 })
-    expect(modes.find((m) => m.mode === 'english')).toEqual({ mode: 'english', minutes: 40, pomos: 1 })
+    expect(modes.find((m) => m.mode === 'english')).toEqual({
+      mode: 'english',
+      minutes: 40,
+      pomos: 1
+    })
   })
 
   it('模式对比按累计分钟降序', () => {
@@ -153,17 +177,47 @@ describe('getHourHeatmap（sessions 聚合）', () => {
   it('按星期×小时聚合，分钟保留小数（修复整数除法截断）；abandoned 不计入', () => {
     // 2024-01-07 是周日（strftime %w = 0），本地时间 09:00
     const t0 = new Date(2024, 0, 7, 9, 0, 0).getTime()
-    const id1 = recordSessionStart({ mode: 'focus', level: 'L0', startedAt: t0, durationPlanned: 60_000 })
+    const id1 = recordSessionStart({
+      mode: 'focus',
+      level: 'L0',
+      startedAt: t0,
+      durationPlanned: 60_000
+    })
     expect(id1).toBeTruthy()
-    recordSessionEnd(id1!, { durationActual: 90_000, pomosCompleted: 1, interruptions: 0, status: 'done' })
+    recordSessionEnd(id1!, {
+      durationActual: 90_000,
+      pomosCompleted: 1,
+      interruptions: 0,
+      status: 'done'
+    })
 
     const t1 = new Date(2024, 0, 7, 9, 30, 0).getTime()
-    const id2 = recordSessionStart({ mode: 'bili', level: 'L0', startedAt: t1, durationPlanned: 60_000 })
-    recordSessionEnd(id2!, { durationActual: 60_000, pomosCompleted: 1, interruptions: 0, status: 'done' })
+    const id2 = recordSessionStart({
+      mode: 'bili',
+      level: 'L0',
+      startedAt: t1,
+      durationPlanned: 60_000
+    })
+    recordSessionEnd(id2!, {
+      durationActual: 60_000,
+      pomosCompleted: 1,
+      interruptions: 0,
+      status: 'done'
+    })
 
     // abandoned 会话不应计入热力图
-    const id3 = recordSessionStart({ mode: 'english', level: 'L0', startedAt: t1, durationPlanned: 60_000 })
-    recordSessionEnd(id3!, { durationActual: 60_000, pomosCompleted: 0, interruptions: 0, status: 'abandoned' })
+    const id3 = recordSessionStart({
+      mode: 'english',
+      level: 'L0',
+      startedAt: t1,
+      durationPlanned: 60_000
+    })
+    recordSessionEnd(id3!, {
+      durationActual: 60_000,
+      pomosCompleted: 0,
+      interruptions: 0,
+      status: 'abandoned'
+    })
 
     const cells = getHourHeatmap()
     const cell = cells.find((c) => c.weekday === 0 && c.hour === 9)
@@ -204,7 +258,13 @@ describe('notes（增量 upsert / 按 id 删除 / 分视频归档）', () => {
   })
 
   it('loadNotesByVideo 按 bvid 归档过滤；未带 bvid 的笔记不混入', () => {
-    upsertNote({ id: 'v1', createdAt: 1000, content: '视频1笔记', bvid: 'BV1', videoTitle: '视频一' })
+    upsertNote({
+      id: 'v1',
+      createdAt: 1000,
+      content: '视频1笔记',
+      bvid: 'BV1',
+      videoTitle: '视频一'
+    })
     upsertNote({ id: 'v2', createdAt: 1000, content: '视频2笔记', bvid: 'BV2' })
     upsertNote({ id: 'g1', createdAt: 1000, content: '通用笔记' })
 
@@ -235,7 +295,10 @@ describe('notes（增量 upsert / 按 id 删除 / 分视频归档）', () => {
   it('saveNotesAll 以入参集合为应有集合：删除集合外、保留集合内（兼容旧契约）', () => {
     upsertNote({ id: 'keep', createdAt: 1000, content: '保留' })
     upsertNote({ id: 'drop', createdAt: 1000, content: '删除' })
-    saveNotesAll([{ id: 'keep', createdAt: 1000, content: '保留（改）' }, { id: 'new', createdAt: 2000, content: '新增' }])
+    saveNotesAll([
+      { id: 'keep', createdAt: 1000, content: '保留（改）' },
+      { id: 'new', createdAt: 2000, content: '新增' }
+    ])
 
     const all = loadNotesAll()
     expect(all.map((n) => n.id).sort()).toEqual(['keep', 'new'])
@@ -247,7 +310,9 @@ describe('notes 表迁移（旧 INTEGER 主键 → TEXT 主键 + 新字段，数
   it('旧结构表迁移后旧行保留、新字段可用', () => {
     // 先用原生驱动建"旧结构" notes 表并写入旧数据（绕过 getDb 的新 SCHEMA）
     closeDb()
-    const { DatabaseSync } = createRequire(__filename)('node:sqlite') as typeof import('node:sqlite')
+    const { DatabaseSync } = createRequire(__filename)(
+      'node:sqlite'
+    ) as typeof import('node:sqlite')
     const raw = new DatabaseSync(process.env.POMODORO_DB_PATH!)
     raw.exec(`
       CREATE TABLE notes (
@@ -268,7 +333,13 @@ describe('notes 表迁移（旧 INTEGER 主键 → TEXT 主键 + 新字段，数
     expect(all[0].id).toBe('1') // 旧 INTEGER id 经 CAST 保留为文本
 
     // 迁移后可写新字段
-    const saved = upsertNote({ id: all[0].id, createdAt: all[0].createdAt, content: '旧笔记内容', bvid: 'BV9', isKey: true })
+    const saved = upsertNote({
+      id: all[0].id,
+      createdAt: all[0].createdAt,
+      content: '旧笔记内容',
+      bvid: 'BV9',
+      isKey: true
+    })
     expect(saved.bvid).toBe('BV9')
     const reloaded = loadNotesByVideo('BV9')
     expect(reloaded).toHaveLength(1)
@@ -278,7 +349,9 @@ describe('notes 表迁移（旧 INTEGER 主键 → TEXT 主键 + 新字段，数
   it('迁移失败整体回滚：旧表结构与数据完整保留（原子性，P0）', () => {
     // 建"旧结构" notes 表并写入旧数据（绕过 getDb 的新 SCHEMA）
     closeDb()
-    const { DatabaseSync } = createRequire(__filename)('node:sqlite') as typeof import('node:sqlite')
+    const { DatabaseSync } = createRequire(__filename)(
+      'node:sqlite'
+    ) as typeof import('node:sqlite')
     const raw = new DatabaseSync(process.env.POMODORO_DB_PATH!)
     raw.exec(`
       CREATE TABLE notes (
@@ -302,10 +375,14 @@ describe('notes 表迁移（旧 INTEGER 主键 → TEXT 主键 + 新字段，数
       prepare: (sql: string): ReturnType<typeof raw.prepare> => raw.prepare(sql)
     }
     // 迁移内部吞错（打日志），对外不抛；关键是状态必须回滚
-    expect(() => migrateNotesTable(broken as unknown as Parameters<typeof migrateNotesTable>[0])).not.toThrow()
+    expect(() =>
+      migrateNotesTable(broken as unknown as Parameters<typeof migrateNotesTable>[0])
+    ).not.toThrow()
 
     // 回滚后：notes 仍是旧结构、旧数据完好；无孤立 notes_legacy（无半迁移状态）
-    const names = (raw.prepare('PRAGMA table_info(notes)').all() as Array<{ name: string }>).map((c) => c.name)
+    const names = (raw.prepare('PRAGMA table_info(notes)').all() as Array<{ name: string }>).map(
+      (c) => c.name
+    )
     expect(names).not.toContain('bvid')
     expect(names).not.toContain('timestamp_s')
     const count = raw.prepare('SELECT COUNT(*) AS c FROM notes').get() as { c: number }
@@ -388,5 +465,425 @@ describe('feedback（提交 / 列表 / 聚合）', () => {
     expect(stats.avgRating).toBe(4)
     expect(stats.byCategory['卡顿']).toBe(2)
     expect(stats.byCategory['其他']).toBe(1)
+  })
+})
+
+/* ================= M1 学习记录管理（删除 / 批量删除 / 修改 / 标签 / 筛选排序） ================= */
+
+describe('play_records M1 管理（删除 / 批量删除 / 修改 / 标签 / 筛选排序）', () => {
+  it('deletePlayRecord 删除记录+标签+会话；笔记保留（决策）；deleteNotes 时连笔记删除', () => {
+    upsertPlayRecord({
+      bvid: 'BV10',
+      title: '待删',
+      coverUrl: 'bili-image://img/?url=x',
+      author: 'UP1'
+    })
+    setPlayRecordTags('BV10', ['前端'])
+    const sid = recordStudySessionStart('BV10', 'manual')
+    recordStudySessionEnd(sid ?? 0)
+    upsertNote({ id: 'n-1', createdAt: Date.now(), content: '笔记', bvid: 'BV10' })
+
+    expect(deletePlayRecord('BV10')).toBe(true)
+    expect(getPlayRecord('BV10')).toBeNull()
+    expect(getAllPlayRecordTags()).toEqual([])
+    expect(getStudySessionsByVideo('BV10')).toEqual([])
+    // 笔记保留（决策：删除学习记录不级联删笔记）
+    expect(loadNotesAll().find((n) => n.id === 'n-1')).toBeTruthy()
+
+    // deleteNotes 选项：连笔记一起删
+    upsertPlayRecord({ bvid: 'BV11', title: '连删' })
+    upsertNote({ id: 'n-2', createdAt: Date.now(), content: 'x', bvid: 'BV11' })
+    deletePlayRecord('BV11', { deleteNotes: true })
+    expect(loadNotesAll().find((n) => n.id === 'n-2')).toBeUndefined()
+  })
+
+  it('batchDeletePlayRecords 事务批量删除', () => {
+    for (const b of ['BV20', 'BV21', 'BV22']) upsertPlayRecord({ bvid: b, title: b })
+    expect(batchDeletePlayRecords(['BV20', 'BV21'])).toBe(2)
+    expect(getPlayRecord('BV20')).toBeNull()
+    expect(getPlayRecord('BV21')).toBeNull()
+    expect(getPlayRecord('BV22')).not.toBeNull()
+  })
+
+  it('updatePlayRecord 修改状态/时长/位置/次数/目标并刷新 updated_at；非法状态忽略；不存在则创建', async () => {
+    upsertPlayRecord({ bvid: 'BV30', title: '改', durationS: 600, positionS: 0 })
+    await new Promise((r) => setTimeout(r, 5))
+    const rec = updatePlayRecord('BV30', {
+      status: 'done',
+      watchedS: 3600,
+      lastPositionS: 500,
+      viewedCount: 3,
+      goalRounds: 3,
+      goalDeadline: '2026-12-31'
+    })
+    expect(rec?.status).toBe('done')
+    expect(rec?.watchedS).toBe(3600)
+    expect(rec?.lastPositionS).toBe(500)
+    expect(rec?.viewedCount).toBe(3)
+    expect(rec?.goalRounds).toBe(3)
+    expect(rec?.goalDeadline).toBe('2026-12-31')
+    expect(rec?.updatedAt).toBeGreaterThanOrEqual(Date.now() - 100)
+    // 非法状态被忽略（保持原值）
+    updatePlayRecord('BV30', { status: 'xxx' as PlayStatus })
+    expect(getPlayRecord('BV30')?.status).toBe('done')
+    // 记录不存在：以更新内容创建
+    const created = updatePlayRecord('BV31', { title: '新', watchedS: 100 })
+    expect(created?.bvid).toBe('BV31')
+    expect(created?.watchedS).toBe(100)
+  })
+
+  it('batchUpdatePlayRecords 批量改状态', () => {
+    for (const b of ['BV40', 'BV41']) upsertPlayRecord({ bvid: b })
+    expect(batchUpdatePlayRecords(['BV40', 'BV41'], { status: 'learning' })).toBe(2)
+    expect(getPlayRecord('BV40')?.status).toBe('learning')
+    expect(getPlayRecord('BV41')?.status).toBe('learning')
+  })
+
+  it('setPlayRecordTags 整体替换 + 大小写不敏感去重；getAllPlayRecordTags 按使用量排序', () => {
+    upsertPlayRecord({ bvid: 'BV50' })
+    upsertPlayRecord({ bvid: 'BV51' })
+    setPlayRecordTags('BV50', ['React', 'react', ' 前端 ', ''])
+    setPlayRecordTags('BV51', ['React'])
+    const rec = getPlayRecord('BV50')
+    expect(rec?.tags).toEqual(['React', '前端'])
+    expect(getAllPlayRecordTags()).toEqual(['React', '前端']) // React 出现 2 次在前
+    // 整体替换：清空
+    setPlayRecordTags('BV50', [])
+    expect(getPlayRecord('BV50')?.tags).toEqual([])
+  })
+
+  it('searchPlayRecords 关键字/状态/标签/时间范围/四维排序 组合生效', async () => {
+    // BV60：学习中，进度 50%（位置 300/600）
+    upsertPlayRecord({ bvid: 'BV60', title: 'React 入门', durationS: 600, positionS: 300 })
+    setPlayRecordTags('BV60', ['前端'])
+    tickPlayRecord({ bvid: 'BV60', watchedDeltaS: 5, positionS: 300 })
+    await new Promise((r) => setTimeout(r, 5))
+    // BV61：已完成，进度 90%（位置 1080/1200）
+    upsertPlayRecord({ bvid: 'BV61', title: 'Vue 实战', durationS: 1200, positionS: 0 })
+    tickPlayRecord({ bvid: 'BV61', watchedDeltaS: 5, positionS: 1080 })
+    markPlayRecordDone('BV61')
+    await new Promise((r) => setTimeout(r, 5))
+    // BV62：计划中，时长未知
+    upsertPlayRecord({ bvid: 'BV62', title: 'TypeScript 手册' })
+
+    // 默认最近学习（updated_at DESC）
+    expect(
+      searchPlayRecords({ sortBy: 'updated_at', sortOrder: 'desc' }).map((r) => r.bvid)
+    ).toEqual(['BV62', 'BV61', 'BV60'])
+    // 关键字模糊
+    expect(
+      searchPlayRecords({ keyword: 'react', sortBy: 'updated_at', sortOrder: 'desc' }).map(
+        (r) => r.bvid
+      )
+    ).toEqual(['BV60'])
+    // 状态
+    expect(
+      searchPlayRecords({ status: 'done', sortBy: 'updated_at', sortOrder: 'desc' }).map(
+        (r) => r.bvid
+      )
+    ).toEqual(['BV61'])
+    // 标签
+    expect(
+      searchPlayRecords({ tags: ['前端'], sortBy: 'updated_at', sortOrder: 'desc' }).map(
+        (r) => r.bvid
+      )
+    ).toEqual(['BV60'])
+    // 进度降序：BV61(90) > BV60(50) > BV62(0 未知)
+    expect(searchPlayRecords({ sortBy: 'progress', sortOrder: 'desc' }).map((r) => r.bvid)).toEqual(
+      ['BV61', 'BV60', 'BV62']
+    )
+    // 进度升序
+    expect(searchPlayRecords({ sortBy: 'progress', sortOrder: 'asc' }).map((r) => r.bvid)).toEqual([
+      'BV62',
+      'BV60',
+      'BV61'
+    ])
+    // 总时长降序：BV61(1200) > BV60(600) > BV62(0)
+    expect(searchPlayRecords({ sortBy: 'duration', sortOrder: 'desc' }).map((r) => r.bvid)).toEqual(
+      ['BV61', 'BV60', 'BV62']
+    )
+    // 标题 A-Z（COLLATE NOCASE）
+    expect(searchPlayRecords({ sortBy: 'title', sortOrder: 'asc' }).map((r) => r.bvid)).toEqual([
+      'BV60',
+      'BV62',
+      'BV61'
+    ])
+    // 时间范围：空区间无结果；全区间全量
+    expect(
+      searchPlayRecords({
+        sortBy: 'updated_at',
+        sortOrder: 'desc',
+        dateRange: { start: 0, end: 1 }
+      })
+    ).toEqual([])
+    expect(
+      searchPlayRecords({
+        sortBy: 'updated_at',
+        sortOrder: 'desc',
+        dateRange: { start: 0, end: Date.now() }
+      })
+    ).toHaveLength(3)
+  })
+})
+
+/* ================= M3 学习会话明细与统计 ================= */
+
+describe('study_sessions（M3 会话明细）', () => {
+  it('start/end 结算墙钟时长；重复 end 幂等；limit 生效', () => {
+    const sid = recordStudySessionStart('BV70', 'resume')
+    expect(sid).toBeTruthy()
+    const before = getStudySessionsByVideo('BV70')[0]
+    // 显式 endAt 保证确定性（避免依赖 sleep 计时）
+    recordStudySessionEnd(sid ?? 0, before.startAt + 5000)
+    recordStudySessionEnd(sid ?? 0, before.startAt + 9999) // 幂等：不重复结算
+    const sessions = getStudySessionsByVideo('BV70')
+    expect(sessions).toHaveLength(1)
+    expect(sessions[0].source).toBe('resume')
+    expect(sessions[0].durationS).toBe(5)
+    expect(sessions[0].endAt).toBe(before.startAt + 5000)
+
+    const sid2 = recordStudySessionStart('BV70', 'search')
+    recordStudySessionEnd(sid2 ?? 0)
+    expect(getStudySessionsByVideo('BV70')).toHaveLength(2)
+    expect(getStudySessionsByVideo('BV70', 1)).toHaveLength(1)
+  })
+})
+
+describe('getProgressStats（M3 概览统计）', () => {
+  /** 插入指定时刻的学习会话（duration_s 秒） */
+  const insertSession = (bvid: string, startAt: number, durationS: number): void => {
+    getDb()!
+      .prepare(
+        `INSERT INTO study_sessions (bvid, start_at, end_at, duration_s, source, created_at)
+         VALUES (?, ?, ?, ?, 'manual', ?)`
+      )
+      .run(bvid, startAt, startAt + durationS * 1000, durationS, Date.now())
+  }
+  /** 距今 n 天的本地零点时间戳 */
+  const dayStart = (n: number): number => {
+    const d = new Date()
+    d.setDate(d.getDate() - n)
+    d.setHours(0, 0, 0, 0)
+    return d.getTime()
+  }
+
+  it('聚合今日/本周/本月时长、streak、周学习天数、课程计数与全局目标', () => {
+    setSettings({ 'studyGoals.dailyMinutes': 90, 'studyGoals.weeklyDays': 4 })
+    // 今天：10 分钟 + 5 分钟；昨天：5 分钟；3 天前：10 分钟；10 天前：20 分钟（可能跨月）
+    insertSession('BV80', dayStart(0) + 8 * 3_600_000, 600)
+    insertSession('BV80', dayStart(0) + 20 * 3_600_000, 300)
+    insertSession('BV81', dayStart(1) + 10 * 3_600_000, 300)
+    insertSession('BV82', dayStart(3) + 10 * 3_600_000, 600)
+    insertSession('BV82', dayStart(10) + 10 * 3_600_000, 1200)
+
+    upsertPlayRecord({ bvid: 'BV80' })
+    markPlayRecordDone('BV80')
+    upsertPlayRecord({ bvid: 'BV81' })
+    tickPlayRecord({ bvid: 'BV81', watchedDeltaS: 5, positionS: 5 })
+    upsertPlayRecord({ bvid: 'BV82' })
+    tickPlayRecord({ bvid: 'BV82', watchedDeltaS: 5, positionS: 5 })
+    upsertPlayRecord({ bvid: 'BV83' })
+
+    const s = getProgressStats()
+    expect(s.todayMinutes).toBe(15)
+    expect(s.weekMinutes).toBe(30) // 15 + 5 + 10
+    expect(s.monthMinutes).toBeGreaterThanOrEqual(30) // 含 10 天前（跨月则不含）
+    expect(s.streakDays).toBe(2) // 今天 + 昨天
+    expect(s.weekDaysStudied).toBe(3)
+    expect(s.totalCourses).toBe(4)
+    expect(s.doneCourses).toBe(1)
+    expect(s.learningCourses).toBe(2)
+    expect(s.plannedCourses).toBe(1)
+    expect(s.dailyGoalMinutes).toBe(90)
+    expect(s.weeklyGoalDays).toBe(4)
+  })
+
+  it('无数据时返回全零统计（目标取当前设置）', () => {
+    // electron-store 为进程内单例，显式设定目标值保证确定性（不受前序用例残留影响）
+    setSettings({ 'studyGoals.dailyMinutes': 45, 'studyGoals.weeklyDays': 3 })
+    const s = getProgressStats()
+    expect(s.todayMinutes).toBe(0)
+    expect(s.weekMinutes).toBe(0)
+    expect(s.monthMinutes).toBe(0)
+    expect(s.streakDays).toBe(0)
+    expect(s.weekDaysStudied).toBe(0)
+    expect(s.totalCourses).toBe(0)
+    expect(s.dailyGoalMinutes).toBe(45)
+    expect(s.weeklyGoalDays).toBe(3)
+  })
+})
+
+/* ================= M4 每日学习时长（柱状图数据） ================= */
+
+describe('getDailyStudyMinutes（M4 柱状图数据）', () => {
+  it('近 N 天补零 + 按日期升序聚合，天数钳制', () => {
+    const d = getDb()!
+    const now = new Date()
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()
+    const dayStart = (n: number): number => {
+      const dd = new Date(startOfToday)
+      dd.setDate(dd.getDate() - n)
+      return dd.getTime()
+    }
+    const insert = (bvid: string, startAt: number, dur: number): void => {
+      d.prepare(
+        `INSERT INTO study_sessions (bvid, start_at, end_at, duration_s, source, created_at)
+         VALUES (?, ?, ?, ?, 'manual', ?)`
+      ).run(bvid, startAt, startAt + dur * 1000, dur, Date.now())
+    }
+    insert('BV90', dayStart(0) + 3_600_000, 600) // 今天 10 分钟
+    insert('BV90', dayStart(2) + 3_600_000, 300) // 前天 5 分钟
+    insert('BV91', dayStart(0) + 3_600_000, 60) // 今天 1 分钟
+
+    const rows = getDailyStudyMinutes(3)
+    expect(rows).toHaveLength(3)
+    expect(rows[0].minutes).toBe(5) // 前天
+    expect(rows[1].minutes).toBe(0) // 昨天无数据
+    expect(rows[2].minutes).toBe(11) // 今天 10 + 1
+    // 升序（最旧在前）
+    expect(rows[0].date < rows[1].date && rows[1].date < rows[2].date).toBe(true)
+    // 天数钳制
+    expect(getDailyStudyMinutes(0)).toHaveLength(1)
+    expect(getDailyStudyMinutes(200)).toHaveLength(90)
+  })
+})
+
+/* ================= M5 备份导出 / 导入（数据层） ================= */
+
+describe('exportBackupData / importBackupData（M5 备份恢复）', () => {
+  /** 造一份包含记录（含标签/封面/UP主）+ 会话 + 笔记的数据 */
+  const seed = (): void => {
+    upsertPlayRecord({
+      bvid: 'BV100',
+      title: '课程A',
+      durationS: 600,
+      positionS: 300,
+      coverUrl: 'c1',
+      author: 'UP1'
+    })
+    setPlayRecordTags('BV100', ['前端'])
+    tickPlayRecord({ bvid: 'BV100', watchedDeltaS: 5, positionS: 300 })
+    const sid = recordStudySessionStart('BV100', 'resume')
+    if (sid) {
+      const start = getStudySessionsByVideo('BV100')[0].startAt
+      recordStudySessionEnd(sid, start + 5000)
+    }
+    upsertNote({ id: 'n-b1', createdAt: 1000, content: '笔记1', bvid: 'BV100' })
+  }
+
+  it('replace：导出快照 → 清库 → 完整恢复（记录/标签/封面/笔记/会话）', () => {
+    seed()
+    const data = exportBackupData()
+    expect(data.playRecords).toHaveLength(1)
+    expect(data.notes).toHaveLength(1)
+    expect(data.studySessions).toHaveLength(1)
+    expect(data.tags).toEqual(['前端'])
+    expect(typeof data.settings.dailyMinutes).toBe('number')
+
+    // 清库
+    batchDeletePlayRecords(['BV100'])
+    deleteNote('n-b1')
+    expect(getPlayRecord('BV100')).toBeNull()
+
+    const result = importBackupData(data, 'replace')
+    expect(result.records).toBe(1)
+    expect(result.notes).toBe(1)
+    expect(result.sessions).toBe(1)
+    const rec = getPlayRecord('BV100')
+    expect(rec?.title).toBe('课程A')
+    expect(rec?.coverUrl).toBe('c1')
+    expect(rec?.author).toBe('UP1')
+    expect(rec?.tags).toEqual(['前端'])
+    expect(loadNotesAll().find((n) => n.id === 'n-b1')?.content).toBe('笔记1')
+    expect(getStudySessionsByVideo('BV100')).toHaveLength(1)
+    expect(getAllPlayRecordTags()).toEqual(['前端'])
+  })
+
+  it('merge：备份中的新记录补入；同 bvid 较旧的备份不覆盖本地；笔记保留现有', async () => {
+    seed()
+    const data = exportBackupData()
+    // 备份里追加一条本地没有的记录
+    data.playRecords.push({
+      bvid: 'BV102',
+      title: '备份新课程',
+      durationS: 300,
+      watchedS: 120,
+      lastPositionS: 60,
+      status: 'planned',
+      viewedCount: 1,
+      goalRounds: 0,
+      goalDeadline: '',
+      tags: ['后端'],
+      coverUrl: '',
+      author: '',
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    } satisfies PlayRecord)
+    // 本地同 bvid 记录较新
+    await new Promise((r) => setTimeout(r, 5))
+    updatePlayRecord('BV100', { watchedS: 999, status: 'done' })
+    upsertPlayRecord({ bvid: 'BV101', title: '本地课程' })
+
+    const result = importBackupData(data, 'merge')
+    expect(result.records).toBe(1) // 仅 BV102 写入（BV100 备份较旧被跳过）
+    expect(getPlayRecord('BV100')?.watchedS).toBe(999)
+    expect(getPlayRecord('BV100')?.status).toBe('done')
+    expect(getPlayRecord('BV101')?.title).toBe('本地课程')
+    expect(getPlayRecord('BV102')?.title).toBe('备份新课程')
+    expect(getPlayRecord('BV102')?.tags).toEqual(['后端'])
+    // 笔记按 id 保留现有
+    expect(loadNotesAll().find((n) => n.id === 'n-b1')?.content).toBe('笔记1')
+    // 现有标签不被重复写入
+    expect(getAllPlayRecordTags()).toContain('前端')
+  })
+})
+
+/* ================= M5 备份文件层（backup.ts） ================= */
+
+describe('backup.ts 文件层（parseBackupFile / pruneBackups / writeBackupFile）', () => {
+  it('parseBackupFile 校验版本与结构；非法文件抛错', () => {
+    const valid = buildBackupFile()
+    expect(parseBackupFile(JSON.stringify(valid)).version).toBe('1.0')
+    expect(parseBackupFile(JSON.stringify(valid)).data.playRecords).toEqual([])
+    expect(() => parseBackupFile('not json')).toThrow('不是有效的 JSON')
+    expect(() => parseBackupFile(JSON.stringify({ version: '9.9', data: {} }))).toThrow(
+      '格式不正确'
+    )
+  })
+
+  it('pruneBackups 只保留最新的 keepCount 份（文件名时间序）', () => {
+    const backupDir = join(dir, 'backup-prune')
+    mkdirSync(backupDir, { recursive: true })
+    for (const name of [
+      'pomodoro-backup-20260101-0300.json',
+      'pomodoro-backup-20260102-0300.json',
+      'pomodoro-backup-20260103-0300.json',
+      'pomodoro-backup-20260104-0300.json',
+      'other-file.json'
+    ]) {
+      writeFileSync(join(backupDir, name), '{}', 'utf-8')
+    }
+    const removed = pruneBackups(backupDir, 3)
+    expect(removed).toBe(1)
+    const left = readdirSync(backupDir).sort()
+    expect(left).toEqual([
+      'other-file.json',
+      'pomodoro-backup-20260102-0300.json',
+      'pomodoro-backup-20260103-0300.json',
+      'pomodoro-backup-20260104-0300.json'
+    ])
+    // keepCount = 0 → 不清理
+    expect(pruneBackups(backupDir, 0)).toBe(0)
+  })
+
+  it('writeBackupFile 写文件 + 记录元数据', () => {
+    const filePath = join(dir, 'manual-backup.json')
+    const meta = writeBackupFile(filePath, buildBackupFile(), 'manual')
+    expect(existsSync(filePath)).toBe(true)
+    expect(meta.recordCount).toBe(0)
+    expect(meta.backupType).toBe('manual')
+    const metas = listBackupMeta()
+    expect(metas).toHaveLength(1)
+    expect(metas[0].filePath).toBe(filePath)
   })
 })
