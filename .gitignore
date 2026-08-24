@@ -35,5 +35,7 @@ code-review-report/
 # ---- 系统文件 ----
 # macOS 目录元数据
 .DS_Store
+# 安装包产物（超过 Gitee 单文件 100MB 限制）
+*.exe
 # Windows 缩略图缓存
 Thumbs.db

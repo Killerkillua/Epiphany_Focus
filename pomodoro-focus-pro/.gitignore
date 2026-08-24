@@ -6,6 +6,7 @@ dist/
 .DS_Store
 .vscode/
 .electron-cache/
+.electron-builder-cache/
 .npm-cache/
 .trae-html-share-packages/
 # node-gyp 构建缓存：自动下载的 Node.js 头文件和库文件
