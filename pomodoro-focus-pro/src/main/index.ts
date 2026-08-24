@@ -2,11 +2,16 @@ import { app, shell, BrowserWindow, protocol } from 'electron'
 import { join } from 'path'
 import { registerEnforcementModule } from './enforcement'
 import { registerNavigationModule } from './navigation'
+import { closeVideo } from './navigation/biliWindow'
+import { installBiliImageProxy } from './navigation/biliImageProxy'
 import { registerAiIpc } from './ai'
 import { registerAudioModule } from './audio'
+import { loadEnvFile } from './env'
 import { registerSettingsIpc } from './storage/settings'
 import { registerStatsIpc } from './storage/stats'
+import { startAutoBackup } from './storage/backup'
 import { getDb } from './storage/db'
+import { registerSessionModule } from './session'
 
 /**
  * 主进程入口：窗口管理 + 模块装配（方案 3.3 进程模型）。
@@ -18,11 +23,40 @@ import { getDb } from './storage/db'
  */
 
 // 自定义协议：必须在 app.ready 前声明特权（方案 2.8 §3 落地设计）
+// supportFetchAPI：允许渲染层 fetch() 该协议（缺省则 fetch 直接失败 → 采样轨全部跳过）
 protocol.registerSchemesAsPrivileged([
-  { scheme: 'tomato-audio', privileges: { standard: true, secure: true, stream: true } }
+  {
+    scheme: 'tomato-audio',
+    privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true }
+  },
+  {
+    scheme: 'bili-image',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true
+      // H-05：移除 bypassCSP——渲染层 CSP 已用 img-src 显式放行 bili-image:，
+      // 无需给该协议"绕过全部 CSP"的后门特权（最小权限原则）。
+    }
+  }
 ])
 
 const isDev = !app.isPackaged
+
+/**
+ * H-03：全局异步异常保护。Electron 主进程存在大量"发射后不管"的 Promise
+ * （如 void saveCacheIndex()），任一 rejection 若未捕获，Node 20+（Electron 33 内置）
+ * 默认会让进程直接退出。此处统一兜底：记录日志、阻止静默丢失，避免应用意外崩溃。
+ * 只做日志 + 不崩溃，业务层仍需各自 try/catch；这是最后的防御线。
+ */
+process.on('unhandledRejection', (reason) => {
+  console.error('[main] 未处理的 Promise rejection:', reason)
+})
+
+process.on('uncaughtException', (error) => {
+  console.error('[main] 未捕获的异常:', error)
+})
 
 /** 当前主窗口（惰性获取：macOS activate 重建窗口后仍能取到最新实例） */
 function getMainWindow(): BrowserWindow | null {
@@ -70,7 +104,15 @@ function createMainWindow(): BrowserWindow {
 }
 
 app.whenReady().then(() => {
+  // .env 加载必须在任何模块读取配置之前（根因 B 修复）：
+  // 把应用根目录 .env 中的 POMODORO_AI_API_KEY 注入 process.env，
+  // 供 settings 默认值回退使用（见 storage/settings.ts getSettings）。
+  loadEnvFile()
+
   createMainWindow()
+
+  // B 站封面图代理（bili-image:// 协议 + Referer 注入 + 磁盘缓存），修复 CDN 防盗链 403
+  installBiliImageProxy()
 
   // 预打开中央 SQLite（创建规约 6 张表，方案 3.4）
   getDb()
@@ -79,11 +121,18 @@ app.whenReady().then(() => {
   registerSettingsIpc()
   registerStatsIpc()
 
-  // 强制引擎（计时 / 锁定分级 / 紧急退出 / 分心拦截 / 守护进程）
-  const enforcement = registerEnforcementModule(getMainWindow)
+  // M5 自动备份调度（读 settings.backup；启动时若已过备份时刻则补备）
+  startAutoBackup()
 
-  // B 站模式（接入强制引擎 + 四层导航判定）
-  registerNavigationModule(getMainWindow, enforcement)
+  // 强制引擎（计时 / 锁定分级 / 紧急退出 / 分心拦截 / 守护进程）。
+  // CR-05：closeVideo 由装配层注入，enforcement 不反向 import navigation（消除循环依赖）
+  const enforcement = registerEnforcementModule(getMainWindow, { closeVideo })
+
+  // 学习会话计时（B 站 / 英语模式，与强制引擎解耦；返回遮罩联动句柄）
+  const session = registerSessionModule(getMainWindow)
+
+  // B 站模式（接入强制引擎 + 四层导航判定 + 学习会话遮罩联动）
+  registerNavigationModule(getMainWindow, enforcement, session)
 
   // AI 网关（英语模式）
   registerAiIpc()

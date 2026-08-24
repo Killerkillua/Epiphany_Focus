@@ -15,6 +15,9 @@ asarUnpack:
   - resources/**
 win:
   executableName: pomodoro-focus-pro
+  # 跳过 exe 签名与版本资源编辑：本机非管理员无法解压 winCodeSign 中的 darwin 符号链接，
+  # 且本项目未配置代码签名证书；设置 false 后 electron-builder 不再下载 winCodeSign 工具。
+  signAndEditExecutable: false
 nsis:
   artifactName: ${name}-${version}-setup.${ext}
   shortcutName: ${productName}

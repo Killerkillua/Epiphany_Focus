@@ -45,7 +45,10 @@ export class TimerService {
   /** 开始新会话（重置本轮计时，保留番茄计数） */
   start(options: TimerOptions): TimerSnapshot {
     this.mode = options.mode
-    this.durationMs = Math.max(1000, Number.isFinite(options.durationMs) ? options.durationMs : 25 * 60 * 1000)
+    this.durationMs = Math.max(
+      1000,
+      Number.isFinite(options.durationMs) ? options.durationMs : 25 * 60 * 1000
+    )
     this.baseElapsedMs = 0
     this.status = 'running'
     this.runStartMs = TimerService.nowMs()

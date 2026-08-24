@@ -7,6 +7,7 @@ import {
   ThunderboltOutlined
 } from '@ant-design/icons'
 import { noiseEngine } from '../audio'
+import ScrollArea from './ScrollArea'
 import { NOISE_PRESETS, getNoisePreset } from '../../../shared/audio'
 import type { NoiseSettings, RestAction } from '../../../shared/audio'
 
@@ -53,8 +54,10 @@ function NoiseControl(): JSX.Element {
   const handleTogglePlay = async (): Promise<void> => {
     try {
       const result = await noiseEngine.togglePlay()
-      if (result.started === 0 && !noiseEngine.playing) {
-        message.warning('所选预设暂无可用音轨：采样素材未打包（resources/audio/），请改用白/粉/棕噪')
+      if (result.action === 'start' && result.started === 0) {
+        message.warning(
+          '所选预设暂无可用音轨：采样素材未打包（resources/audio/），请改用白/粉/棕噪'
+        )
       } else if (result.skipped.length > 0) {
         message.info(`已跳过未打包的采样轨：${result.skipped.join('、')}`)
       }
@@ -101,7 +104,7 @@ function NoiseControl(): JSX.Element {
 
         {/* 活跃轨道独立混音 */}
         {activeTracks.length > 0 && (
-          <div className="noise-tracks">
+          <ScrollArea className="noise-tracks" style={{ maxHeight: 160 }}>
             <div className="noise-tracks-title">当前音轨（独立混音）</div>
             {activeTracks.map((track) => (
               <div key={track.key} className="noise-row">
@@ -118,7 +121,7 @@ function NoiseControl(): JSX.Element {
                 <span className="noise-row-value">{Math.round(track.volume * 100)}%</span>
               </div>
             ))}
-          </div>
+          </ScrollArea>
         )}
 
         <Divider style={{ margin: '4px 0' }} />
@@ -146,7 +149,10 @@ function NoiseControl(): JSX.Element {
         </div>
 
         <Typography.Text type="secondary" style={{ fontSize: 12, lineHeight: 1.6 }}>
-          盲操作热键：Ctrl+Shift+↑/↓ 调音量。{assetsReady ? '采样素材已就绪。' : '采样素材（雨/咖啡厅/森林/…）未打包，规格见 resources/audio/README.md。'}
+          盲操作热键：Ctrl+Shift+↑/↓ 调音量。
+          {assetsReady
+            ? '采样素材已就绪。'
+            : '采样素材（雨/咖啡厅/森林/…）未打包，规格见 resources/audio/README.md。'}
         </Typography.Text>
       </Space>
     </Card>

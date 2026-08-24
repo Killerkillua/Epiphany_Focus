@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Button, Card, message, Segmented, Select, Space, Switch, Typography } from 'antd'
 import { useFocusStore } from '../store/focusStore'
+import { useShallow } from 'zustand/react/shallow'
 import NoiseControl from '../components/NoiseControl'
 import { noiseEngine } from '../audio'
+import { playChime } from '../audio/chime'
 import { getNoisePreset } from '../../../shared/audio'
 import type { TimerMode } from '../../../shared/types'
 
@@ -20,48 +22,26 @@ function formatMs(ms: number): string {
   return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`
 }
 
-/** 到点提示音（Web Audio 琶音，无需音频文件） */
-function playChime(): void {
-  try {
-    const ctx = new AudioContext()
-    const notes = [523.25, 659.25, 783.99, 1046.5] // C5 E5 G5 C6
-    notes.forEach((freq, i) => {
-      const osc = ctx.createOscillator()
-      const gain = ctx.createGain()
-      const t = ctx.currentTime + i * 0.16
-      osc.type = 'sine'
-      osc.frequency.value = freq
-      gain.gain.setValueAtTime(0.0001, t)
-      gain.gain.exponentialRampToValueAtTime(0.28, t + 0.02)
-      gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.6)
-      osc.connect(gain)
-      gain.connect(ctx.destination)
-      osc.start(t)
-      osc.stop(t + 0.65)
-    })
-    setTimeout(() => {
-      void ctx.close()
-    }, 3000)
-  } catch {
-    // 音频不可用时静默
-  }
-}
-
 function FocusPage(): JSX.Element {
-  const {
-    snapshot,
-    alwaysOnTop,
-    distraction,
-    justCompleted,
-    init,
-    start,
-    pause,
-    resume,
-    stop,
-    setAlwaysOnTop,
-    setDistraction,
-    clearCompleted
-  } = useFocusStore()
+  // H-06：细粒度 selector 订阅，只订阅所需字段；snapshot 每秒变化，其余字段不受其连带重渲染
+  const snapshot = useFocusStore((s) => s.snapshot)
+  const alwaysOnTop = useFocusStore((s) => s.alwaysOnTop)
+  const distraction = useFocusStore((s) => s.distraction)
+  const justCompleted = useFocusStore((s) => s.justCompleted)
+  // 动作引用稳定（Zustand 不随 tick 重建），用 useShallow 合并取整组动作，避免对象字面量触发重渲染
+  const { init, start, pause, resume, stop, setAlwaysOnTop, setDistraction, clearCompleted } =
+    useFocusStore(
+      useShallow((s) => ({
+        init: s.init,
+        start: s.start,
+        pause: s.pause,
+        resume: s.resume,
+        stop: s.stop,
+        setAlwaysOnTop: s.setAlwaysOnTop,
+        setDistraction: s.setDistraction,
+        clearCompleted: s.clearCompleted
+      }))
+    )
 
   // 开始前的本地配置（会话进行中锁定）；默认专注时长从全局设置读取（方案 4.2）
   const [mode, setMode] = useState<TimerMode>('countdown')
@@ -99,7 +79,9 @@ function FocusPage(): JSX.Element {
         noiseEngine.duck()
       }
       void message.success(
-        snapshot.longRestSuggestion ? '🍅 一组完成！建议长休息 15 分钟' : '🍅 专注完成，休息一下吧！'
+        snapshot.longRestSuggestion
+          ? '🍅 一组完成！建议长休息 15 分钟'
+          : '🍅 专注完成，休息一下吧！'
       )
       clearCompleted()
     }
@@ -132,11 +114,13 @@ function FocusPage(): JSX.Element {
         // 白噪音联动：专注开始自动播放（可配）+ 恢复音量（解除休息降音量）
         noiseEngine.restore()
         if (noiseEngine.getSettings().autoPlayOnStart) {
-          void noiseEngine.playPreset(getNoisePreset(noiseEngine.getSettings().preset)).then((result) => {
-            if (result.started === 0 && result.skipped.length > 0) {
-              void message.info(`白噪音：${result.skipped.join('、')} 素材未打包，已跳过`)
-            }
-          })
+          void noiseEngine
+            .playPreset(getNoisePreset(noiseEngine.getSettings().preset))
+            .then((result) => {
+              if (result.started === 0 && result.skipped.length > 0) {
+                void message.info(`白噪音：${result.skipped.join('、')} 素材未打包，已跳过`)
+              }
+            })
         }
       })
       .catch((err: unknown) => {
@@ -145,7 +129,8 @@ function FocusPage(): JSX.Element {
       })
   }
 
-  const endActionLabel = endAction === 'lock' ? '锁屏' : endAction === 'overlay' ? '全屏遮罩' : '仅提示'
+  const endActionLabel =
+    endAction === 'lock' ? '锁屏' : endAction === 'overlay' ? '全屏遮罩' : '仅提示'
 
   return (
     <div>
@@ -213,7 +198,20 @@ function FocusPage(): JSX.Element {
               </Button>
             )}
             {(running || paused) && (
-              <Button danger size="large" onClick={() => { noiseEngine.restore(); void stop() }}>
+              <Button
+                danger
+                size="large"
+                onClick={() => {
+                  // 白噪音闭环：手动结束时停止播放（开始自动播 → 结束自动停）
+                  noiseEngine.stopAll()
+                  noiseEngine.restore()
+                  // CR-01：L1/L2 强制会话中 timer:stop 会被主进程拒绝（必须走紧急退出码），
+                  // 捕获 rejection 展示友好提示，避免未处理的 Promise 拒绝
+                  void stop().catch((err: unknown) => {
+                    void message.error(err instanceof Error ? err.message : '结束失败')
+                  })
+                }}
+              >
                 结束
               </Button>
             )}

@@ -12,12 +12,13 @@ import {
 } from '@ant-design/icons'
 import HomePage from './pages/HomePage'
 import FocusPage from './pages/FocusPage'
-import EnglishModePage from './pages/EnglishModePage'
+import EnglishModePageWithNoise from './pages/EnglishModePageWithNoise'
 import BiliModePage from './pages/BiliModePage'
 import StatsPage from './pages/StatsPage'
 import NotesPage from './pages/NotesPage'
 import SettingsPage from './pages/SettingsPage'
 import OverlayApp from './overlay/OverlayApp'
+import ScrollArea from './components/ScrollArea'
 import { noiseEngine } from './audio'
 
 const { Sider, Content } = Layout
@@ -37,6 +38,8 @@ const NAV_ITEMS: MenuProps['items'] = [
 function App(): JSX.Element {
   const [route, setRoute] = useState<string>(window.location.hash)
   const [page, setPage] = useState<PageKey>('home')
+  // 自适应侧栏：breakpoint="md"（<768px）自动折叠为图标栏；主窗口 minWidth 940 实际不触发，保留供 B 站窗口与未来兼容；可手动折叠
+  const [siderCollapsed, setSiderCollapsed] = useState(false)
 
   // 悬浮面板窗口通过 #overlay 路由加载独立应用（透明置顶窗）
   useEffect(() => {
@@ -75,6 +78,24 @@ function App(): JSX.Element {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
+  // P-2：主进程兜底 5×Esc（B 站视频窗口聚焦/全屏时本窗口收不到 Esc，渲染层检测失效）：
+  // 主进程在视频窗口侧检测到连按 5 次 Esc 后转发此事件，直接唤起紧急退出弹窗
+  useEffect(() => {
+    return window.api.on(window.api.events.bili.emergencyRequest, () => {
+      setEmergencyCode('')
+      setEmergencyHint('')
+      setEmergencyOpen(true)
+    })
+  }, [])
+
+  // P-2：弹窗打开期间暂停窗口守卫的失焦拉回——
+  // 否则视频窗口失焦 400ms 后会被守卫抢回焦点，主窗口收不到输入，恢复码无法输入
+  useEffect(() => {
+    void window.api.emergency.setPullBackPaused(emergencyOpen).catch(() => {
+      /* 会话已结束，忽略 */
+    })
+  }, [emergencyOpen])
+
   const handleEmergencyExit = async (): Promise<void> => {
     if (emergencyBusy) return
     setEmergencyBusy(true)
@@ -86,7 +107,9 @@ function App(): JSX.Element {
         setEmergencyCode('')
       } else {
         setEmergencyHint(
-          result.retryInSec ? `${result.error}（${result.retryInSec}s）` : (result.error ?? '恢复码错误')
+          result.retryInSec
+            ? `${result.error}（${result.retryInSec}s）`
+            : (result.error ?? '恢复码错误')
         )
       }
     } catch (err) {
@@ -107,7 +130,7 @@ function App(): JSX.Element {
       case 'focus':
         return <FocusPage />
       case 'english':
-        return <EnglishModePage />
+        return <EnglishModePageWithNoise />
       case 'bili':
         return <BiliModePage />
       case 'stats':
@@ -122,23 +145,38 @@ function App(): JSX.Element {
   return (
     <>
       <Layout className="app-shell">
-        <Sider width={220} className="app-sider">
-        <div className="app-logo">
-          <span className="app-logo-mark">🍅</span>
-          <Typography.Text strong className="app-logo-text">
-            番茄专注 Pro
-          </Typography.Text>
-        </div>
-        <Menu
-          theme="dark"
-          mode="inline"
-          selectedKeys={[page]}
-          items={NAV_ITEMS}
-          onClick={({ key }) => setPage(key as PageKey)}
-          className="app-menu"
-        />
-      </Sider>
-        <Content className="app-content">{renderPage()}</Content>
+        <Sider
+          collapsible
+          collapsed={siderCollapsed}
+          collapsedWidth={56}
+          width={240}
+          breakpoint="md"
+          onCollapse={setSiderCollapsed}
+          onBreakpoint={(broken) => setSiderCollapsed(broken)}
+          className="app-sider"
+        >
+          <div className="app-logo">
+            <span className="app-logo-mark">🍅</span>
+            <Typography.Text strong className="app-logo-text">
+              番茄专注 Pro
+            </Typography.Text>
+          </div>
+          <Menu
+            theme="dark"
+            mode="inline"
+            selectedKeys={[page]}
+            items={NAV_ITEMS}
+            onClick={({ key }) => setPage(key as PageKey)}
+            className="app-menu"
+          />
+        </Sider>
+        <Content className="app-content">
+          {/* key=page：切换页面时重挂载滚动区，重置滚动位置并重新计算滚动条——
+              否则旧页面的滚动位置/滚动条指标会残留到新页面（非可滑动页出现幽灵滑块或滑块消失） */}
+          <ScrollArea key={page} style={{ height: '100%' }}>
+            {renderPage()}
+          </ScrollArea>
+        </Content>
       </Layout>
 
       <Modal
@@ -150,6 +188,8 @@ function App(): JSX.Element {
         cancelText="取消"
         confirmLoading={emergencyBusy}
         maskClosable={false}
+        // 紧急退出弹窗在强制会话（含全屏）中高频出现：按视口比例流体缩放
+        rootClassName="app-fluid-modal"
       >
         <Typography.Paragraph type="secondary" style={{ fontSize: 12 }}>
           输入紧急恢复码以解除当前强制会话（错误 3 次将冷却 1 分钟；L2 级别额外冷却 30 秒）。

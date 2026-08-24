@@ -16,9 +16,9 @@ export type SampleKind = 'rain' | 'cafe' | 'forest' | 'library' | 'waves' | 'fir
 export interface SampleAssetSpec {
   key: SampleKind
   label: string
-  /** 素材文件名，如 rain.ogg；打包于 resources/audio/ */
+  /** 素材文件名，如 rain.mp3；打包于 resources/audio/ */
   file: string
-  /** 规格说明（OGG 44.1kHz/16bit、30–60s、-3dB 峰值、单文件 ≤5MB、本地打包） */
+  /** 规格说明（MP3/WAV 44.1kHz、30–60s、单文件 ≤5MB、本地打包） */
   spec: string
   /** 推荐音量比例（0-1），供预设组合混音使用 */
   volumeHint: number
@@ -26,14 +26,62 @@ export interface SampleAssetSpec {
 
 /** 8 种采样素材目录（全部按统一规格录制/加工） */
 export const SAMPLE_ASSET_SPECS: SampleAssetSpec[] = [
-  { key: 'rain', label: '雨声', file: 'rain.ogg', spec: 'OGG 44.1kHz/16bit 30-60s -3dB ≤5MB 本地打包', volumeHint: 1.0 },
-  { key: 'cafe', label: '咖啡厅', file: 'cafe.ogg', spec: 'OGG 44.1kHz/16bit 30-60s -3dB ≤5MB 本地打包', volumeHint: 1.0 },
-  { key: 'forest', label: '森林', file: 'forest.ogg', spec: 'OGG 44.1kHz/16bit 30-60s -3dB ≤5MB 本地打包', volumeHint: 1.0 },
-  { key: 'library', label: '图书馆', file: 'library.ogg', spec: 'OGG 44.1kHz/16bit 30-60s -3dB ≤5MB 本地打包', volumeHint: 1.0 },
-  { key: 'waves', label: '海浪', file: 'waves.ogg', spec: 'OGG 44.1kHz/16bit 30-60s -3dB ≤5MB 本地打包', volumeHint: 1.0 },
-  { key: 'fire', label: '篝火', file: 'fire.ogg', spec: 'OGG 44.1kHz/16bit 30-60s -3dB ≤5MB 本地打包', volumeHint: 1.0 },
-  { key: 'fan', label: '风扇', file: 'fan.ogg', spec: 'OGG 44.1kHz/16bit 30-60s -3dB ≤5MB 本地打包', volumeHint: 1.0 },
-  { key: 'birds', label: '鸟鸣', file: 'birds.ogg', spec: 'OGG 44.1kHz/16bit 30-60s -3dB ≤5MB 本地打包', volumeHint: 0.6 }
+  {
+    key: 'rain',
+    label: '雨声',
+    file: 'rain.mp3',
+    spec: 'MP3 44.1kHz 30-60s ≤5MB 本地打包',
+    volumeHint: 1.0
+  },
+  {
+    key: 'cafe',
+    label: '咖啡厅',
+    file: 'cafe.mp3',
+    spec: 'MP3 44.1kHz 30-60s ≤5MB 本地打包',
+    volumeHint: 1.0
+  },
+  {
+    key: 'forest',
+    label: '森林',
+    file: 'forest.mp3',
+    spec: 'MP3 44.1kHz 30-60s ≤5MB 本地打包',
+    volumeHint: 1.0
+  },
+  {
+    key: 'library',
+    label: '图书馆',
+    file: 'library.wav',
+    spec: 'WAV 44.1kHz/16bit 30-60s ≤5MB 本地打包',
+    volumeHint: 1.0
+  },
+  {
+    key: 'waves',
+    label: '海浪',
+    file: 'waves.mp3',
+    spec: 'MP3 44.1kHz 30-60s ≤5MB 本地打包',
+    volumeHint: 1.0
+  },
+  {
+    key: 'fire',
+    label: '篝火',
+    file: 'fire.mp3',
+    spec: 'MP3 44.1kHz 30-60s ≤5MB 本地打包',
+    volumeHint: 1.0
+  },
+  {
+    key: 'fan',
+    label: '风扇',
+    file: 'fan.mp3',
+    spec: 'MP3 44.1kHz 30-60s ≤5MB 本地打包',
+    volumeHint: 1.0
+  },
+  {
+    key: 'birds',
+    label: '鸟鸣',
+    file: 'birds.mp3',
+    spec: 'MP3 44.1kHz 30-60s ≤5MB 本地打包',
+    volumeHint: 0.6
+  }
 ]
 
 /** 采样素材可用性 + 绝对路径（主进程解析后下发） */
@@ -64,9 +112,21 @@ export interface NoisePreset {
 
 /** 预设目录：合成层 3 个 + 采样层组合 8 个（采样轨在素材打包后自动生效） */
 export const NOISE_PRESETS: NoisePreset[] = [
-  { key: 'white', label: '白噪', tracks: [{ key: 'white', kind: 'synthetic', synth: 'white', volumeHint: 1 }] },
-  { key: 'pink', label: '粉噪', tracks: [{ key: 'pink', kind: 'synthetic', synth: 'pink', volumeHint: 1 }] },
-  { key: 'brown', label: '棕噪', tracks: [{ key: 'brown', kind: 'synthetic', synth: 'brown', volumeHint: 1 }] },
+  {
+    key: 'white',
+    label: '白噪',
+    tracks: [{ key: 'white', kind: 'synthetic', synth: 'white', volumeHint: 1 }]
+  },
+  {
+    key: 'pink',
+    label: '粉噪',
+    tracks: [{ key: 'pink', kind: 'synthetic', synth: 'pink', volumeHint: 1 }]
+  },
+  {
+    key: 'brown',
+    label: '棕噪',
+    tracks: [{ key: 'brown', kind: 'synthetic', synth: 'brown', volumeHint: 1 }]
+  },
   {
     key: 'rain',
     label: '雨声',
@@ -112,8 +172,16 @@ export const NOISE_PRESETS: NoisePreset[] = [
       { key: 'brown-bg', kind: 'synthetic', synth: 'brown', volumeHint: 0.3 }
     ]
   },
-  { key: 'fan', label: '风扇', tracks: [{ key: 'fan', kind: 'sample', sample: 'fan', volumeHint: 1 }] },
-  { key: 'birds', label: '鸟鸣', tracks: [{ key: 'birds', kind: 'sample', sample: 'birds', volumeHint: 0.8 }] }
+  {
+    key: 'fan',
+    label: '风扇',
+    tracks: [{ key: 'fan', kind: 'sample', sample: 'fan', volumeHint: 1 }]
+  },
+  {
+    key: 'birds',
+    label: '鸟鸣',
+    tracks: [{ key: 'birds', kind: 'sample', sample: 'birds', volumeHint: 0.8 }]
+  }
 ]
 
 export function getNoisePreset(key: string): NoisePreset {

@@ -1,4 +1,4 @@
-import { getSettings, setSettings } from '../storage/settings'
+import { getSettings } from '../storage/settings'
 import {
   addGrammarPoint,
   addVocab as dbAddVocab,
@@ -24,19 +24,6 @@ export class AiStore {
   private usedQuestions = 0
 
   getConfig(): AiConfig {
-    return getSettings().ai
-  }
-
-  setConfig(patch: Partial<AiConfig>): AiConfig {
-    const entries: Record<string, unknown> = {}
-    if (patch.baseURL !== undefined) entries['ai.baseURL'] = patch.baseURL
-    if (patch.apiKey !== undefined) entries['ai.apiKey'] = patch.apiKey
-    if (patch.model !== undefined) entries['ai.model'] = patch.model
-    if (patch.ocrModel !== undefined) entries['ai.ocrModel'] = patch.ocrModel
-    if (patch.maxQuestionsPerSession !== undefined) {
-      entries['ai.maxQuestionsPerSession'] = patch.maxQuestionsPerSession
-    }
-    setSettings(entries)
     return getSettings().ai
   }
 

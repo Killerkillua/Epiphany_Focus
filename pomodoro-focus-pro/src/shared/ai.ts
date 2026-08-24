@@ -12,11 +12,11 @@ export interface AiConfig {
   baseURL: string
   /** 用户自填 API Key；空 = 演示模式（内置模拟回复） */
   apiKey: string
-  /** 对话模型名（如 deepseek-ai/DeepSeek-V3） */
+  /** 对话模型名（如 Qwen/Qwen3.5-4B） */
   model: string
   /** 单会话提问上限 */
   maxQuestionsPerSession: number
-  /** OCR 模型名（硅基流动 deepseek-ai/DeepSeek-OCR） */
+  /** OCR 模型名（如 Qwen/Qwen3.5-4B） */
   ocrModel: string
 }
 
@@ -27,12 +27,22 @@ export interface AiSource {
   snippet: string
 }
 
+/** 多轮对话历史中的一轮（渲染层携带最近对话） */
+export interface AiChatTurn {
+  role: 'user' | 'assistant'
+  content: string
+}
+
 /** 英语模式提问 */
 export interface AiQuestion {
+  /** 渲染层生成的请求关联 ID：流式 ai:chunk 事件用同一 id 关联到消息 */
+  requestId: string
   scenario: AiScenario
   message: string
   /** 词汇场景的查询词（可选，自动从 message 提取） */
   word?: string
+  /** 最近多轮历史（conversation/free 场景携带，主进程注入 messages 保持连贯） */
+  history?: AiChatTurn[]
 }
 
 /** 流式推送块（主进程 → 渲染层，经 ai:chunk 事件） */
@@ -48,7 +58,7 @@ export interface AiStreamChunk {
   sources?: AiSource[]
 }
 
-/** 完整回复（invoke 返回值） */
+/** 完整回复（invoke 返回值，英语模式）。与 B 站 shared/bili.ts 的 BiliAiReply 命名区分。 */
 export interface AiReply {
   content: string
   sources: AiSource[]
@@ -64,7 +74,7 @@ export interface AiUsage {
 export interface OcrRequest {
   /** 图片 dataURL（data:image/png;base64,...）或网络 URL */
   image: string
-  /** 可选指令（如"提取正文"），DeepSeek-OCR 支持文本提示 */
+  /** 可选指令（如"提取正文"），OCR 模型支持文本提示 */
   prompt?: string
 }
 

@@ -41,3 +41,19 @@ export interface DistractionPolicy {
   /** 白名单：豁免（优先于黑名单） */
   whitelist: string[]
 }
+
+/** 学习会话模式：B 站学习 / 英语学习（与专注模式解耦的轻量计时） */
+export type SessionMode = 'bili' | 'english'
+
+/** session:start 参数 */
+export interface SessionStartOptions {
+  mode: SessionMode
+  /** 会话时长（毫秒，倒计时） */
+  durationMs: number
+}
+
+/** 学习会话状态（get-state 返回：模式 + 计时快照） */
+export interface SessionState {
+  mode: SessionMode
+  timer: TimerSnapshot
+}
