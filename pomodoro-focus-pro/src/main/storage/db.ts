@@ -171,6 +171,17 @@ CREATE TABLE IF NOT EXISTS ai_conversations (
   messages_json TEXT NOT NULL,
   created_at INTEGER NOT NULL
 );
+CREATE TABLE IF NOT EXISTS dict_entries (
+  word TEXT PRIMARY KEY,
+  phonetic TEXT DEFAULT '',
+  definition_cn TEXT NOT NULL,
+  definition_en TEXT DEFAULT '',
+  pos TEXT DEFAULT '',
+  collins INTEGER DEFAULT 0,
+  oxford INTEGER DEFAULT 0,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dict_entries_word ON dict_entries(word);
 `
 
 /** notes 新表结构（TEXT 主键 + 分视频/重点字段） */
@@ -1740,3 +1751,67 @@ export function deleteGrammarPoint(id: number): void {
   if (!d) return
   d.prepare('DELETE FROM grammar_points WHERE id = ?').run(id)
 }
+
+// ================= dict_entries（本地离线词典缓存/词库） =================
+
+export interface LocalDictEntry {
+  word: string
+  phonetic?: string
+  definition_cn: string
+  definition_en?: string
+  pos?: string
+  collins?: number
+  oxford?: number
+  updated_at?: number
+}
+
+/** 查询本地离线词典条目 */
+export function getLocalDictEntry(word: string): LocalDictEntry | null {
+  const d = getDb()
+  if (!d || !word) return null
+  const cleaned = word.trim().toLowerCase()
+  try {
+    const row = d
+      .prepare(
+        `SELECT word, phonetic, definition_cn, definition_en, pos, collins, oxford, updated_at
+         FROM dict_entries WHERE word = ? LIMIT 1`
+      )
+      .get(cleaned) as LocalDictEntry | undefined
+    return row || null
+  } catch {
+    return null
+  }
+}
+
+/** 写入或更新本地词典条目（缓存或预装词库） */
+export function upsertLocalDictEntry(entry: LocalDictEntry): void {
+  const d = getDb()
+  if (!d || !entry.word) return
+  const now = Date.now()
+  try {
+    d.prepare(
+      `INSERT INTO dict_entries (word, phonetic, definition_cn, definition_en, pos, collins, oxford, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(word) DO UPDATE SET
+         phonetic = excluded.phonetic,
+         definition_cn = excluded.definition_cn,
+         definition_en = excluded.definition_en,
+         pos = excluded.pos,
+         collins = excluded.collins,
+         oxford = excluded.oxford,
+         updated_at = excluded.updated_at`
+    ).run(
+      entry.word.trim().toLowerCase(),
+      entry.phonetic ?? '',
+      entry.definition_cn,
+      entry.definition_en ?? '',
+      entry.pos ?? '',
+      entry.collins ?? 0,
+      entry.oxford ?? 0,
+      now
+    )
+  } catch {
+    // 忽略异常，降级处理
+  }
+}
+

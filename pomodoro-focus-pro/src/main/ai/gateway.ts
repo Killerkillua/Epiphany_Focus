@@ -1,12 +1,36 @@
 import OpenAI from 'openai'
-import type { AiConfig, AiQuestion, AiReply, AiSource } from '../../shared/ai'
+import type { AiConfig, AiQuestion, AiReply, AiScenario, AiSource } from '../../shared/ai'
 import type { AiAskRequest } from '../../shared/bili'
 import { buildBiliMessages, buildMessages, SCENARIO_TEMPLATES, SYSTEM_PROMPT } from './prompts'
 import { toFriendlyAiError } from './errors'
 
 /**
+ * 英语 5 大场景超参数矩阵：
+ * - 词汇查询：超低温 0.1，防释义/音标幻觉
+ * - 语法讲解：低温 0.2 + CoT 逐步推理，重逻辑与句子成分拆解
+ * - 写作批改：0.3 + 频率惩罚 0.2，精准润色，减少套话
+ * - 自由提问：中温 0.5，平衡开放度与准确性
+ * - 对话练习：0.75 + 存在惩罚 0.4，话题多变自然，避免机械重复
+ */
+export const SCENARIO_HYPERPARAMS: Record<
+  AiScenario,
+  {
+    temperature: number
+    top_p?: number
+    presence_penalty?: number
+    frequency_penalty?: number
+  }
+> = {
+  vocabulary: { temperature: 0.1, top_p: 0.8 },
+  grammar: { temperature: 0.2, top_p: 0.85, frequency_penalty: 0.1 },
+  writing: { temperature: 0.3, top_p: 0.9, frequency_penalty: 0.2 },
+  free: { temperature: 0.5, top_p: 0.9 },
+  conversation: { temperature: 0.75, top_p: 0.95, presence_penalty: 0.4, frequency_penalty: 0.2 }
+}
+
+/**
  * AI 网关（OpenAI 兼容 SDK，双档位）：
- * - 英语教学档位（profile='english'）：TESOL 分层 Prompt + CoT + RAG，temperature 0.7
+ * - 英语教学档位（profile='english'）：TESOL 分层 Prompt + CoT + RAG，根据场景动态自适应超参数
  * - B 站学习助手档位（profile='bili'）：跨学科学习教练，注入 topic/bvid 上下文 + 多轮历史，temperature 0.5
  * - 未配置 API Key：进入演示模式，双档位各有结构化模拟回复，
  *   保证无 Key 时 UI/流式/来源面板全链路可验证
@@ -185,11 +209,16 @@ export class EnglishGateway {
     // 根因 C 修复：create / 流式迭代 任一环节失败（401 鉴权、网络、限流等）
     // 都翻译为中文、可操作、指向「设置 → AI 设置」的错误，不再裸抛 SDK 原文。
     try {
+      const scenarioParams =
+        profile === 'bili'
+          ? { temperature: 0.5 }
+          : SCENARIO_HYPERPARAMS[question.scenario] ?? { temperature: 0.7 }
+
       const stream = await client.chat.completions.create({
         model: cfg.model,
         messages,
         stream: true,
-        temperature: profile === 'bili' ? 0.5 : 0.7
+        ...scenarioParams
       })
 
       let content = ''
