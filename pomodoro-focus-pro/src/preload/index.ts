@@ -49,6 +49,15 @@ import type {
 } from '../shared/stats'
 import type { BackupMeta, ImportPreview } from '../shared/backup'
 import type {
+  AuthResult,
+  AuthState,
+  AuthUser,
+  DeleteAccountPayload,
+  LoginPayload,
+  RegisterPayload,
+  ResetPasswordPayload
+} from '../shared/auth'
+import type {
   DistractionPolicy,
   SessionStartOptions,
   SessionState,
@@ -291,7 +300,9 @@ const api: RendererApi = {
   /* ===== 白噪音 ===== */
   audio: {
     getAssets: (): Promise<AssetInfo[]> =>
-      ipcRenderer.invoke(IPC_CHANNELS.audio.getAssets) as Promise<AssetInfo[]>
+      ipcRenderer.invoke(IPC_CHANNELS.audio.getAssets) as Promise<AssetInfo[]>,
+    getBuffer: (key: string): Promise<Uint8Array | null> =>
+      ipcRenderer.invoke(IPC_CHANNELS.audio.getBuffer, key) as Promise<Uint8Array | null>
   },
 
   /* ===== 全局设置（electron-store，即时生效） ===== */
@@ -317,13 +328,41 @@ const api: RendererApi = {
       ipcRenderer.invoke(IPC_CHANNELS.stats.homeSummary) as Promise<HomeSummary>
   },
 
+  /* ===== 本地账号 ===== */
+  auth: {
+    getState: (): Promise<AuthState> =>
+      ipcRenderer.invoke(IPC_CHANNELS.auth.getState) as Promise<AuthState>,
+    register: (p: RegisterPayload): Promise<AuthResult<{ user: AuthUser; recoveryCode: string }>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.auth.register, p) as Promise<
+        AuthResult<{ user: AuthUser; recoveryCode: string }>
+      >,
+    login: (p: LoginPayload): Promise<AuthResult<{ user: AuthUser }>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.auth.login, p) as Promise<AuthResult<{ user: AuthUser }>>,
+    loginGuest: (): Promise<AuthResult> =>
+      ipcRenderer.invoke(IPC_CHANNELS.auth.loginGuest) as Promise<AuthResult>,
+    logout: (): Promise<AuthResult> =>
+      ipcRenderer.invoke(IPC_CHANNELS.auth.logout) as Promise<AuthResult>,
+    changePassword: (oldPassword: string, newPassword: string): Promise<AuthResult> =>
+      ipcRenderer.invoke(IPC_CHANNELS.auth.changePassword, oldPassword, newPassword) as Promise<AuthResult>,
+    updateNickname: (nickname: string): Promise<AuthResult<{ user: AuthUser }>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.auth.updateNickname, nickname) as Promise<
+        AuthResult<{ user: AuthUser }>
+      >,
+    deleteAccount: (p: DeleteAccountPayload): Promise<AuthResult> =>
+      ipcRenderer.invoke(IPC_CHANNELS.auth.deleteAccount, p) as Promise<AuthResult>,
+    resetPassword: (p: ResetPasswordPayload): Promise<AuthResult<{ recoveryCode: string }>> =>
+      ipcRenderer.invoke(IPC_CHANNELS.auth.resetPassword, p) as Promise<
+        AuthResult<{ recoveryCode: string }>
+      >
+  },
+
   /* ===== 紧急退出 ===== */
   emergency: {
     exit: (code: string): Promise<EmergencyExitResult> =>
       ipcRenderer.invoke(IPC_CHANNELS.emergency.exit, code) as Promise<EmergencyExitResult>,
-    /** 设置/修改恢复码（已设置过时必须携带旧码验证；强制会话中禁止修改） */
-    setCode: (code: string, oldCode?: string): Promise<boolean> =>
-      ipcRenderer.invoke(IPC_CHANNELS.emergency.setCode, code, oldCode) as Promise<boolean>,
+    /** 设置/修改恢复码（已设置过时必须验证账户密码；强制会话中禁止修改） */
+    setCode: (code: string, password?: string): Promise<boolean> =>
+      ipcRenderer.invoke(IPC_CHANNELS.emergency.setCode, code, password) as Promise<boolean>,
     /** 紧急退出弹窗期间暂停窗口守卫失焦拉回（避免视频窗口抢焦点，输入不了恢复码） */
     setPullBackPaused: (paused: boolean): Promise<void> =>
       ipcRenderer.invoke(IPC_CHANNELS.emergency.setPullBackPaused, paused) as Promise<void>
@@ -366,6 +405,15 @@ const api: RendererApi = {
       ipcRenderer.invoke(IPC_CHANNELS.ai.listGrammar) as Promise<GrammarPoint[]>,
     deleteGrammar: (id: number): Promise<boolean> =>
       ipcRenderer.invoke(IPC_CHANNELS.ai.deleteGrammar, id) as Promise<boolean>
+  },
+
+  /* 窗口控制（自定义标题栏） */
+  window: {
+    minimize: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.window.minimize),
+    maximize: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.window.maximize),
+    close: (): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.window.close),
+    isMaximized: (): Promise<boolean> =>
+      ipcRenderer.invoke(IPC_CHANNELS.window.isMaximized) as Promise<boolean>
   }
 }
 

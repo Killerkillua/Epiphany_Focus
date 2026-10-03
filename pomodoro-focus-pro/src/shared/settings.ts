@@ -70,7 +70,7 @@ export interface BackupSettings {
   time: string
   /** 保留份数（0 = 全部保留，默认 7） */
   keepCount: number
-  /** 备份目录（空 = 默认 文档/番茄专注备份） */
+  /** 备份目录（空 = 默认 文档/静界专注备份） */
   directory: string
 }
 
@@ -90,6 +90,8 @@ export interface AppSettings {
   recoveryCodeHash: string | null
   /** 强制会话持久化状态 */
   enforced: EnforcedState | null
+  /** 紧急退出防暴力破解状态（持久化，重启不清零） */
+  emergencyGuard: EmergencyGuardState
   /** 学习目标（M3：全局每日时长 / 每周天数） */
   studyGoals: StudyGoalSettings
   /** 自动备份（M5） */
@@ -100,6 +102,18 @@ export interface AppSettings {
    * 不上送任何内容 / URL / 笔记文本，可随时一键关闭。
    */
   telemetryEnabled: boolean
+}
+
+/** 紧急退出防暴力破解状态 */
+export interface EmergencyGuardState {
+  /** 当前轮连续失败次数（尝试前即写入，进程被杀也不丢） */
+  failCount: number
+  /** 失败锁定截止时间戳（ms） */
+  failLockedUntil: number
+  /** 累计锁定轮数（指数退避指数；验证成功清零） */
+  lockoutStrikes: number
+  /** L2 额外冷却截止时间戳（ms） */
+  l2CoolDownUntil: number
 }
 
 /** 紧急退出结果 */
@@ -128,6 +142,7 @@ export const SETTINGS_DEFAULTS: AppSettings = {
   noisePreset: 'rain',
   recoveryCodeHash: null,
   enforced: null,
+  emergencyGuard: { failCount: 0, failLockedUntil: 0, lockoutStrikes: 0, l2CoolDownUntil: 0 },
   studyGoals: { dailyMinutes: 60, weeklyDays: 5 },
   backup: { enabled: true, frequency: 'daily', time: '03:00', keepCount: 7, directory: '' },
   telemetryEnabled: false

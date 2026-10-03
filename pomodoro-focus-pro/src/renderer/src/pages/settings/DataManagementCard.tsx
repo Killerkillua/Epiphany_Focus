@@ -181,7 +181,7 @@ export default function DataManagementCard({
         <Input
           style={{ width: 240 }}
           size="small"
-          value={form.backupDirectory || '默认（文档/番茄专注备份）'}
+          value={form.backupDirectory || '默认（文档/静界专注备份）'}
           disabled
         />
         <Button

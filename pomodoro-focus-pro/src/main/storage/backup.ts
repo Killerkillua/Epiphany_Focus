@@ -21,9 +21,9 @@ import { getSettings } from './settings'
  * - 无需 node-cron 依赖（spec 允许 setTimeout 轮询）
  */
 
-/** 默认备份目录：文档/番茄专注备份 */
+/** 默认备份目录：文档/静界专注备份 */
 export function defaultBackupDir(): string {
-  return join(app.getPath('documents'), '番茄专注备份')
+  return join(app.getPath('documents'), '静界专注备份')
 }
 
 /** 组装备份文件（当前数据快照 + 学习目标） */
@@ -62,7 +62,104 @@ export function parseBackupFile(text: string): BackupFile {
   ) {
     throw new Error('备份文件格式不正确或版本不受支持（需要 version ' + BACKUP_VERSION + '）')
   }
-  return file
+  return { ...file, data: sanitizeBackupData(file.data) }
+}
+
+/* ===== 备份内容清洗（备份文件是不可信输入：限制规模、统一字段类型与长度） ===== */
+
+/** 备份文件大小上限（超过直接拒绝读取） */
+export const MAX_BACKUP_BYTES = 50 * 1024 * 1024
+const MAX_RECORDS = 50_000
+const MAX_NOTES = 100_000
+const MAX_SESSIONS = 200_000
+
+const asStr = (v: unknown, max: number): string => (typeof v === 'string' ? v.slice(0, max) : '')
+const asNum = (v: unknown): number => {
+  const n = typeof v === 'number' ? v : Number(v)
+  return Number.isFinite(n) ? n : 0
+}
+const asObj = (v: unknown, label: string, i: number): Record<string, unknown> => {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) {
+    throw new Error(`备份文件损坏：${label}[${i}] 不是对象`)
+  }
+  return v as Record<string, unknown>
+}
+
+function sanitizeBackupData(data: BackupFile['data']): BackupFile['data'] {
+  if (
+    data.playRecords.length > MAX_RECORDS ||
+    data.notes.length > MAX_NOTES ||
+    data.studySessions.length > MAX_SESSIONS
+  ) {
+    throw new Error('备份文件条目数量超出上限')
+  }
+  const playRecords = data.playRecords.map((raw, i) => {
+    const r = asObj(raw, 'playRecords', i)
+    const bvid = asStr(r.bvid, 100)
+    if (!bvid) throw new Error(`备份文件损坏：playRecords[${i}] 缺少 bvid`)
+    const tags = Array.isArray(r.tags)
+      ? r.tags
+          .slice(0, 100)
+          .map((t) => asStr(t, 50))
+          .filter(Boolean)
+      : []
+    return {
+      bvid,
+      title: asStr(r.title, 1000),
+      durationS: asNum(r.durationS),
+      watchedS: asNum(r.watchedS),
+      lastPositionS: asNum(r.lastPositionS),
+      status: asStr(r.status, 20) as BackupFile['data']['playRecords'][number]['status'],
+      viewedCount: asNum(r.viewedCount),
+      goalRounds: asNum(r.goalRounds),
+      goalDeadline: asStr(r.goalDeadline, 50),
+      createdAt: asNum(r.createdAt),
+      updatedAt: asNum(r.updatedAt),
+      tags,
+      coverUrl: asStr(r.coverUrl, 2000),
+      author: asStr(r.author, 500)
+    }
+  })
+  const notes = data.notes.map((raw, i) => {
+    const n = asObj(raw, 'notes', i)
+    return {
+      id: asStr(n.id, 200),
+      createdAt: asNum(n.createdAt),
+      content: asStr(n.content, 200_000),
+      bvid: asStr(n.bvid, 100) || undefined,
+      videoTitle: asStr(n.videoTitle, 1000) || undefined,
+      timestampS: n.timestampS === undefined ? undefined : asNum(n.timestampS),
+      isKey: n.isKey === true,
+      source: asStr(n.source, 20) as BackupFile['data']['notes'][number]['source']
+    }
+  })
+  const studySessions = data.studySessions.map((raw, i) => {
+    const s = asObj(raw, 'studySessions', i)
+    return {
+      id: asNum(s.id),
+      bvid: asStr(s.bvid, 100),
+      startAt: asNum(s.startAt),
+      endAt: asNum(s.endAt),
+      durationS: asNum(s.durationS),
+      source: asStr(s.source, 20) as BackupFile['data']['studySessions'][number]['source'],
+      createdAt: asNum(s.createdAt)
+    }
+  })
+  return {
+    playRecords,
+    notes,
+    studySessions,
+    tags: Array.isArray(data.tags)
+      ? data.tags
+          .slice(0, 10_000)
+          .map((t) => asStr(t, 50))
+          .filter(Boolean)
+      : [],
+    settings: {
+      dailyMinutes: asNum(data.settings?.dailyMinutes),
+      weeklyDays: asNum(data.settings?.weeklyDays)
+    }
+  }
 }
 
 /** 写入备份文件（含元数据落库），返回元数据 */
@@ -169,5 +266,8 @@ export function startAutoBackup(): void {
 
 /** 读取备份文件（手动导入用） */
 export function readBackupFile(filePath: string): BackupFile {
+  if (statSync(filePath).size > MAX_BACKUP_BYTES) {
+    throw new Error('备份文件过大（超过 50MB）')
+  }
   return parseBackupFile(readFileSync(filePath, 'utf-8'))
 }

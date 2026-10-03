@@ -50,8 +50,8 @@ export const SAMPLE_ASSET_SPECS: SampleAssetSpec[] = [
   {
     key: 'library',
     label: '图书馆',
-    file: 'library.wav',
-    spec: 'WAV 44.1kHz/16bit 30-60s ≤5MB 本地打包',
+    file: 'library.mp3',
+    spec: 'MP3 44.1kHz 30-60s ≤5MB 本地打包',
     volumeHint: 1.0
   },
   {

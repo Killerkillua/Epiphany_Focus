@@ -4,6 +4,8 @@ import ModeCard from '../components/ModeCard'
 import DurationConfigModal, { type ModeTarget } from '../components/DurationConfigModal'
 import { useFocusStore } from '../store/focusStore'
 import { useSessionStore } from '../store/sessionStore'
+import { noiseEngine } from '../audio'
+import { getNoisePreset } from '../../../shared/audio'
 
 interface Props {
   onNavigate: (page: 'focus' | 'bili' | 'english') => void
@@ -21,9 +23,22 @@ function HomePage({ onNavigate }: Props): JSX.Element {
     if (!t) return
     if (t === 'focus') {
       await focusStart('countdown', minutes * 60_000)
+      noiseEngine.restore()
+      if (noiseEngine.getSettings().autoPlayOnStart) {
+        void noiseEngine.playPreset(getNoisePreset(noiseEngine.getSettings().preset))
+      }
     } else {
       // 视频学习 / 英语模式：进入页面即启动学习会话计时（与强制引擎解耦）
       await sessionStart(t, minutes * 60_000)
+      if (t === 'english') {
+        noiseEngine.restore()
+        if (noiseEngine.getSettings().autoPlayOnStart) {
+          void noiseEngine.playPreset(getNoisePreset(noiseEngine.getSettings().preset))
+        }
+      } else if (t === 'bili') {
+        // 视频学习不需要白噪音，确保停止
+        noiseEngine.stopAll()
+      }
     }
     onNavigate(t)
   }
@@ -31,7 +46,7 @@ function HomePage({ onNavigate }: Props): JSX.Element {
   return (
     <div className="home">
       <h1 className="page-title">首页</h1>
-      <p className="page-sub">欢迎使用番茄专注 Pro —— 想学就学，无法摸鱼。</p>
+      <p className="page-sub">欢迎使用静界专注 —— 想学就学，无法摸鱼。</p>
 
       <StatsBar />
 

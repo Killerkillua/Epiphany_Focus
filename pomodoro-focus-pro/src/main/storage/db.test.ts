@@ -687,7 +687,16 @@ describe('getProgressStats（M3 概览统计）', () => {
     const s = getProgressStats()
     expect(s.todayMinutes).toBe(15)
     expect(s.weekMinutes).toBe(30) // 15 + 5 + 10
-    expect(s.monthMinutes).toBeGreaterThanOrEqual(30) // 含 10 天前（跨月则不含）
+    // 10 天前那条（20 分钟）仅当仍在本月时计入，避免月初运行时用例随日期漂移
+    // 昨天 / 3 天前同理：月初运行时也可能落在上月，故逐条按“是否本月”累加
+    const now = new Date()
+    const inThisMonth = (n: number): boolean => {
+      const d = new Date(dayStart(n))
+      return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()
+    }
+    const expectedMonth =
+      15 + (inThisMonth(1) ? 5 : 0) + (inThisMonth(3) ? 10 : 0) + (inThisMonth(10) ? 20 : 0)
+    expect(s.monthMinutes).toBe(expectedMonth)
     expect(s.streakDays).toBe(2) // 今天 + 昨天
     expect(s.weekDaysStudied).toBe(3)
     expect(s.totalCourses).toBe(4)

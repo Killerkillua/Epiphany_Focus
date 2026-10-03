@@ -1,4 +1,4 @@
-/* ===== 番茄专注 Pro · 全局深色主题 ===== */
+/* ===== 静界专注（Epiphany Focus）· 全局深色主题 ===== */
 :root {
   --bg: #0f1115;
   --bg2: #171b22;
@@ -185,9 +185,128 @@ body {
   user-select: none;
 }
 
+/* ===== 窗口整体容器（无边框圆角外壳） ===== */
+.window-container {
+  display: flex;
+  flex-direction: column;
+  width: 100vw;
+  height: 100vh;
+  box-sizing: border-box;
+  background: var(--bg);
+  overflow: hidden;
+  border-radius: 10px;
+  border: 1px solid var(--rule);
+  transition: border-radius 0.15s ease, border-color 0.15s ease;
+}
+
+.window-container.is-maximized {
+  border-radius: 0;
+  border: none;
+}
+
+/* ===== 自定义原生质感标题栏 ===== */
+.custom-titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 38px;
+  min-height: 38px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--rule);
+  user-select: none;
+  z-index: 1000;
+  flex-shrink: 0;
+}
+
+.custom-titlebar-drag-region {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  -webkit-app-region: drag;
+  padding-left: 14px;
+  cursor: default;
+}
+
+.custom-titlebar-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.custom-titlebar-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  object-fit: contain;
+  flex-shrink: 0;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  pointer-events: none;
+}
+
+.custom-titlebar-title {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.custom-titlebar-tag {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 1px 7px;
+  border-radius: 10px;
+  margin-left: 2px;
+}
+
+.custom-titlebar-controls {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--muted);
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease;
+  padding: 0;
+}
+
+.titlebar-btn:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: var(--ink);
+}
+
+.titlebar-btn:active {
+  background-color: rgba(255, 255, 255, 0.12);
+}
+
+.titlebar-btn-close:hover {
+  background-color: #e81123 !important;
+  color: #ffffff !important;
+}
+
+.titlebar-btn-close:active {
+  background-color: #bf0f1d !important;
+  color: #ffffff !important;
+}
+
 /* ===== 应用外壳 ===== */
 .app-shell {
-  height: 100vh;
+  flex: 1;
+  height: calc(100vh - 38px);
+  min-height: 0;
   background: var(--bg);
 }
 
@@ -208,7 +327,12 @@ body {
 }
 
 .app-logo-mark {
-  font-size: var(--text-lg);
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  object-fit: contain;
+  flex-shrink: 0;
+  display: inline-block;
 }
 
 .app-logo-text {
@@ -2617,4 +2741,193 @@ body,
   font-size: 10px;
   color: var(--muted);
   font-variant-numeric: tabular-nums;
+}
+
+/* ===== 登录页 / 账号入口 ===== */
+.login-root {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 64px;
+  padding: 24px;
+  background: radial-gradient(circle at 20% 20%, #1e242e 0%, #0f1115 60%);
+}
+.login-brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+.login-brand-logo {
+  width: 96px;
+  height: 96px;
+  border-radius: 22px;
+}
+.login-card {
+  width: 380px;
+  max-width: 100%;
+  padding: 24px 28px 20px;
+  background: #171b22;
+  border: 1px solid #2a313c;
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+}
+.login-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.login-strength {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  font-size: 12px;
+}
+.login-strength .ant-progress {
+  flex: 1;
+  margin: 0;
+}
+.login-guest {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #2a313c;
+}
+@media (max-width: 760px) {
+  .login-brand {
+    display: none;
+  }
+}
+.recovery-code-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  margin-bottom: 12px;
+  background: #0f1115;
+  border: 1px dashed #ff6b4a;
+  border-radius: 8px;
+}
+.recovery-code-text {
+  font-family: Consolas, 'Courier New', monospace;
+  font-size: 20px;
+  letter-spacing: 2px;
+  user-select: all;
+}
+.app-account {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: #e8eaed;
+}
+.app-account:hover {
+  background: #1e242e;
+}
+.app-account-avatar {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  line-height: 28px;
+  text-align: center;
+  font-weight: 600;
+  border-radius: 50%;
+  background: #ff6b4a;
+  color: #fff;
+}
+.app-account-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.ant-layout-sider-collapsed .app-account {
+  margin: 8px 6px;
+  padding: 8px 6px;
+}
+.ant-layout-sider-collapsed .app-account-name {
+  display: none;
+}
+/* ===== 侧栏：菜单撑满，折叠键 + 账号固定在最下端 ===== */
+.app-sider .ant-layout-sider-children {
+  display: flex;
+  flex-direction: column;
+}
+.app-sider-inner {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.app-sider-inner > .app-menu {
+  flex: 1;
+  overflow-y: auto;
+}
+.app-sider-bottom {
+  flex: none;
+  padding: 8px;
+  border-top: 1px solid var(--rule);
+}
+.app-collapse-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  margin-bottom: 4px;
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.app-collapse-btn:hover {
+  color: var(--ink);
+  background: #1e242e;
+}
+.ant-layout-sider-collapsed .app-collapse-text,
+.ant-layout-sider-collapsed .app-account-info {
+  display: none;
+}
+.ant-layout-sider-collapsed .app-collapse-btn {
+  justify-content: center;
+}
+.app-sider-bottom .app-account {
+  margin: 0;
+}
+.app-account-active {
+  background: rgba(255, 107, 74, 0.15);
+}
+.app-account-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+.app-account-sub {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* ===== 设置页：瀑布流分栏，卡片按内容高度紧凑排布，不留大面积空白 ===== */
+.settings-layout {
+  display: block;
+  column-width: 360px;
+  column-gap: var(--space-sm);
+}
+.settings-layout > .ant-card,
+.settings-layout > .settings-card {
+  display: inline-block;
+  width: 100%;
+  margin-bottom: var(--space-sm);
+  break-inside: avoid;
+}
+.settings-card .ant-card-body {
+  padding: 12px 16px;
+}
+.settings-row {
+  padding: 4px 0;
 }

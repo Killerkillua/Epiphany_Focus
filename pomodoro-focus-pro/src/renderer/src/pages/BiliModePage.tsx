@@ -24,6 +24,7 @@ import CoverImage from '../components/CoverImage'
 import SessionTimerBar from '../components/SessionTimerBar'
 import LearningAssistantDrawer from '../components/LearningAssistantDrawer'
 import { useSessionStore } from '../store/sessionStore'
+import { noiseEngine } from '../audio'
 import type { BiliOrder, BiliVideoItem, OverlaySnapshot } from '../../../shared/bili'
 
 /**
@@ -148,7 +149,14 @@ function BiliModePage(): JSX.Element {
     }
   }, [searched, items])
 
+  // 视频学习不需要白噪音，进入页面即停止全部白噪音
+  useEffect(() => {
+    noiseEngine.stopAll()
+  }, [])
+
   const handleOpenVideo = (item: BiliVideoItem): void => {
+    // 播放视频前确保停止白噪音
+    noiseEngine.stopAll()
     // 会话上限时长：取当前学习会话的计划时长（首页时长浮层 / 计时条预设；未开始时为默认快照值），
     // 修复此前未传 plannedMs 导致视频强制会话 cap=0 的问题
     const plannedMs = useSessionStore.getState().snapshot.durationMs

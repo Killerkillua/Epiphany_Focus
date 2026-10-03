@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { IPC_CHANNELS, IPC_EVENTS } from '../../shared/ipc'
 import { attachNavigationGuard, buildBlockPageHtml, isAllowedBiliUrl } from './guard'
 import { attachFullscreenLock } from './fullscreenLock'
+import { getAppIcon } from '../icon'
 import { getSettings } from '../storage/settings'
 import { recordStudySessionEnd, recordStudySessionStart } from '../storage/db'
 import { recordTelemetry } from '../telemetry'
@@ -163,6 +164,7 @@ function dockOverlay(): void {
 }
 
 function createOverlay(video: BrowserWindow, opts: OverlayOptions): BrowserWindow {
+  const appIcon = getAppIcon()
   const overlay = new BrowserWindow({
     ...OVERLAY_EXPANDED_SIZE, // 610×940（学习助手重构：始终展开态）
     minWidth: OVERLAY_EXPANDED_SIZE.width,
@@ -178,13 +180,16 @@ function createOverlay(video: BrowserWindow, opts: OverlayOptions): BrowserWindo
     show: false,
     hasShadow: false,
     backgroundColor: '#00000000',
+    ...(appIcon ? { icon: appIcon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      sandbox: true
     }
   })
+  // 悬浮面板不应开新窗口
+  overlay.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   overlay.setMinimumSize(OVERLAY_EXPANDED_SIZE.width, OVERLAY_EXPANDED_SIZE.height)
   overlay.setAlwaysOnTop(true, 'screen-saver')
   overlay.setMenuBarVisibility(false)
@@ -269,6 +274,7 @@ export function openVideo(payload: OpenVideoPayload): void {
   // M3：本次打开的视频窗口构成一个学习会话（关闭时结算时长）；来源写入 study_sessions.source
   const studySessionId = recordStudySessionStart(bvid, source)
 
+  const appIcon = getAppIcon()
   const video = new BrowserWindow({
     width: 1280,
     height: 760,
@@ -278,10 +284,12 @@ export function openVideo(payload: OpenVideoPayload): void {
     autoHideMenuBar: true,
     backgroundColor: '#0f1115',
     title: `视频学习 · ${bvid}`,
+    ...(appIcon ? { icon: appIcon } : {}),
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      // 加载第三方站点且无 preload，必须沙箱化
+      sandbox: true
     }
   })
   video.setMenuBarVisibility(false)

@@ -42,7 +42,7 @@ import { getSettings } from './settings'
  *   ai_conversations(id, mode, messages_json, created_at)
  */
 
-interface SqliteLike {
+export interface SqliteLike {
   pragma(sql: string): unknown
   exec(sql: string): void
   prepare(sql: string): {
@@ -280,35 +280,58 @@ export function migratePlayRecordsColumns(d: SqliteLike): void {
 let db: SqliteLike | null = null
 let warned = false
 
+/** 默认（旧版/首个注册账号接管）数据库文件名 */
+export const LEGACY_DB_FILE = 'pomodoro.db'
+
+/** 当前账号对应的数据库文件名（相对 userData）；账号模块登录/登出时切换 */
+let activeDbFile: string = LEGACY_DB_FILE
+
+/**
+ * 切换当前账号的数据库文件：关闭旧连接，下次 getDb() 打开新文件。
+ * 每个账号独立一个 SQLite 文件，所有业务查询天然按账号隔离。
+ */
+export function setActiveDbFile(file: string): void {
+  if (file === activeDbFile) return
+  closeDb()
+  activeDbFile = file
+}
+
+export function getActiveDbFile(): string {
+  return activeDbFile
+}
+
+/**
+ * 打开一个 SQLite 文件并设置 WAL（不建业务表）。
+ * 测试驱动：POMODORO_DB_DRIVER=node:sqlite 时使用系统 Node 内置 SQLite
+ * （better-sqlite3 按 Electron ABI 编译，纯 Node 的 vitest 无法加载原生绑定）。
+ */
+export function openSqlite(dbPath: string): SqliteLike {
+  if (process.env.POMODORO_DB_DRIVER === 'node:sqlite') {
+    const { DatabaseSync } = createRequire(__filename)(
+      'node:sqlite'
+    ) as typeof import('node:sqlite')
+    const sync = new DatabaseSync(dbPath)
+    sync.exec('PRAGMA journal_mode = WAL')
+    return sync as unknown as SqliteLike
+  }
+  // better-sqlite3 为原生模块，动态 require 以便加载失败时优雅降级
+  const require = createRequire(__filename)
+  const Database = require('better-sqlite3') as new (file: string) => SqliteLike
+  const d = new Database(dbPath)
+  d.pragma('journal_mode = WAL')
+  return d
+}
+
 export function getDb(): SqliteLike | null {
   if (db) return db
   try {
     // 测试注入：POMODORO_DB_PATH 指向隔离的临时数据库（生产环境不设置，走 userData）
-    const dbPath = process.env.POMODORO_DB_PATH || join(app.getPath('userData'), 'pomodoro.db')
-
-    // 测试专用驱动：系统 Node 内置 SQLite（better-sqlite3 按 Electron ABI 编译，
-    // 纯 Node 的 vitest 无法加载原生绑定）。生产环境始终走 better-sqlite3 分支。
-    if (process.env.POMODORO_DB_DRIVER === 'node:sqlite') {
-      const { DatabaseSync } = createRequire(__filename)(
-        'node:sqlite'
-      ) as typeof import('node:sqlite')
-      const sync = new DatabaseSync(dbPath)
-      sync.exec('PRAGMA journal_mode = WAL')
-      sync.exec(SCHEMA)
-      migrateNotesTable(sync as unknown as SqliteLike)
-      migratePlayRecordsColumns(sync as unknown as SqliteLike)
-      db = sync as unknown as SqliteLike
-      return db
-    }
-
-    // better-sqlite3 为原生模块，动态 require 以便加载失败时优雅降级
-    const require = createRequire(__filename)
-    const Database = require('better-sqlite3') as new (file: string) => SqliteLike
-    db = new Database(dbPath)
-    db.pragma('journal_mode = WAL')
-    db.exec(SCHEMA)
-    migrateNotesTable(db)
-    migratePlayRecordsColumns(db)
+    const dbPath = process.env.POMODORO_DB_PATH || join(app.getPath('userData'), activeDbFile)
+    const opened = openSqlite(dbPath)
+    opened.exec(SCHEMA)
+    migrateNotesTable(opened)
+    migratePlayRecordsColumns(opened)
+    db = opened
     return db
   } catch (err) {
     if (!warned) {
@@ -322,7 +345,7 @@ export function getDb(): SqliteLike | null {
   }
 }
 
-/** 关闭并释放数据库连接（测试隔离用；生产环境无需调用） */
+/** 关闭并释放数据库连接（账号切换/测试隔离用） */
 export function closeDb(): void {
   if (db) {
     try {
@@ -333,7 +356,6 @@ export function closeDb(): void {
     db = null
   }
 }
-
 /** 本地日期 YYYY-MM-DD */
 export function todayLocal(): string {
   const d = new Date()

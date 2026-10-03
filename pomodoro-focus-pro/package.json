@@ -1,7 +1,7 @@
 {
   "name": "pomodoro-focus-pro",
   "version": "0.1.0",
-  "description": "番茄专注 Pro —— 强制专注番茄钟（Electron + React 18 + TypeScript）",
+  "description": "静界专注（Epiphany Focus）—— 强制专注桌面应用（Electron + React 18 + TypeScript）",
   "main": "./out/main/index.js",
   "author": "pomodoro-focus-pro",
   "license": "MIT",
@@ -20,6 +20,7 @@
     "format:check": "prettier --check .",
     "samples:generate": "node scripts/generate-samples.mjs",
     "samples:validate": "node scripts/validate-samples.mjs",
+    "icons:generate": "node scripts/generate-icons.mjs",
     "build:win": "npm run build && electron-builder --win --config electron-builder.yml",
     "build:mac": "npm run build && electron-builder --mac --config electron-builder.yml",
     "build:linux": "npm run build && electron-builder --linux --config electron-builder.yml"

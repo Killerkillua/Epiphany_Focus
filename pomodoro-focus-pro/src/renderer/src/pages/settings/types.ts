@@ -61,7 +61,11 @@ export const NOISE_OPTIONS = [
   { value: 'rain', label: '雨声' },
   { value: 'cafe', label: '咖啡厅' },
   { value: 'forest', label: '森林' },
-  { value: 'library', label: '图书馆' }
+  { value: 'library', label: '图书馆' },
+  { value: 'waves', label: '海浪' },
+  { value: 'fire', label: '篝火' },
+  { value: 'fan', label: '风扇' },
+  { value: 'birds', label: '鸟鸣' }
 ]
 
 /** 保存一组设置（点路径写入 electron-store）并刷新快照 */

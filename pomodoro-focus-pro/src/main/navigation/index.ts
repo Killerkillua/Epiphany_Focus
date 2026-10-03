@@ -90,6 +90,10 @@ import { ValidationError, str, optStr, num, optNum, arr, oneOf, safeRecord } fro
  * 编排责任：打开视频 → 启动强制会话 + 全屏锁定；关闭视频 → 结束强制会话。
  */
 
+/** 导入路径令牌：importPreview 选定的文件，importData 仅认该路径（10 分钟内、一次性） */
+const IMPORT_TOKEN_TTL_MS = 10 * 60_000
+let pendingImport: { filePath: string; expiresAt: number } | null = null
+
 export function registerNavigationModule(
   getWindow: () => BrowserWindow | null,
   enforcement: EnforcementHandle,
@@ -504,6 +508,8 @@ export function registerNavigationModule(
       const filePath = result.filePaths[0]
       try {
         const backup = readBackupFile(filePath)
+        // 路径令牌：只有经原生对话框选中并预览成功的文件才允许后续导入
+        pendingImport = { filePath, expiresAt: Date.now() + IMPORT_TOKEN_TTL_MS }
         return {
           ok: true,
           filePath,
@@ -537,8 +543,15 @@ export function registerNavigationModule(
         const fp = str(filePath ?? '', 'playRecords.importData.filePath', { max: 2000 })
         const m = oneOf(mode, 'playRecords.importData.mode', ['merge', 'replace'] as const)
         if (!m) throw new ValidationError('importData.mode 必须是 merge/replace')
+        // 渲染层传入的路径必须与主进程记录的"对话框选定路径"一致且未过期；
+        // 否则被攻破的渲染进程可让主进程读取任意本地 JSON 文件
+        const token = pendingImport
+        if (!token || token.filePath !== fp || Date.now() > token.expiresAt) {
+          throw new Error('请先通过「选择备份文件」选定要恢复的文件')
+        }
         const backup = readBackupFile(fp)
         const result = importBackupData(backup.data, m)
+        pendingImport = null // 令牌一次性有效
         return { ok: true, ...result }
       } catch (err) {
         return {

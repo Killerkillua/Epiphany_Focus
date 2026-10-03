@@ -3,8 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>番茄专注 Pro — 想学就学，无法摸鱼</title>
-<meta name="description" content="番茄专注 Pro 是一款基于 Electron 的桌面专注力工具，集成番茄钟、视频学习模式、英语学习、白噪音与学习统计，帮你真正做到「想学就学，无法摸鱼」。">
+<title>静界专注（Epiphany Focus）— 想学就学，无法摸鱼</title>
+<link rel="icon" type="image/png" href="icon.png">
+<link rel="shortcut icon" href="favicon.ico">
+<meta name="description" content="静界专注（Epiphany Focus）是一款基于 Electron 的桌面专注力工具，集成番茄钟、视频学习模式、英语学习、白噪音与学习统计，帮你真正做到「想学就学，无法摸鱼」。">
 <style>
 /* ===== Reset & Base ===== */
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -55,6 +57,8 @@ img{max-width:100%;display:block}
 .nav-inner{display:flex;align-items:center;justify-content:space-between;height:64px}
 .nav-brand{display:flex;align-items:center;gap:10px;font-size:18px;font-weight:700}
 .nav-brand .logo{font-size:26px}
+.nav-brand .logo-img{width:28px;height:28px;border-radius:6px;object-fit:contain;vertical-align:middle}
+.footer-brand .logo-img{width:24px;height:24px;border-radius:5px;object-fit:contain;vertical-align:middle}
 .nav-links{display:flex;align-items:center;gap:32px}
 .nav-links a{font-size:15px;color:var(--text-2);transition:color .2s}
 .nav-links a:hover{color:var(--text)}
@@ -308,7 +312,7 @@ img{max-width:100%;display:block}
 <!-- ===== Nav ===== -->
 <nav class="nav">
   <div class="container nav-inner">
-    <a href="#" class="nav-brand"><span class="logo">🍅</span> 番茄专注 Pro</a>
+    <a href="#" class="nav-brand"><img src="icon.png" alt="静界专注" class="logo-img"> 静界专注</a>
     <div class="nav-links">
       <a href="#features">功能特性</a>
       <a href="#modes">学习模式</a>
@@ -329,7 +333,7 @@ img{max-width:100%;display:block}
       v0.1.0 正式发布
     </div>
     <h1>想学就学，<span class="grad">无法摸鱼</span></h1>
-    <p class="tagline">番茄专注 Pro — 集成强制专注番茄钟、视频学习模式、AI 英语学习、白噪音与学习统计的桌面生产力工具</p>
+    <p class="tagline">静界专注（Epiphany Focus）— 集成强制专注番茄钟、视频学习模式、AI 英语学习、白噪音与学习统计的桌面生产力工具</p>
     <div class="hero-actions">
       <a href="pomodoro-focus-pro-0.1.0-setup.exe" download class="btn-primary">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -348,7 +352,7 @@ img{max-width:100%;display:block}
     <div class="hero-preview fade-up">
       <div class="mockup-bar">
         <span class="dot"></span><span class="dot"></span><span class="dot"></span>
-        <span class="url">🍅 番茄专注 Pro — 专注中</span>
+        <span class="url">🍅 静界专注 — 专注中</span>
       </div>
       <div class="mockup-body">
         <div class="mockup-sider">
@@ -583,7 +587,7 @@ img{max-width:100%;display:block}
 <!-- ===== Footer ===== -->
 <footer class="footer">
   <div class="container">
-    <div class="footer-brand"><span class="logo">🍅</span> 番茄专注 Pro</div>
+    <div class="footer-brand"><img src="icon.png" alt="静界专注" class="logo-img"> 静界专注</div>
     <p>想学就学，无法摸鱼 — MIT License</p>
     <div class="footer-links">
       <a href="#features">功能</a>

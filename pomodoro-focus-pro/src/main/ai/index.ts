@@ -182,7 +182,7 @@ export function registerAiIpc(): void {
 
   // ================= 配置（BYOK） =================
 
-  ipcMain.handle(IPC_CHANNELS.ai.getConfig, (): AiConfig => store.getConfig())
+  ipcMain.handle(IPC_CHANNELS.ai.getConfig, (): AiConfig => store.getPublicConfig())
 
   ipcMain.handle(IPC_CHANNELS.ai.usage, (): AiUsage => store.getUsage())
 

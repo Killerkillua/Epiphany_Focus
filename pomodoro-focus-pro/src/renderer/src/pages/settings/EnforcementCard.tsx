@@ -91,8 +91,8 @@ export default function EnforcementCard({
           </Button>
         </Space>
       </div>
-      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-        L1/L2 强制会话开始前必须已设置恢复码；连按 5 次 Esc 触发紧急退出。
+      <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 4 }}>
+        连按 5 次 Esc 触发紧急退出。
       </Typography.Text>
 
       <RecoveryCodeModal

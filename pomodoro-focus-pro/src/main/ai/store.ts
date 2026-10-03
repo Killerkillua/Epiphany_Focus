@@ -1,4 +1,4 @@
-import { getSettings } from '../storage/settings'
+import { getPublicSettings, getSettings } from '../storage/settings'
 import {
   addGrammarPoint,
   addVocab as dbAddVocab,
@@ -25,6 +25,11 @@ export class AiStore {
 
   getConfig(): AiConfig {
     return getSettings().ai
+  }
+
+  /** 面向渲染层的配置：API Key 仅返回掩码，不泄露明文 */
+  getPublicConfig(): AiConfig {
+    return getPublicSettings().ai
   }
 
   getUsage(): AiUsage {

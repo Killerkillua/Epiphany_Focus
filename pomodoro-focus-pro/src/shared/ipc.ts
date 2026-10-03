@@ -148,7 +148,9 @@ export const IPC_CHANNELS = {
   /** 白噪音（主进程侧：素材信息；混音引擎在渲染层） */
   audio: {
     /** 采样素材信息（路径 + 存在性） */
-    getAssets: 'audio:get-assets'
+    getAssets: 'audio:get-assets',
+    /** 直接读取素材二进制数据（IPC 兜底通道） */
+    getBuffer: 'audio:get-buffer'
   },
   /** 强制引擎 */
   enforce: {
@@ -162,10 +164,22 @@ export const IPC_CHANNELS = {
   /** 紧急退出 */
   emergency: {
     exit: 'emergency:exit',
-    /** 设置/修改紧急恢复码（已设置过时需携带旧码验证，强制会话中禁止修改） */
+    /** 设置/修改紧急恢复码（已设置过时需验证账户密码，强制会话中禁止修改） */
     setCode: 'emergency:set-code',
     /** 紧急退出弹窗期间暂停窗口守卫的失焦拉回（避免视频窗口抢焦点，输入不了恢复码） */
     setPullBackPaused: 'emergency:set-pull-back-paused'
+  },
+  /** 本地账号（登录 / 注册 / 游客 / 账号管理） */
+  auth: {
+    getState: 'auth:get-state',
+    register: 'auth:register',
+    login: 'auth:login',
+    loginGuest: 'auth:login-guest',
+    logout: 'auth:logout',
+    changePassword: 'auth:change-password',
+    updateNickname: 'auth:update-nickname',
+    deleteAccount: 'auth:delete-account',
+    resetPassword: 'auth:reset-password'
   },
   /** 学习统计（study_stats / sessions 聚合） */
   stats: {
@@ -189,6 +203,13 @@ export const IPC_CHANNELS = {
   app: {
     getVersion: 'app:get-version',
     platform: 'app:platform'
+  },
+  /** 自定义标题栏窗口控制 */
+  window: {
+    minimize: 'window:minimize',
+    maximize: 'window:maximize',
+    close: 'window:close',
+    isMaximized: 'window:is-maximized'
   }
 } as const
 
@@ -233,6 +254,10 @@ export const IPC_EVENTS = {
   settings: {
     /** 设置变更广播（settings:set / ai 配置写入后推送最新快照，渲染层据此实时刷新） */
     changed: 'settings:changed'
+  },
+  /** 窗口状态事件 */
+  window: {
+    maximizeChanged: 'window:maximize-changed'
   }
 } as const
 

@@ -1,5 +1,6 @@
-import { app, shell, BrowserWindow, protocol } from 'electron'
+import { app, shell, BrowserWindow, protocol, ipcMain } from 'electron'
 import { join } from 'path'
+import { IPC_CHANNELS, IPC_EVENTS } from '../shared/ipc'
 import { registerEnforcementModule } from './enforcement'
 import { registerNavigationModule } from './navigation'
 import { closeVideo } from './navigation/biliWindow'
@@ -9,9 +10,11 @@ import { registerAudioModule } from './audio'
 import { loadEnvFile } from './env'
 import { registerSettingsIpc } from './storage/settings'
 import { registerStatsIpc } from './storage/stats'
+import { registerAuthIpc } from './auth'
 import { startAutoBackup } from './storage/backup'
 import { getDb } from './storage/db'
 import { registerSessionModule } from './session'
+import { getAppIcon } from './icon'
 
 /**
  * 主进程入口：窗口管理 + 模块装配（方案 3.3 进程模型）。
@@ -27,7 +30,13 @@ import { registerSessionModule } from './session'
 protocol.registerSchemesAsPrivileged([
   {
     scheme: 'tomato-audio',
-    privileges: { standard: true, secure: true, stream: true, supportFetchAPI: true }
+    privileges: {
+      standard: true,
+      secure: true,
+      stream: true,
+      supportFetchAPI: true,
+      corsEnabled: true
+    }
   },
   {
     scheme: 'bili-image',
@@ -63,21 +72,47 @@ function getMainWindow(): BrowserWindow | null {
   return BrowserWindow.getAllWindows()[0] ?? null
 }
 
+/** 外链协议白名单：仅 http/https，杜绝 file:/smb:/自定义协议处理器被诱导调用 */
+function isSafeExternalUrl(raw: string): boolean {
+  try {
+    const { protocol } = new URL(raw)
+    return protocol === 'https:' || protocol === 'http:'
+  } catch {
+    return false
+  }
+}
+
+/** 是否为应用自身页面（开发 dev server 或打包 file:// 页面） */
+function isAppUrl(raw: string): boolean {
+  try {
+    const url = new URL(raw)
+    const dev = process.env['ELECTRON_RENDERER_URL']
+    if (isDev && dev) return url.origin === new URL(dev).origin
+    return url.protocol === 'file:'
+  } catch {
+    return false
+  }
+}
+
 function createMainWindow(): BrowserWindow {
+  const appIcon = getAppIcon()
   const mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     minWidth: 940,
     minHeight: 640,
     show: false,
+    frame: false,
     autoHideMenuBar: true,
-    title: '番茄专注 Pro',
+    title: '静界专注',
     backgroundColor: '#0f1115',
+    ...(appIcon ? { icon: appIcon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      // 渲染进程沙箱：preload 仅使用 electron 模块与已打包的 shared 代码，可在沙箱下运行
+      sandbox: true,
       // 防绕过矩阵：devTools 关闭（开发模式可在启动参数开启）
       devTools: false
     }
@@ -87,10 +122,32 @@ function createMainWindow(): BrowserWindow {
     mainWindow.show()
   })
 
+  mainWindow.on('maximize', () => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(IPC_EVENTS.window.maximizeChanged, true)
+    }
+  })
+
+  mainWindow.on('unmaximize', () => {
+    if (!mainWindow.isDestroyed()) {
+      mainWindow.webContents.send(IPC_EVENTS.window.maximizeChanged, false)
+    }
+  })
+
   // 外部链接一律交给系统浏览器，禁止在应用内开新窗口
   mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
+    if (isSafeExternalUrl(details.url)) {
+      void shell.openExternal(details.url)
+    }
     return { action: 'deny' }
+  })
+
+  // 主窗口只允许停留在应用自身页面：任何其它导航（含 Markdown 链接点击）一律拦截，
+  // 其中 http(s) 链接转交系统浏览器
+  mainWindow.webContents.on('will-navigate', (event, url) => {
+    if (isAppUrl(url)) return
+    event.preventDefault()
+    if (isSafeExternalUrl(url)) void shell.openExternal(url)
   })
 
   // 开发模式加载 electron-vite dev server，生产模式加载构建产物
@@ -103,6 +160,33 @@ function createMainWindow(): BrowserWindow {
   return mainWindow
 }
 
+function registerWindowControlIpc(): void {
+  ipcMain.handle(IPC_CHANNELS.window.minimize, () => {
+    const win = getMainWindow()
+    win?.minimize()
+  })
+
+  ipcMain.handle(IPC_CHANNELS.window.maximize, () => {
+    const win = getMainWindow()
+    if (!win) return
+    if (win.isMaximized()) {
+      win.unmaximize()
+    } else {
+      win.maximize()
+    }
+  })
+
+  ipcMain.handle(IPC_CHANNELS.window.close, () => {
+    const win = getMainWindow()
+    win?.close()
+  })
+
+  ipcMain.handle(IPC_CHANNELS.window.isMaximized, () => {
+    const win = getMainWindow()
+    return win ? win.isMaximized() : false
+  })
+}
+
 app.whenReady().then(() => {
   // .env 加载必须在任何模块读取配置之前（根因 B 修复）：
   // 把应用根目录 .env 中的 POMODORO_AI_API_KEY 注入 process.env，
@@ -110,6 +194,7 @@ app.whenReady().then(() => {
   loadEnvFile()
 
   createMainWindow()
+  registerWindowControlIpc()
 
   // 视频学习封面图代理（bili-image:// 协议 + Referer 注入 + 磁盘缓存），修复 CDN 防盗链 403
   installBiliImageProxy()
@@ -118,6 +203,8 @@ app.whenReady().then(() => {
   getDb()
 
   // 全局设置（electron-store）与学习统计（先于其他模块，供其读取）
+  // 本地账号（先于所有读写业务库的模块：自动登录会切换当前账号的数据库文件）
+  registerAuthIpc()
   registerSettingsIpc()
   registerStatsIpc()
 

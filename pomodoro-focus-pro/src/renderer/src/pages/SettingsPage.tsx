@@ -7,6 +7,7 @@ import AiSettingsCard from './settings/AiSettingsCard'
 import NoiseCard from './settings/NoiseCard'
 import DataManagementCard from './settings/DataManagementCard'
 import HelpImproveCard from './settings/HelpImproveCard'
+import AccountCard from './settings/AccountCard'
 
 /**
  * 设置页（方案 4.2）：合并全部配置，写 electron-store，即时生效。
@@ -18,11 +19,12 @@ function SettingsPage(): JSX.Element {
   const { form, setForm, saving, backups, load, refreshBackups, update } = useSettingsLoader()
 
   return (
-    <div>
-      <h1 className="page-title">设置</h1>
-      <p className="page-sub">全部配置即时生效（electron-store 持久化）</p>
+    <div className="page-dashboard">
+      <h1 className="page-title">账户设置</h1>
+      <p className="page-sub">账号信息与全部应用配置，修改即时生效</p>
 
       <div className="settings-layout">
+        <AccountCard />
         <EnforcementCard form={form} saving={saving} update={update} onCodeSaved={load} />
         <PomodoroCard form={form} saving={saving} update={update} />
         <BiliCard form={form} saving={saving} update={update} />

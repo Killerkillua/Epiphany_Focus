@@ -5,6 +5,9 @@
  * - 真实 Windows Service 注册：以管理员执行 node guardian.js --install-service
  *   （sc create PomodoroGuardian；卸载 --uninstall-service）
  *
+ * 注意：守护进程是普通进程，用户可用 PowerShell / wmic / Process Explorer / taskkill 同时结束它与主进程；
+ * --install-service 仅 sc create，未限定运行账户与权限。属"自律辅助"，不是安全边界（见 README 威胁模型）。
+ *
  * 用法：
  *   node guardian.js --watch <pidFile> [--kill-taskmgr] [--interval 2000]
  *   node guardian.js --install-service --watch <pidFile> --kill-taskmgr

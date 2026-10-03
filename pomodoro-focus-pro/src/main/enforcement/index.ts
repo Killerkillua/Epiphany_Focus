@@ -8,6 +8,7 @@ import { TimerService } from '../timer'
 import { getSettings, setSettings } from '../storage/settings'
 import { recordSessionEnd, recordSessionStart, recordStudyStats, todayLocal } from '../storage/db'
 import { isEnforcedLevel, LEVEL_CAPS } from './level'
+import { verifyCurrentPassword } from '../auth'
 import * as emergency from './emergencyExit'
 import { registerShortcutGuard, unregisterShortcutGuard } from './shortcutGuard'
 import { WindowGuard } from './windowGuard'
@@ -438,20 +439,28 @@ export function registerEnforcementModule(
 
   ipcMain.handle(
     IPC_CHANNELS.emergency.setCode,
-    async (_event, code: string, oldCode?: string): Promise<boolean> => {
+    async (_event, code: string, password?: string): Promise<boolean> => {
       // CR-02：强制会话中禁止修改恢复码——否则"设新码 → 验证退出"两步即可绕过强制。
       if (active && isEnforcedLevel(active.level)) {
         throw new Error('强制会话中无法修改恢复码，请先结束当前会话')
       }
       const newCode = str(code ?? '', 'emergency.code', { max: 100 })
-      const old =
-        oldCode === undefined
-          ? undefined
-          : str(oldCode, 'emergency.oldCode', { max: 100, allowEmpty: true })
-      // 已设置过恢复码时必须验证旧码：防止渲染进程被攻破后直接覆盖恢复码
-      // （绕过紧急退出的唯一凭据）。首次设置（无哈希）无需旧码。
-      if (!(await emergency.verifyOldCode(old ?? ''))) {
-        throw new Error('旧恢复码不正确')
+      const problem = emergency.validateRecoveryCode(newCode)
+      if (problem) throw new Error(problem)
+      // 已设置过恢复码时必须验证当前账户密码：防止渲染进程被攻破后直接覆盖恢复码
+      // （绕过紧急退出的唯一凭据）。首次设置（无哈希）无需密码。
+      if (emergency.hasRecoveryCode()) {
+        const pwd =
+          password === undefined
+            ? ''
+            : str(password, 'emergency.password', { max: 200, allowEmpty: true })
+        const authResult = await verifyCurrentPassword(pwd)
+        if (!authResult.ok) {
+          const wait = authResult.retryInSec
+            ? `（约 ${authResult.retryInSec} 秒后可再试）`
+            : ''
+          throw new Error(`${authResult.error}${wait}`)
+        }
       }
       await emergency.setRecoveryCode(newCode)
       return true

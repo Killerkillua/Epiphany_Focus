@@ -257,19 +257,50 @@ class NoiseEngine {
   }
 
   /**
-   * 解码采样素材。经 tomato-audio:// 协议 fetch → decodeAudioData，按 key 缓存。
-   * 素材不可用时返回 null，调用方自动跳过采样轨（降级逻辑）。
+   * 解码采样素材。优先经 tomato-audio:// 协议 fetch，若失败自动走 IPC getBuffer 兜底。
+   * 解码后按 key 缓存。素材不可用时返回 null，调用方自动跳过采样轨（降级逻辑）。
    */
   private async decodeSample(ctx: AudioContext, key: SampleKind): Promise<AudioBuffer | null> {
     if (this.bufferCache.has(key)) return this.bufferCache.get(key)!
     // 确保 assetsCache 已初始化
     await this.getSampleAvailability()
     const info = this.assetsCache?.[key]
-    if (!info || !info.exists || !info.url) return null
+
+    let arrayBuf: ArrayBuffer | null = null
+
+    // 1. 优先走 tomato-audio:// 自定义协议 fetch
+    if (info && info.exists && info.url) {
+      try {
+        const res = await fetch(info.url)
+        if (res.ok) {
+          arrayBuf = await res.arrayBuffer()
+        }
+      } catch (err) {
+        console.warn(`[audio] fetch 采样素材失败，将尝试 IPC 兜底 (${key}):`, err)
+      }
+    }
+
+    // 2. 若协议 fetch 失败或不可用，通过 IPC 直接读取素材文件 Buffer（双保险）
+    if (!arrayBuf && window.api?.audio?.getBuffer) {
+      try {
+        const bytes = await window.api.audio.getBuffer(key)
+        if (bytes && bytes.byteLength > 0) {
+          const copy = new Uint8Array(bytes.byteLength)
+          copy.set(bytes)
+          arrayBuf = copy.buffer
+        }
+      } catch (err) {
+        console.warn(`[audio] IPC 读取采样素材失败 (${key}):`, err)
+      }
+    }
+
+    if (!arrayBuf) {
+      console.warn(`[audio] 未获取到采样素材音频数据 (${key})`)
+      return null
+    }
+
     try {
-      const res = await fetch(info.url)
-      if (!res.ok) return null
-      const buf = await ctx.decodeAudioData(await res.arrayBuffer())
+      const buf = await ctx.decodeAudioData(arrayBuf)
       this.bufferCache.set(key, buf)
       return buf
     } catch (err) {
