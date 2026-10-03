@@ -84,7 +84,7 @@ export default function GeneralAboutCard(): JSX.Element {
       </Row>
 
       <div style={{ marginTop: 14, paddingTop: 10, borderTop: '1px solid var(--rule, rgba(255,255,255,0.08))' }}>
-        <Space orientation="horizontal" size="middle" wrap>
+        <Space direction="horizontal" size="middle" wrap>
           <Button size="small" onClick={() => setModalType('agreement')}>
             用户协议
           </Button>

@@ -2912,22 +2912,64 @@ body,
   color: var(--muted);
 }
 
-/* ===== 设置页：瀑布流分栏，卡片按内容高度紧凑排布，不留大面积空白 ===== */
-.settings-layout {
-  display: block;
-  column-width: 360px;
-  column-gap: var(--space-sm);
+/* ===== 设置页：单列全宽布局，一个模块占据一行 ===== */
+.settings-search-bar {
+  margin-bottom: 20px;
+  max-width: 860px;
 }
+
+.settings-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  max-width: 860px;
+  padding-bottom: 40px;
+}
+
 .settings-layout > .ant-card,
 .settings-layout > .settings-card {
-  display: inline-block;
+  display: block;
   width: 100%;
-  margin-bottom: var(--space-sm);
-  break-inside: avoid;
+  margin-bottom: 0;
+  border-radius: 8px;
+  background: var(--surface-card, #1e222b);
+  border: 1px solid var(--rule, rgba(255, 255, 255, 0.08));
 }
+
+.settings-card .ant-card-head {
+  min-height: 40px;
+  padding: 0 16px;
+  font-size: 14px;
+  font-weight: 600;
+  border-bottom: 1px solid var(--rule, rgba(255, 255, 255, 0.06));
+}
+
 .settings-card .ant-card-body {
-  padding: 12px 16px;
+  padding: 14px 16px;
 }
+
 .settings-row {
-  padding: 4px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 6px 0;
+  min-height: 36px;
+}
+
+.settings-label {
+  color: var(--ink, #e5e7eb);
+  font-size: 13px;
+  font-weight: 500;
+  flex-shrink: 0;
+  min-width: 130px;
+}
+
+.settings-danger-card {
+  border-color: rgba(239, 68, 68, 0.25) !important;
+}
+
+.settings-danger-card .ant-card-head {
+  border-bottom-color: rgba(239, 68, 68, 0.18) !important;
 }
