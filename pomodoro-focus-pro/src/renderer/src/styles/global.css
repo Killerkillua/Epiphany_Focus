@@ -1776,6 +1776,12 @@ body,
   background: rgba(0, 0, 0, 0.22);
   border: 1px solid var(--rule);
   border-radius: 8px;
+  overflow-y: overlay;
+}
+
+/* antd Select 下拉列表悬浮滚动（白噪音音频选择等） */
+.ant-select-dropdown .rc-virtual-list-holder {
+  overflow-y: overlay !important;
 }
 
 .noise-tracks .scroll-area__content {

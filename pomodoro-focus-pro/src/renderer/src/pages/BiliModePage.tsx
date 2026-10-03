@@ -282,6 +282,9 @@ function BiliModePage(): JSX.Element {
       {/* 学习会话计时（倒计时 + 进度 + 到点自动关视频休息） */}
       <SessionTimerBar mode="bili" />
 
+      {/* 学习会话计时（倒计时 + 进度 + 到点自动关视频休息） */}
+      <SessionTimerBar mode="bili" />
+
       {/* 搜索区 */}
       <div className="bili-search-bar">
         <Input

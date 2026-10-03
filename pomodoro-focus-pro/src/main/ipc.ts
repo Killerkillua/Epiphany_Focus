@@ -31,6 +31,12 @@ export const IPC_CHANNELS = {
     videoState: 'bili:video-state',
     getContext: 'bili:get-context',
     overlaySetSize: 'bili:overlay-set-size',
+    /** 悬浮面板状态机切换（expanded/collapsed/minimized/hidden） */
+    overlaySetState: 'bili:overlay-set-state',
+    /** 获取悬浮面板当前状态快照 */
+    overlayGetState: 'bili:overlay-get-state',
+    /** 快捷键呼出 / 隐藏悬浮面板 */
+    overlayToggleHide: 'bili:overlay-toggle-hide',
     navCheck: 'bili:nav-check',
     resetWbi: 'bili:reset-wbi',
     markRelevant: 'bili:mark-relevant'
@@ -43,11 +49,10 @@ export const IPC_CHANNELS = {
     stream: 'ai:stream',
     /** 英语模式：流式问答（增量经 ai:chunk 事件推送） */
     englishAsk: 'ai:english-ask',
-    /** 图片文字识别（硅基流动 DeepSeek-OCR） */
+    /** 图片文字识别（OCR 模型） */
     ocr: 'ai:ocr',
-    /** LLM 配置（BYOK） */
+    /** LLM 配置（BYOK，只读；写入走 settings:set） */
     getConfig: 'ai:get-config',
-    setConfig: 'ai:set-config',
     /** 会话提问用量 */
     usage: 'ai:usage',
     /** 生词本 */
@@ -121,7 +126,9 @@ export const IPC_EVENTS = {
   bili: {
     videoOpened: 'bili:video-opened',
     videoClosed: 'bili:video-closed',
-    navBlocked: 'bili:nav-blocked'
+    navBlocked: 'bili:nav-blocked',
+    /** 悬浮面板状态变化广播（主进程 → overlay / 主窗口） */
+    overlayStateChanged: 'bili:overlay-state-changed'
   },
   /** AI 事件 */
   ai: {
@@ -132,6 +139,11 @@ export const IPC_EVENTS = {
   audio: {
     /** 全局热键 Ctrl+Shift+↑/↓ 触发，携带 { delta } 音量步进 */
     volumeChanged: 'audio:volume-changed'
+  },
+  /** 全局设置事件 */
+  settings: {
+    /** 设置变更广播（settings:set / ai 配置写入后推送最新快照，渲染层据此实时刷新） */
+    changed: 'settings:changed'
   }
 } as const
 

@@ -201,6 +201,9 @@ app.whenReady().then(() => {
   // 视频学习封面图代理（bili-image:// 协议 + Referer 注入 + 磁盘缓存），修复 CDN 防盗链 403
   installBiliImageProxy()
 
+  // B 站封面图代理（bili-image:// 协议 + Referer 注入 + 磁盘缓存），修复 CDN 防盗链 403
+  installBiliImageProxy()
+
   // 预打开中央 SQLite（创建规约 6 张表，方案 3.4）
   getDb()
 
@@ -225,6 +228,9 @@ app.whenReady().then(() => {
 
   // AI 网关（英语模式）
   registerAiIpc()
+
+  // 学习会话计时（B 站 / 英语模式，与强制引擎解耦）
+  registerSessionModule(getMainWindow)
 
   // 白噪音（全局热键 + 采样素材解析）
   registerAudioModule(getMainWindow)
