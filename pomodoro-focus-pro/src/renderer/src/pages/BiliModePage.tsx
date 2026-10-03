@@ -27,7 +27,7 @@ import { useSessionStore } from '../store/sessionStore'
 import type { BiliOrder, BiliVideoItem, OverlaySnapshot } from '../../../shared/bili'
 
 /**
- * B 站学习模式页（核心版）：
+ * 视频学习模式页（核心版）：
  * - WBI 签名搜索（关键词 + 排序），结果网格展示
  * - 点击视频自动全屏打开（可配开关，localStorage 持久化）
  * - 订阅主进程事件：导航拦截提示 / 视频窗口开关
@@ -40,9 +40,9 @@ const ORDER_OPTIONS = [
 ]
 
 /**
- * B 站搜索接口默认每页条数（主进程未传 page_size，B 站按 20 条/页返回，
+ * 视频学习搜索接口默认每页条数（主进程未传 page_size，视频学习按 20 条/页返回，
  * 并以该粒度计算 numPages）。antd Pagination 用它与 numResults 推算总页数，
- * 必须与 B 站口径一致，否则页码按钮数与实际页数不符。
+ * 必须与 视频学习口径一致，否则页码按钮数与实际页数不符。
  */
 const PAGE_SIZE = 20
 
@@ -235,7 +235,7 @@ function BiliModePage(): JSX.Element {
     <div className="page-dashboard">
       <div className="bili-page-head">
         <div>
-          <h1 className="page-title">B 站学习模式</h1>
+          <h1 className="page-title">视频学习模式</h1>
           <p className="page-sub">
             输入学习主题 → WBI 签名搜索 → 结果网格 → 点击视频自动全屏；全屏时右侧悬浮学习助手（对话
             / 笔记 / 进度，可拖拽、最小化）。
@@ -303,7 +303,7 @@ function BiliModePage(): JSX.Element {
           showIcon
           className="bili-alert"
           message="搜索失败"
-          description={`${error}。若为 WBI 密钥问题，可稍后重试；网络代理需可直连 api.bilibili.com。`}
+          description={`${error}。若为 WBI 密钥问题，可稍后重试；网络代理需可直连视频站点接口。`}
         />
       )}
 
@@ -373,7 +373,7 @@ function BiliModePage(): JSX.Element {
       )}
 
       {/* 分页：多于一页时显示（翻页重新请求，page 参数此前被硬编码为 1）。
-          total 用 numPages × PAGE_SIZE（B 站返回的页数口径），
+          total 用 numPages × PAGE_SIZE（视频学习返回的页数口径），
           不用 numResults：numResults 与页数换算可能不同步，导致页码按钮数与实际页数不符 */}
       {searched && items.length > 0 && numPages > 1 && (
         <div className="bili-pagination">

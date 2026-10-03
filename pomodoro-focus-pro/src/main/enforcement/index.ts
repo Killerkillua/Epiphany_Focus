@@ -39,19 +39,19 @@ const DEFAULT_POLICY: DistractionPolicy = { enabled: false, blacklist: [], white
  * 依赖方向约定：navigation → enforcement；enforcement 需要导航能力时经此回调获取。
  */
 export interface EnforcementDeps {
-  /** 紧急退出时销毁 B 站视频窗口（由主进程入口注入 closeVideo 实现） */
+  /** 紧急退出时销毁 学习视频窗口（由主进程入口注入 closeVideo 实现） */
   closeVideo?: () => void
 }
 
 /** 强制引擎句柄（供导航模块接入） */
 export interface EnforcementHandle {
   restoreAfterRestart: () => void
-  /** 打开 B 站视频时启动强制会话（正向计时 + 会话上限） */
+  /** 打开 学习视频时启动强制会话（正向计时 + 会话上限） */
   enterBiliSession: (videoWin: BrowserWindow, opts: { plannedMs: number; topic: string }) => void
-  /** 关闭 B 站视频时结束强制会话并落库 */
+  /** 关闭 学习视频时结束强制会话并落库 */
   exitBiliSession: (reason: 'manual' | 'completed' | 'emergency') => void
   /**
-   * 登记"失焦拉回豁免"窗口（B 站悬浮面板）：用户与面板交互（点击 / 输入）导致
+   * 登记"失焦拉回豁免"窗口（视频学习悬浮面板）：用户与面板交互（点击 / 输入）导致
    * 视频窗口失焦时，不执行 show()+focus() 抢回，保证面板可用。
    */
   setOverlayExempt: (win: BrowserWindow | null) => void
@@ -81,9 +81,9 @@ export function registerEnforcementModule(
   let guardian: ReturnType<typeof spawn> | null = null
   let lastPomos = 0
   let currentPolicy: DistractionPolicy = { ...DEFAULT_POLICY }
-  /** B 站悬浮面板窗口：失焦拉回豁免对象（面板交互时视频窗口不抢焦点） */
+  /** 视频学习悬浮面板窗口：失焦拉回豁免对象（面板交互时视频窗口不抢焦点） */
   let overlayExemptWindow: BrowserWindow | null = null
-  /** 主进程 5×Esc 兜底检测处理器（主窗口强制会话专用，B站视频窗口由 fullscreenLock.ts 负责） */
+  /** 主进程 5×Esc 兜底检测处理器（主窗口强制会话专用，学习视频窗口由 fullscreenLock.ts 负责） */
   let escSpamHandler: ((_e: Electron.Event, input: Electron.Input) => void) | null = null
 
   /** 失焦拉回豁免判定：当前聚焦窗口是悬浮面板时不拉回视频窗口 */
@@ -104,11 +104,11 @@ export function registerEnforcementModule(
 
     // 按锁定级别能力施加强制：L0 仅置顶，L1/L2 才施加全屏遮罩（LEVEL_CAPS[level].fullscreenOverlay）
     if (LEVEL_CAPS[level].fullscreenOverlay) {
-      // B 站模式：视频窗口不设置顶（悬浮面板须浮于视频之上；全屏由 attachFullscreenLock 管理），
+      // 视频学习模式：视频窗口不设置顶（悬浮面板须浮于视频之上；全屏由 attachFullscreenLock 管理），
       // 其余锁定属性（禁缩放 / 隐藏任务栏 / 拦截关闭）照常施加
       applyLevelWindow(win, { skipAlwaysOnTop: mode === 'bili' })
       // 主窗口 L1/L2 强制会话：主进程兜底 5×Esc 检测（3 秒窗口）
-      // 渲染层也有 keydown 检测，但全屏时主进程兜底更可靠（与 fullscreenLock.ts B站视频窗口对齐）
+      // 渲染层也有 keydown 检测，但全屏时主进程兜底更可靠（与 fullscreenLock.ts 学习视频窗口对齐）
       if (mode !== 'bili') {
         const ESC_COUNT = 5
         const ESC_WINDOW_MS = 3000
@@ -168,7 +168,7 @@ export function registerEnforcementModule(
         win.setAlwaysOnTop(false)
       }
     }
-    // P-2：紧急退出兜底销毁 B 站视频窗口——video.destroy() 绕过 applyLevelWindow 的
+    // P-2：紧急退出兜底销毁 学习视频窗口——video.destroy() 绕过 applyLevelWindow 的
     // close 拦截，销毁后 'closed' 事件自动清理其遮罩引用计数，
     // 避免紧急退出成功后视频窗口仍保持全屏 + 拦截关闭 + 隐藏任务栏，把用户困在全屏
     if (reason === 'emergency') {
@@ -462,7 +462,7 @@ export function registerEnforcementModule(
     windowGuard.setPaused(bool(paused, 'emergency.paused'))
   })
 
-  // ================= B 站强制会话句柄 =================
+  // ================= 视频学习强制会话句柄 =================
 
   function enterBiliSession(
     videoWin: BrowserWindow,

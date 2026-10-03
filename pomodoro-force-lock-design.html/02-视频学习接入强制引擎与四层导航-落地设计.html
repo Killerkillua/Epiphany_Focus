@@ -2,7 +2,7 @@
 <html lang="zh-CN"><head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>② B 站接入强制引擎 + 四层导航 · 落地设计</title>
+<title>② 视频学习接入强制引擎 + 四层导航 · 落地设计</title>
 <style>
   :root {
     --bg: #0f1115; --bg2: #171b22; --panel: #1b212b;
@@ -86,10 +86,10 @@
 
 <header class="cover">
   <div class="kicker">落地设计文档 · 02 / 03</div>
-  <h1>B 站接入强制引擎 + 四层导航判定</h1>
+  <h1>视频学习接入强制引擎 + 四层导航判定</h1>
   <p class="sub">全屏锁定 · 防绕过 · L1 域名 / L2 路径 / L3 历史 / L4 内容相关性 · 严格/标准/宽松档位 · 强制会话联动</p>
   <div class="meta">
-    <span><b>方案依据</b>：v2.0 §2.5 分级锁定 / §2.6 B 站模式 / §3.5 IPC</span>
+    <span><b>方案依据</b>：v2.0 §2.5 分级锁定 / §2.6 视频学习模式 / §3.5 IPC</span>
     <span><b>难度</b>：P0 · 高</span>
     <span><b>现状</b>：仅 L1+L2 两层，<code>strictness</code> 未消费，未接强制引擎</span>
   </div>
@@ -113,23 +113,23 @@
 
 <!-- ================= 1 ================= -->
 <h2 id="s1"><span class="sec-no">1</span>现状与差距</h2>
-<p>对照 v2.0 §2.6，当前 B 站模式距设计有三个明确的缺口：</p>
+<p>对照 v2.0 §2.6，当前 视频学习模式距设计有三个明确的缺口：</p>
 <div class="table-wrap">
 <table>
   <tbody><tr><th>设计要求</th><th>现状</th><th>差距</th></tr>
   <tr><td>点击视频自动全屏并<strong>锁定</strong>全屏（Esc/F11/缩小均无效）</td><td>仅以 <code class="inline">fullscreen: autoFullscreen</code> 创建窗口，可随意 Esc 退出</td><td>缺全屏锁定守卫</td></tr>
   <tr><td>四层导航判定（域名→路径→历史→内容）+ 严格/宽松档</td><td><code class="inline">guard.ts</code> 只有 L1 域名 + L2 路径</td><td>缺 L3 历史锁定、L4 内容相关性；<code class="inline">strictness</code> 未消费</td></tr>
-  <tr><td>B 站模式受强制引擎守护（L1/L2 分级）</td><td><code class="inline">biliWindow.ts</code> 明确"核心版，不接强制引擎"</td><td>缺强制会话联动</td></tr>
+  <tr><td>视频学习模式受强制引擎守护（L1/L2 分级）</td><td><code class="inline">biliWindow.ts</code> 明确"核心版，不接强制引擎"</td><td>缺强制会话联动</td></tr>
 </tbody></table>
 </div>
-<p>工程的既有能力可以复用：强制引擎 <code class="inline">beginEnforcement / endEnforcement</code>（锁定分级、快捷键守卫、窗口拉回、守护进程、紧急退出、统计落库）、<code class="inline">shortcutGuard</code>（已全局拦截 F11/Ctrl+W/T/R/F5）、<code class="inline">LEVEL_CAPS</code>、<code class="inline">settings.lockLevel / bili.strictness / bili.autoFullscreen</code>。本方案的核心工作是把这些能力"接到 B 站播放窗口上"，并补全 L3/L4 判定。</p>
+<p>工程的既有能力可以复用：强制引擎 <code class="inline">beginEnforcement / endEnforcement</code>（锁定分级、快捷键守卫、窗口拉回、守护进程、紧急退出、统计落库）、<code class="inline">shortcutGuard</code>（已全局拦截 F11/Ctrl+W/T/R/F5）、<code class="inline">LEVEL_CAPS</code>、<code class="inline">settings.lockLevel / bili.strictness / bili.autoFullscreen</code>。本方案的核心工作是把这些能力"接到 视频学习播放窗口上"，并补全 L3/L4 判定。</p>
 
 <!-- ================= 2 ================= -->
 <h2 id="s2"><span class="sec-no">2</span>总体架构</h2>
-<p>新增两个能力模块，并让既有模块互通：<strong>fullscreenLock</strong>（全屏锁定守卫）与 <strong>guard 四层判定</strong>；把 <code class="inline">enforcement</code> 从"只锁主窗口"泛化为"可锁任意目标窗口"，B 站播放窗口成为受控目标。编排责任放在 <code class="inline">navigation</code> 模块——它持有 enforcement 句柄，在打开视频时启动强制会话，在关闭时结束。</p>
+<p>新增两个能力模块，并让既有模块互通：<strong>fullscreenLock</strong>（全屏锁定守卫）与 <strong>guard 四层判定</strong>；把 <code class="inline">enforcement</code> 从"只锁主窗口"泛化为"可锁任意目标窗口"，视频学习播放窗口成为受控目标。编排责任放在 <code class="inline">navigation</code> 模块——它持有 enforcement 句柄，在打开视频时启动强制会话，在关闭时结束。</p>
 
 <figure class="diagram">
-<svg viewBox="0 0 920 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="B站强制引擎与四层导航架构">
+<svg viewBox="0 0 920 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="视频学习强制引擎与四层导航架构">
   <defs>
     <marker id="arr2" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#4da3ff"></path></marker>
   </defs>
@@ -180,7 +180,7 @@
   <path d="M525 294 C 580 294 640 294 700 294" stroke="#4da3ff" stroke-width="1.5" marker-end="url(#arr2)" fill="none" stroke-dasharray="4 3"></path>
   <path d="M285 116 C 340 116 360 130 400 140" stroke="#9aa3af" stroke-width="1.2" marker-end="url(#arr2)" fill="none" stroke-dasharray="4 3"></path>
 </svg>
-<figcaption>图 2-1：B 站模式接入强制引擎后的模块关系。实线为强制控制流，虚线为只读/事件流。</figcaption>
+<figcaption>图 2-1：视频学习模式接入强制引擎后的模块关系。实线为强制控制流，虚线为只读/事件流。</figcaption>
 </figure>
 
 <!-- ================= 3 ================= -->
@@ -192,7 +192,7 @@
 <span class="k">function</span> <span class="f">beginEnforcement</span>(
   mode: <span class="t">string</span>,
   plannedMs: <span class="t">number</span>,
-  target?: <span class="t">BrowserWindow</span>   <span class="c">// 新增：B 站会话传播放窗口</span>
+  target?: <span class="t">BrowserWindow</span>   <span class="c">// 新增：视频学习会话传播放窗口</span>
 ): <span class="t">void</span> {
   <span class="k">const</span> level = getSettings().lockLevel
   emergency.assertExitSafety(level)
@@ -211,13 +211,13 @@
 }</code></pre>
 <p><code class="inline">endEnforcement(reason, target?)</code> 同理：<code class="inline">releaseLevelWindow(win)</code> 用 target 或主窗口，其余释放逻辑复用。</p>
 
-<h3>3.2 暴露 B 站专属句柄</h3>
+<h3>3.2 暴露 视频学习专属句柄</h3>
 <pre><code><span class="c">// 返回句柄（registerEnforcementModule 现有返回对象扩展）</span>
 <span class="k">export interface</span> <span class="t">EnforcementHandle</span> {
   restoreAfterRestart: () =&gt; <span class="t">void</span>
-  <span class="c">/** 打开 B 站视频时启动强制会话（正向计时 + 会话上限） */</span>
+  <span class="c">/** 打开 学习视频时启动强制会话（正向计时 + 会话上限） */</span>
   enterBiliSession: (videoWin: <span class="t">BrowserWindow</span>, opts: { plannedMs: <span class="t">number</span>; topic: <span class="t">string</span> }) =&gt; <span class="t">void</span>
-  <span class="c">/** 关闭 B 站视频时结束强制会话并落库 */</span>
+  <span class="c">/** 关闭 学习视频时结束强制会话并落库 */</span>
   exitBiliSession: (reason: <span class="s">'manual'</span> | <span class="s">'completed'</span> | <span class="s">'emergency'</span>) =&gt; <span class="t">void</span>
 }
 
@@ -230,7 +230,7 @@
   beginEnforcement(<span class="s">'bili'</span>, cap, videoWin)
   timer.start({ mode: <span class="s">'countup'</span>, durationMs: cap })
 }</code></pre>
-<p>同时把 <code class="inline">onTimerComplete</code> 里硬编码的 <code class="inline">'focus'</code> 改为按当前会话 <code class="inline">active.mode</code> 落库，使 B 站会话也能正确写入 <code class="inline">study_stats</code> 与模式对比。</p>
+<p>同时把 <code class="inline">onTimerComplete</code> 里硬编码的 <code class="inline">'focus'</code> 改为按当前会话 <code class="inline">active.mode</code> 落库，使 视频学习会话也能正确写入 <code class="inline">study_stats</code> 与模式对比。</p>
 
 <h3>3.3 编排接线（navigation/index.ts）</h3>
 <pre><code><span class="c">// registerNavigationModule 签名增加 enforcement 句柄</span>
@@ -336,7 +336,7 @@ registerNavigationModule(getMainWindow, enforcement)</code></pre>
 target.on(<span class="s">'did-finish-load'</span>, () =&gt; {
   target.executeJavaScript(<span class="t">HISTORY_TRAP</span>).catch(() =&gt; <span class="c">/* 页面限制时降级：仅靠事件兜底 */</span>)
 })</code></pre>
-<p class="callout info"><b>降级策略</b>：若 B 站页面 CSP 阻止注入，L3 退化为"仅靠 <code class="inline">will-navigate</code> 域名/路径判定"，功能不中断（§3.7 回归清单要求 L4 脚本容错降级，L3 同理）。</p>
+<p class="callout info"><b>降级策略</b>：若 视频学习页面 CSP 阻止注入，L3 退化为"仅靠 <code class="inline">will-navigate</code> 域名/路径判定"，功能不中断（§3.7 回归清单要求 L4 脚本容错降级，L3 同理）。</p>
 
 <h3>5.4 L4 内容相关性</h3>
 <p>视频页加载后提取标题与标签，与主题做关键词匹配。匹配规则：主题切分为 token（中文细粒度、英文按词），任一 token（或其同义词）命中标题/标签即判相关；标注"标记为相关"可把某 BV 加入放行集合。</p>
@@ -442,8 +442,8 @@ target.on(<span class="s">'did-finish-load'</span>, () =&gt; {
 <h2 id="s9"><span class="sec-no">9</span>测试与回归</h2>
 <ul>
   <li><strong>单元测试（Vitest）</strong>：<code class="inline">isAllowedBiliUrl</code> 各层用例（L1 非白名单域名、L2 直播/番剧/影视/动态、严格档 BV 白名单）；<code class="inline">isRelevantContent</code> 关键词/同义词命中与未命中；<code class="inline">tokenize</code> 中英文切分。</li>
-  <li><strong>集成冒烟</strong>：真实打开 B 站视频，验证自动全屏；Esc/F11/缩小后自动拉回；点击后台推荐链接被拦截；关闭窗口后强制会话结束、统计落库。</li>
-  <li><strong>回归清单（§3.7）</strong>：B 站页面结构变更后 L3/L4 注入脚本容错降级，不影响播放；CSP 禁止注入时功能不中断；杀毒软件对 <code class="inline">taskkill</code> 的误报在 L2 已存在，此方案不新增。</li>
+  <li><strong>集成冒烟</strong>：真实打开 学习视频，验证自动全屏；Esc/F11/缩小后自动拉回；点击后台推荐链接被拦截；关闭窗口后强制会话结束、统计落库。</li>
+  <li><strong>回归清单（§3.7）</strong>：视频学习页面结构变更后 L3/L4 注入脚本容错降级，不影响播放；CSP 禁止注入时功能不中断；杀毒软件对 <code class="inline">taskkill</code> 的误报在 L2 已存在，此方案不新增。</li>
 </ul>
 
 <!-- ================= 10 ================= -->
@@ -465,8 +465,8 @@ target.on(<span class="s">'did-finish-load'</span>, () =&gt; {
   <div class="sources">
     <b>依据</b>
     <ol>
-      <li><span>番茄钟最优设计方案与落地方案 v2.0，§2.5 锁定强度分级 / §2.6 B 站学习模式详细设计 / §3.5 IPC 通道设计 / §3.7 测试策略。</span></li>
-      <li><span>用户上传：pomodoro-force-lock-design.html（B 站全屏锁定 + 四层导航界面演示参考）。</span></li>
+      <li><span>番茄钟最优设计方案与落地方案 v2.0，§2.5 锁定强度分级 / §2.6 视频学习模式详细设计 / §3.5 IPC 通道设计 / §3.7 测试策略。</span></li>
+      <li><span>用户上传：pomodoro-force-lock-design.html（视频学习全屏锁定 + 四层导航界面演示参考）。</span></li>
     </ol>
   </div>
 </footer>

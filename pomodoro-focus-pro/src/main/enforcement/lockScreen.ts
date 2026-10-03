@@ -16,7 +16,7 @@ import { spawn } from 'child_process'
  * - #38020 Windows 任务栏：置顶窗口与任务栏同为 topmost，z-order 竞争导致任务栏露出在
  *   遮罩之上；且 setAlwaysOnTop 的 level 参数在 Windows 未实现（#18933）。Windows 上
  *   遮罩不设置顶——前台全屏窗口本身盖住屏幕，shell 会为"前台全屏窗口"隐藏任务栏
- *   （B 站视频窗口不置顶，全屏一直正常，正是不置顶才正常）。跨应用压制由
+ *   （学习视频窗口不置顶，全屏一直正常，正是不置顶才正常）。跨应用压制由
  *   windowGuard 失焦拉回承担。
  * - 激活兜底：setFullScreen 后强制 show/focus/moveTop，复现"Alt+Tab 之后任务栏才隐藏"
  *   的效果（shell 只为前台全屏窗口隐藏任务栏）。
@@ -44,7 +44,7 @@ interface OverlayState {
   usingSimpleFullscreen: boolean
   /** 本次 apply 是否设置过置顶（Windows 不设置；释放时只还原自己设置的，避免清掉用户手动置顶） */
   usingAlwaysOnTop: boolean
-  /** B 站视频窗口（跳过置顶）标记：兜底拉回复用同一进入序列时保持一致 */
+  /** 学习视频窗口（跳过置顶）标记：兜底拉回复用同一进入序列时保持一致 */
   skipAlwaysOnTop: boolean
 }
 
@@ -84,7 +84,7 @@ function scheduleSimpleFullscreenFallback(win: BrowserWindow, state: OverlayStat
 /**
  * 进入全屏遮罩序列（apply 与 P2-2 兜底拉回共用）。
  * #8166 关键：必须仍可缩放时 setFullScreen(true)，之后再禁缩放（钳制为全屏尺寸）。
- * 已全屏时（如 B 站视频窗口由 attachFullscreenLock 先行全屏）跳过全屏调用，仅补齐其余属性。
+ * 已全屏时（如 学习视频窗口由 attachFullscreenLock 先行全屏）跳过全屏调用，仅补齐其余属性。
  */
 function enterOverlayFullscreen(win: BrowserWindow, state: OverlayState): void {
   if (win.isDestroyed()) return

@@ -22,7 +22,7 @@ function HomePage({ onNavigate }: Props): JSX.Element {
     if (t === 'focus') {
       await focusStart('countdown', minutes * 60_000)
     } else {
-      // B 站 / 英语模式：进入页面即启动学习会话计时（与强制引擎解耦）
+      // 视频学习 / 英语模式：进入页面即启动学习会话计时（与强制引擎解耦）
       await sessionStart(t, minutes * 60_000)
     }
     onNavigate(t)
@@ -38,7 +38,7 @@ function HomePage({ onNavigate }: Props): JSX.Element {
       <div className="mode-grid">
         <ModeCard
           mark="▶"
-          title="B 站学习"
+          title="视频学习"
           accent="#FF5588"
           tagline="输入学习主题，进入锁定网页学习"
           highlights={['WBI 搜索', '导航管控', 'AI 助手 + 记事本']}

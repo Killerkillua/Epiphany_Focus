@@ -16,7 +16,7 @@ const SESSION_PRESETS = [60, 120, 240]
 
 const LABELS: Record<ModeTarget, string> = {
   focus: '专注模式',
-  bili: 'B 站学习',
+  bili: '视频学习',
   english: '英语学习'
 }
 
@@ -44,7 +44,7 @@ function DurationConfigModal({ open, mode, defaultMin, onCancel, onConfirm }: Pr
       okText="开始"
       cancelText="取消"
       destroyOnClose
-      // 全屏（B 站/专注强制会话）下按视口比例流体缩放，窗口模式下保持常规宽度
+      // 全屏（视频学习/专注强制会话）下按视口比例流体缩放，窗口模式下保持常规宽度
       rootClassName="app-fluid-modal"
     >
       <div style={{ marginBottom: 12 }}>

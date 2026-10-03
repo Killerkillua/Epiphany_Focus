@@ -85,8 +85,8 @@ import { join } from 'path'
 import { ValidationError, str, optStr, num, optNum, arr, oneOf, safeRecord } from '../validate'
 
 /**
- * B 站模式模块入口（接入强制引擎 + 四层导航判定）。
- * 注册全部 B 站相关 IPC 处理器，并预热 WBI 密钥缓存。
+ * 视频学习模式模块入口（接入强制引擎 + 四层导航判定）。
+ * 注册全部 视频学习相关 IPC 处理器，并预热 WBI 密钥缓存。
  * 编排责任：打开视频 → 启动强制会话 + 全屏锁定；关闭视频 → 结束强制会话。
  */
 

@@ -29,7 +29,7 @@ const NAV_ITEMS: MenuProps['items'] = [
   { key: 'home', icon: <HomeOutlined />, label: '首页' },
   { key: 'focus', icon: <ClockCircleOutlined />, label: '专注模式' },
   { key: 'english', icon: <ReadOutlined />, label: '英语学习' },
-  { key: 'bili', icon: <PlayCircleOutlined />, label: 'B 站学习' },
+  { key: 'bili', icon: <PlayCircleOutlined />, label: '视频学习' },
   { key: 'stats', icon: <BarChartOutlined />, label: '学习统计' },
   { key: 'notes', icon: <FileTextOutlined />, label: '记事本' },
   { key: 'settings', icon: <SettingOutlined />, label: '设置' }
@@ -38,7 +38,7 @@ const NAV_ITEMS: MenuProps['items'] = [
 function App(): JSX.Element {
   const [route, setRoute] = useState<string>(window.location.hash)
   const [page, setPage] = useState<PageKey>('home')
-  // 自适应侧栏：breakpoint="md"（<768px）自动折叠为图标栏；主窗口 minWidth 940 实际不触发，保留供 B 站窗口与未来兼容；可手动折叠
+  // 自适应侧栏：breakpoint="md"（<768px）自动折叠为图标栏；主窗口 minWidth 940 实际不触发，保留供 视频学习窗口与未来兼容；可手动折叠
   const [siderCollapsed, setSiderCollapsed] = useState(false)
 
   // 悬浮面板窗口通过 #overlay 路由加载独立应用（透明置顶窗）
@@ -78,7 +78,7 @@ function App(): JSX.Element {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  // P-2：主进程兜底 5×Esc（B 站视频窗口聚焦/全屏时本窗口收不到 Esc，渲染层检测失效）：
+  // P-2：主进程兜底 5×Esc（学习视频窗口聚焦/全屏时本窗口收不到 Esc，渲染层检测失效）：
   // 主进程在视频窗口侧检测到连按 5 次 Esc 后转发此事件，直接唤起紧急退出弹窗
   useEffect(() => {
     return window.api.on(window.api.events.bili.emergencyRequest, () => {

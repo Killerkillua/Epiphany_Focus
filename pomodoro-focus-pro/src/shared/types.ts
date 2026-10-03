@@ -42,7 +42,7 @@ export interface DistractionPolicy {
   whitelist: string[]
 }
 
-/** 学习会话模式：B 站学习 / 英语学习（与专注模式解耦的轻量计时） */
+/** 学习会话模式：视频学习 / 英语学习（与专注模式解耦的轻量计时） */
 export type SessionMode = 'bili' | 'english'
 
 /** session:start 参数 */

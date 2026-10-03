@@ -4,7 +4,7 @@ import { getProxiedPicUrl } from '../../shared/bili'
 import type { BiliSearchOptions, BiliSearchResponse, BiliVideoItem } from '../../shared/bili'
 
 /**
- * B 站 WBI 签名搜索（核心版）。
+ * 视频学习 WBI 签名搜索（核心版）。
  * 端点：GET /x/web-interface/wbi/search/type
  * 支持 search_type=video、order（totalrank/click/pubdate）、分页。
  *
@@ -27,7 +27,7 @@ const COMMON_HEADERS = {
 /** -412 风控专用错误（内部哨兵，避免把退避逻辑耦合进网络错误分支） */
 class RiskBlockedError extends Error {
   constructor() {
-    super('B 站风控拦截（-412）')
+    super('视频学习风控拦截（-412）')
     this.name = 'RiskBlockedError'
   }
 }
@@ -66,7 +66,7 @@ interface RawSearchResponse {
   }
 }
 
-/** 去除 B 站搜索接口返回的 <em class="keyword"> 高亮标签 */
+/** 去除 视频学习搜索接口返回的 <em class="keyword"> 高亮标签 */
 function cleanTitle(title: string): string {
   return title.replace(/<em[^>]*>([\s\S]*?)<\/em>/g, '$1')
 }
@@ -95,7 +95,7 @@ function mapItem(raw: RawSearchItem): BiliVideoItem {
 
 /**
  * 搜索视频。
- * @throws 关键词为空 / 网络异常 / B 站返回 code!=0 时抛出可读错误
+ * @throws 关键词为空 / 网络异常 / 视频学习返回 code!=0 时抛出可读错误
  */
 export async function searchBiliVideo(options: BiliSearchOptions): Promise<BiliSearchResponse> {
   const keyword = (options.keyword ?? '').trim()
@@ -145,7 +145,7 @@ export async function searchBiliVideo(options: BiliSearchOptions): Promise<BiliS
       if (json.code === -412) {
         throw new RiskBlockedError()
       }
-      throw new Error(`B 站搜索返回错误: code=${json.code} message=${json.message ?? ''}`)
+      throw new Error(`视频学习搜索返回错误: code=${json.code} message=${json.message ?? ''}`)
     }
 
     const data = json.data

@@ -19,7 +19,7 @@ import type {
 import { OVERLAY_EXPANDED_SIZE, OVERLAY_STATES } from '../../shared/bili'
 
 /**
- * B 站播放窗口管理（接入强制引擎 + 四层导航守卫 + 全屏锁定）：
+ * 视频学习播放窗口管理（接入强制引擎 + 四层导航守卫 + 全屏锁定）：
  * - 视频窗口：加载 /video/BV*，挂载 L1–L4 导航守卫；全屏锁定防退出
  * - 悬浮面板窗口：无边框透明置顶窗口（全屏悬浮 AI 助手 + 记事本，展开态 610×940，
  *   可拖拽 header 移动 / 最小化，最小窗口 610×940），加载渲染层 #overlay 路由
@@ -277,7 +277,7 @@ export function openVideo(payload: OpenVideoPayload): void {
     show: false, // P-2：先创建后显示（创建后立即 show()，再 setFullScreen），规避 Windows "先全屏后显示" 显示异常
     autoHideMenuBar: true,
     backgroundColor: '#0f1115',
-    title: `B 站学习 · ${bvid}`,
+    title: `视频学习 · ${bvid}`,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -326,7 +326,7 @@ export function openVideo(payload: OpenVideoPayload): void {
   // P-2：创建后立即显示（不等 ready-to-show：页面加载失败 / 需登录时窗口也不至于"永不显示"）
   video.show()
 
-  // M2 续学：seekSeconds > 0 时用 B 站原生 ?t= 参数加载，播放器就绪即定位到上次位置
+  // M2 续学：seekSeconds > 0 时用 视频学习原生 ?t= 参数加载，播放器就绪即定位到上次位置
   const videoUrl =
     seekSeconds && seekSeconds > 0
       ? `https://www.bilibili.com/video/${bvid}?t=${Math.max(0, Math.round(seekSeconds))}`
@@ -405,7 +405,7 @@ export function getContext(): BiliContext | null {
 
 /**
  * 时间点标记跳转（F-2）：让视频窗口 seek 到指定进度。
- * - 首选：标准 HTML5 `<video>` API（`currentTime`，非 B 站私有播放器接口，兼容改版）；
+ * - 首选：标准 HTML5 `<video>` API（`currentTime`，非 视频学习私有播放器接口，兼容改版）；
  * - 降级：`bvid?t=秒` 原生播放参数重载（更稳、符合导航守卫，/video/BV* 路径本就放行）。
  */
 export async function seekTo(bvid: string, seconds: number): Promise<boolean> {

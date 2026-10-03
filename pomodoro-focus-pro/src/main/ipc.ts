@@ -19,11 +19,11 @@ export const IPC_CHANNELS = {
     enter: 'mode:enter',
     exit: 'mode:exit'
   },
-  /** 导航管控（B 站模式） */
+  /** 导航管控（视频学习模式） */
   nav: {
     check: 'nav:check'
   },
-  /** B 站模式（WBI 搜索 / 播放窗口 / 悬浮面板 / 导航判定） */
+  /** 视频学习模式（WBI 搜索 / 播放窗口 / 悬浮面板 / 导航判定） */
   bili: {
     search: 'bili:search',
     openVideo: 'bili:open-video',
@@ -37,7 +37,7 @@ export const IPC_CHANNELS = {
   },
   /** AI 网关 */
   ai: {
-    /** B 站 overlay 兼容：单轮完整回复 */
+    /** 视频学习 overlay 兼容：单轮完整回复 */
     ask: 'ai:ask',
     /** 兼容：一次性返回整段文本 */
     stream: 'ai:stream',
@@ -117,7 +117,7 @@ export const IPC_EVENTS = {
     /** 计时完成（到点 / 正序手动结束） */
     complete: 'timer:complete'
   },
-  /** B 站模式事件（播放窗口 / 导航拦截） */
+  /** 视频学习模式事件（播放窗口 / 导航拦截） */
   bili: {
     videoOpened: 'bili:video-opened',
     videoClosed: 'bili:video-closed',

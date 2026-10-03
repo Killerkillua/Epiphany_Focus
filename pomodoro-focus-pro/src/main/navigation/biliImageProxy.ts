@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { BILI_IMAGE_SCHEME } from '../../shared/bili'
 
 /**
- * B 站封面图代理（修复防盗链 403，方案 A1/A1'/A2）：
+ * 视频学习封面图代理（修复防盗链 403，方案 A1/A1'/A2）：
  * - bili-image:// 自定义协议：主进程 net.fetch + Referer 拉图，失败降级为 SVG 占位
  * - webRequest.onBeforeSendHeaders：渲染层 <img> 直连 hdslb/bilibili 图片时注入 Referer（双保险）
  * - 磁盘缓存：userData/image-cache，LRU 上限 500 张 / 200MB，二次搜索不重复拉图

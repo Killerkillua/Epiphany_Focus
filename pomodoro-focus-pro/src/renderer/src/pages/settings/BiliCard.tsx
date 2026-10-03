@@ -9,7 +9,7 @@ interface BiliCardProps {
   update: UpdateFn
 }
 
-/** 📺 B 站模式 */
+/** 📺 视频学习模式 */
 export default function BiliCard({ form, saving, update }: BiliCardProps): JSX.Element {
   const [strictness, setStrictness] = useSetting<BiliStrictness>(
     form,
@@ -27,7 +27,7 @@ export default function BiliCard({ form, saving, update }: BiliCardProps): JSX.E
   )
 
   return (
-    <Card size="small" title="📺 B 站模式" className="settings-card">
+    <Card size="small" title="📺 视频学习模式" className="settings-card">
       <div className="settings-row">
         <span className="settings-label">内容相关度档位</span>
         <Select

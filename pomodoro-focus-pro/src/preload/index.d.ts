@@ -85,7 +85,7 @@ export interface RendererApi {
     applyDistractionPolicy(policy: DistractionPolicy): Promise<DistractionPolicy>
   }
 
-  /** B 站模式（WBI 搜索 / 播放窗口 / 悬浮面板 / 导航判定） */
+  /** 视频学习模式（WBI 搜索 / 播放窗口 / 悬浮面板 / 导航判定） */
   bili: {
     search(keyword: string, options?: Partial<BiliSearchOptions>): Promise<BiliSearchResponse>
     openVideo(payload: OpenVideoPayload): Promise<void>
@@ -188,7 +188,7 @@ export interface RendererApi {
     stats(): Promise<FeedbackStats>
   }
 
-  /** 学习会话计时（B 站学习 / 英语学习模式） */
+  /** 学习会话计时（视频学习 / 英语学习模式） */
   session: {
     start(options: SessionStartOptions): Promise<SessionState>
     stop(): Promise<SessionState>
@@ -229,9 +229,9 @@ export interface RendererApi {
 
   /** AI 网关 */
   ai: {
-    /** B 站学习助手：完整回复（携带学习上下文与多轮历史） */
+    /** 视频学习助手：完整回复（携带学习上下文与多轮历史） */
     ask(request: AiAskRequest): Promise<BiliAiReply>
-    /** B 站学习助手：流式问答（增量经 ai:chunk 事件推送，requestId 关联；F-4/P-2） */
+    /** 视频学习助手：流式问答（增量经 ai:chunk 事件推送，requestId 关联；F-4/P-2） */
     biliAsk(request: AiAskRequest): Promise<BiliAiReply>
     /** 英语模式：流式问答（增量经 ai:chunk 事件推送） */
     englishAsk(question: AiQuestion): Promise<AiReply>

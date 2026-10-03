@@ -5,7 +5,7 @@ import type { AiAskRequest } from '../../shared/bili'
  * 分层 Prompt 体系（v2.0 方案）：
  * - 英语档位 system Prompt：TESOL 认证英语母语教师（持久生效）
  * - 场景模板 ×4：语法 / 词汇 / 对话 / 写作
- * - B 站学习助手档位：BILI_STUDY_PROMPT（跨学科学习教练，随视频学习答疑）
+ * - 视频学习助手档位：BILI_STUDY_PROMPT（跨学科学习教练，随视频学习答疑）
  * - CoT 推理：复杂语法分析逐步推理
  * - RAG：检索到的权威词典资料注入 system 段并要求标注来源
  * - 多轮历史：sanitizeHistory 清洗后注入 messages，保持上下文连贯
@@ -15,7 +15,7 @@ import type { AiAskRequest } from '../../shared/bili'
  * 分层 Prompt 体系（v2.1 优化版）：
  * - 各场景独立 System Prompt（语法/词汇/对话/写作/自由提问）彻底解耦，为 4B 等轻量模型减负
  * - 场景专属 One-Shot 示例示范标准结构，防格式崩塌
- * - B 站学习助手档位：BILI_STUDY_PROMPT（跨学科学习教练，随视频学习答疑）
+ * - 视频学习助手档位：BILI_STUDY_PROMPT（跨学科学习教练，随视频学习答疑）
  * - CoT 推理：复杂语法/写作分析逐步推理
  * - RAG：检索到的权威词典资料注入 system 段并要求标注来源
  * - 多轮历史：sanitizeHistory 清洗后注入 messages，保持上下文连贯
@@ -102,13 +102,13 @@ Topic: `,
 /** CoT 增强指令（复杂语法/写作分析时追加） */
 export const COT_INSTRUCTION = '\n（请先用 Chain-of-Thought 逐步推理句子逻辑再给出结论）'
 
-/** B 站学习助手（悬浮面板）档位提示词：跨学科学习教练 */
+/** 视频学习助手（悬浮面板）档位提示词：跨学科学习教练 */
 export const BILI_STUDY_PROMPT = `# 角色
-你是「B 站学习模式」的 AI 学习助手，一位耐心的跨学科学习教练，
+你是「视频学习模式」的 AI 学习助手，一位耐心的跨学科学习教练，
 陪伴用户在全屏观看学习视频的过程中随时答疑。
 
 # 工作场景
-用户正处于专注学习状态，屏幕上是与学习主题相关的 B 站视频。
+用户正处于专注学习状态，屏幕上是与学习主题相关的学习视频。
 你的职责是帮用户「看懂、记住、会用」，而不是陪聊。
 
 # 能力（按需使用，不主动罗列）
@@ -171,7 +171,7 @@ export function buildMessages(
   ]
 }
 
-/** 组装 B 站学习助手消息数组：system（注入学习上下文）→ [...历史] → user */
+/** 组装 视频学习助手消息数组：system（注入学习上下文）→ [...历史] → user */
 export function buildBiliMessages(
   request: AiAskRequest
 ): Array<{ role: 'system' | 'user' | 'assistant'; content: string }> {

@@ -121,7 +121,7 @@
 <header class="cover">
   <div class="kicker">落地设计文档 · 01 / 03</div>
   <h1>首页模式卡片 + 统计条</h1>
-  <p class="sub">番茄专注 Pro · B 站学习 / 英语学习 / 专注 三模式入口 · 顶部今日概览 · 进入前时长配置浮层</p>
+  <p class="sub">番茄专注 Pro · 视频学习 / 英语学习 / 专注 三模式入口 · 顶部今日概览 · 进入前时长配置浮层</p>
   <div class="meta">
     <span><b>方案依据</b>：v2.0 §2.2 信息架构 / §3.4 数据模型</span>
     <span><b>难度</b>：P1 · 低</span>
@@ -151,11 +151,11 @@
 <table>
   <tbody><tr><th>设计要求（§2.2）</th><th>现状</th><th>本方案</th></tr>
   <tr><td>顶部统计条：今日专注 / 完成番茄 / 连续天数</td><td>占位 <code class="inline">--:--</code></td><td>接入真实数据 + loading 态</td></tr>
-  <tr><td>三张模式卡片（B 站 / 英语 / 专注）</td><td>无，仅侧边菜单可进</td><td>新增 <code class="inline">ModeCard</code>，点击进入</td></tr>
+  <tr><td>三张模式卡片（视频学习 / 英语 / 专注）</td><td>无，仅侧边菜单可进</td><td>新增 <code class="inline">ModeCard</code>，点击进入</td></tr>
   <tr><td>进入前弹出时长配置浮层</td><td>无</td><td>新增 <code class="inline">DurationConfigModal</code></td></tr>
 </tbody></table>
 </div>
-<p class="callout info"><b>范围说明</b>：本文件只负责首页入口与统计条。B 站/英语模式"进入后的强制锁定"属于文档 ②（B 站接入强制引擎），此处进入后仅完成页面跳转与时长回传。</p>
+<p class="callout info"><b>范围说明</b>：本文件只负责首页入口与统计条。视频学习/英语模式"进入后的强制锁定"属于文档 ②（视频学习接入强制引擎），此处进入后仅完成页面跳转与时长回传。</p>
 
 <!-- ================= 2 ================= -->
 <h2 id="s2"><span class="sec-no">2</span>总体方案</h2>
@@ -396,10 +396,10 @@ import</span> { useHomeStore } <span class="k">from</span> <span class="s">'../s
     &lt;/<span class="t">button</span>&gt;
   )
 }</code></pre>
-<p>卡片样式：深色底、左边框用该模式强调色、hover 上浮 + 亮边。三模式强调色沿用规范——B 站粉红（跳转）<code class="inline">#ff6b4a</code>、英语蓝 <code class="inline">#4da3ff</code>、专注绿 <code class="inline">#3ddc97</code>。</p>
+<p>卡片样式：深色底、左边框用该模式强调色、hover 上浮 + 亮边。三模式强调色沿用规范——视频学习粉红（跳转）<code class="inline">#ff6b4a</code>、英语蓝 <code class="inline">#4da3ff</code>、专注绿 <code class="inline">#3ddc97</code>。</p>
 
 <h3>5.4 DurationConfigModal 组件（新文件）</h3>
-<p>进入任一模前弹出时长配置浮层（§2.2）。专注模式是真正的倒计时，直接决定番茄时长；B 站/英语是开放式学习会话，这里的"时长"作为会话上限（回传给模式页，由页面决定用途）。</p>
+<p>进入任一模前弹出时长配置浮层（§2.2）。专注模式是真正的倒计时，直接决定番茄时长；视频学习/英语是开放式学习会话，这里的"时长"作为会话上限（回传给模式页，由页面决定用途）。</p>
 <pre><code><span class="c">// src/renderer/src/components/DurationConfigModal.tsx</span>
 <span class="k">export type</span> <span class="t">ModeTarget</span> = <span class="s">'focus'</span> | <span class="s">'bili'</span> | <span class="s">'english'</span>
 
@@ -412,7 +412,7 @@ import</span> { useHomeStore } <span class="k">from</span> <span class="s">'../s
 }
 
 <span class="k">const</span> FOCUS_PRESETS = [<span class="n">25</span>, <span class="n">45</span>, <span class="n">60</span>, <span class="n">90</span>]
-<span class="k">const</span> SESSION_PRESETS = [<span class="n">60</span>, <span class="n">120</span>, <span class="n">240</span>]   <span class="c">// B 站/英语会话上限（分钟）</span></code></pre>
+<span class="k">const</span> SESSION_PRESETS = [<span class="n">60</span>, <span class="n">120</span>, <span class="n">240</span>]   <span class="c">// 视频学习/英语会话上限（分钟）</span></code></pre>
 <p>交互：预设按钮 + 自定义数字输入（clamp 到合法区间），确认后 <code class="inline">onConfirm(minutes)</code>。专注默认值取 <code class="inline">settings.pomodoro.focusMin</code>。</p>
 
 <!-- ================= 6 ================= -->
@@ -446,7 +446,7 @@ import</span> { useHomeStore } <span class="k">from</span> <span class="s">'../s
       &lt;<span class="t">h1</span> className=<span class="s">"page-title"</span>&gt;首页&lt;/<span class="t">h1</span>&gt;
       &lt;<span class="t">StatsBar</span> /&gt;
       &lt;<span class="t">div</span> className=<span class="s">"mode-grid"</span>&gt;
-        &lt;<span class="t">ModeCard</span> mark=<span class="s">"▶"</span> title=<span class="s">"B 站学习"</span> accent=<span class="s">"#ff6b4a"</span>
+        &lt;<span class="t">ModeCard</span> mark=<span class="s">"▶"</span> title=<span class="s">"视频学习"</span> accent=<span class="s">"#ff6b4a"</span>
           tagline=<span class="s">"输入学习主题，进入锁定网页学习"</span>
           highlights={[<span class="s">'WBI 搜索'</span>, <span class="s">'导航管控'</span>, <span class="s">'AI 助手 + 记事本'</span>]}
           onClick={() =&gt; setTarget(<span class="s">'bili'</span>)} /&gt;
@@ -478,7 +478,7 @@ import</span> { useHomeStore } <span class="k">from</span> <span class="s">'../s
 <table>
   <tbody><tr><th>场景</th><th>步骤</th></tr>
   <tr><td>点击「专注」卡片</td><td>弹浮层选时长 → 确认 → <code class="inline">focusStore.start</code> 启动倒计时（触发现行强制会话）→ 跳转专注页</td></tr>
-  <tr><td>点击「B 站学习」卡片</td><td>弹浮层选会话上限 → 确认 → 跳转 B 站页（进入后强制锁定属文档 ②）</td></tr>
+  <tr><td>点击「视频学习」卡片</td><td>弹浮层选会话上限 → 确认 → 跳转 视频学习页（进入后强制锁定属文档 ②）</td></tr>
   <tr><td>点击「英语学习」卡片</td><td>弹浮层选会话上限 → 确认 → 跳转英语页</td></tr>
   <tr><td>统计条刷新</td><td>挂载时 <code class="inline">load()</code>；订阅 <code class="inline">timer:complete</code> 后再次 <code class="inline">load()</code></td></tr>
 </tbody></table>

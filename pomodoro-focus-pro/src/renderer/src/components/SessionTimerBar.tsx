@@ -13,7 +13,7 @@ const PRESETS = [15, 30, 60, 120]
 
 const MODE_META: Record<SessionMode, { title: string; icon: string; hint: string }> = {
   bili: {
-    title: 'B 站学习会话',
+    title: '视频学习会话',
     icon: '📺',
     hint: '倒计时结束将自动关闭视频窗口并休息'
   },
@@ -46,7 +46,7 @@ interface Props {
 }
 
 /**
- * 学习会话计时条（B 站学习 / 英语学习模式）。
+ * 学习会话计时条（视频学习 / 英语学习模式）。
  * - 空闲：预设时长 + 开始按钮（首页进入时已由时长弹窗启动，此处用于直达页面）
  * - 进行中：倒计时 + 进度条 + 暂停/继续/结束
  * - 到点：提示音 + 消息 + 白噪音联动；主进程同步桌面通知与统计落库

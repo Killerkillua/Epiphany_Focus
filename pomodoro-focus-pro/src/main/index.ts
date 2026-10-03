@@ -16,7 +16,7 @@ import { registerSessionModule } from './session'
 /**
  * 主进程入口：窗口管理 + 模块装配（方案 3.3 进程模型）。
  * - enforcement：强制引擎（锁定分级 / 计时联动 / 紧急退出 / 重启恢复 / 学习统计落库）
- * - navigation：B 站模式（WBI 搜索 / 播放窗口 / 导航管控 / 悬浮面板 / 记事本）
+ * - navigation：视频学习模式（WBI 搜索 / 播放窗口 / 导航管控 / 悬浮面板 / 记事本）
  * - ai：英语模式（分层 Prompt + RAG + BYOK + 生词本/语法要点）
  * - audio：白噪音（全局热键 / 采样素材解析 / tomato-audio:// 自定义协议）
  * - settings / stats：全局设置（electron-store）与学习统计聚合
@@ -111,7 +111,7 @@ app.whenReady().then(() => {
 
   createMainWindow()
 
-  // B 站封面图代理（bili-image:// 协议 + Referer 注入 + 磁盘缓存），修复 CDN 防盗链 403
+  // 视频学习封面图代理（bili-image:// 协议 + Referer 注入 + 磁盘缓存），修复 CDN 防盗链 403
   installBiliImageProxy()
 
   // 预打开中央 SQLite（创建规约 6 张表，方案 3.4）
@@ -128,10 +128,10 @@ app.whenReady().then(() => {
   // CR-05：closeVideo 由装配层注入，enforcement 不反向 import navigation（消除循环依赖）
   const enforcement = registerEnforcementModule(getMainWindow, { closeVideo })
 
-  // 学习会话计时（B 站 / 英语模式，与强制引擎解耦；返回遮罩联动句柄）
+  // 学习会话计时（视频学习 / 英语模式，与强制引擎解耦；返回遮罩联动句柄）
   const session = registerSessionModule(getMainWindow)
 
-  // B 站模式（接入强制引擎 + 四层导航判定 + 学习会话遮罩联动）
+  // 视频学习模式（接入强制引擎 + 四层导航判定 + 学习会话遮罩联动）
   registerNavigationModule(getMainWindow, enforcement, session)
 
   // AI 网关（英语模式）

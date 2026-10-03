@@ -22,7 +22,7 @@ export const IPC_CHANNELS = {
     enter: 'mode:enter',
     exit: 'mode:exit'
   },
-  /** 学习会话计时（B 站学习 / 英语学习，与强制引擎解耦） */
+  /** 学习会话计时（视频学习 / 英语学习，与强制引擎解耦） */
   session: {
     start: 'session:start',
     stop: 'session:stop',
@@ -30,11 +30,11 @@ export const IPC_CHANNELS = {
     resume: 'session:resume',
     getState: 'session:get-state'
   },
-  /** 导航管控（B 站模式） */
+  /** 导航管控（视频学习模式） */
   nav: {
     check: 'nav:check'
   },
-  /** B 站模式（WBI 搜索 / 播放窗口 / 悬浮面板 / 导航判定） */
+  /** 视频学习模式（WBI 搜索 / 播放窗口 / 悬浮面板 / 导航判定） */
   bili: {
     search: 'bili:search',
     openVideo: 'bili:open-video',
@@ -60,11 +60,11 @@ export const IPC_CHANNELS = {
   },
   /** AI 网关 */
   ai: {
-    /** B 站 overlay 兼容：单轮完整回复 */
+    /** 视频学习 overlay 兼容：单轮完整回复 */
     ask: 'ai:ask',
     /** 兼容：一次性返回整段文本 */
     stream: 'ai:stream',
-    /** B 站学习助手：流式问答（增量经 ai:chunk 事件推送，requestId 关联；F-4/P-2） */
+    /** 视频学习助手：流式问答（增量经 ai:chunk 事件推送，requestId 关联；F-4/P-2） */
     biliAsk: 'ai:bili-ask',
     /** 英语模式：流式问答（增量经 ai:chunk 事件推送） */
     englishAsk: 'ai:english-ask',
@@ -202,14 +202,14 @@ export const IPC_EVENTS = {
     /** 计时完成（到点 / 正序手动结束） */
     complete: 'timer:complete'
   },
-  /** 学习会话计时事件（B 站 / 英语模式） */
+  /** 学习会话计时事件（视频学习 / 英语模式） */
   session: {
     /** 每秒推送会话计时快照 */
     tick: 'session:tick',
     /** 会话到点完成 */
     complete: 'session:complete'
   },
-  /** B 站模式事件（播放窗口 / 导航拦截 / 悬浮面板状态） */
+  /** 视频学习模式事件（播放窗口 / 导航拦截 / 悬浮面板状态） */
   bili: {
     videoOpened: 'bili:video-opened',
     videoClosed: 'bili:video-closed',

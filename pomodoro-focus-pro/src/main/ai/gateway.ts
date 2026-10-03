@@ -31,7 +31,7 @@ export const SCENARIO_HYPERPARAMS: Record<
 /**
  * AI 网关（OpenAI 兼容 SDK，双档位）：
  * - 英语教学档位（profile='english'）：TESOL 分层 Prompt + CoT + RAG，根据场景动态自适应超参数
- * - B 站学习助手档位（profile='bili'）：跨学科学习教练，注入 topic/bvid 上下文 + 多轮历史，temperature 0.5
+ * - 视频学习助手档位（profile='bili'）：跨学科学习教练，注入 topic/bvid 上下文 + 多轮历史，temperature 0.5
  * - 未配置 API Key：进入演示模式，双档位各有结构化模拟回复，
  *   保证无 Key 时 UI/流式/来源面板全链路可验证
  */
@@ -40,9 +40,9 @@ export const SCENARIO_HYPERPARAMS: Record<
 export type AiProfile = 'english' | 'bili'
 
 export interface ChatOptions {
-  /** 档位：英语教学（默认）/ B 站学习助手 */
+  /** 档位：英语教学（默认）/ 视频学习助手 */
   profile?: AiProfile
-  /** B 站档位时用于组装学习上下文与多轮历史 */
+  /** 视频学习档位时用于组装学习上下文与多轮历史 */
   biliRequest?: AiAskRequest
 }
 
@@ -186,7 +186,7 @@ export class EnglishGateway {
   /**
    * 流式问答：onDelta 逐段回调；resolve 时携带完整回复与 RAG 来源。
    * @param options.profile 档位（english / bili），决定提示词体系与 temperature
-   * @param options.biliRequest B 站档位请求（学习上下文 + 多轮历史）
+   * @param options.biliRequest 视频学习档位请求（学习上下文 + 多轮历史）
    */
   async chat(
     question: AiQuestion,
@@ -262,7 +262,7 @@ export class EnglishGateway {
     })
   }
 
-  /** B 站学习助手演示回复：展示学习主题/视频标题、能力清单与配置入口 */
+  /** 视频学习助手演示回复：展示学习主题/视频标题、能力清单与配置入口 */
   private mockBiliReply(request?: AiAskRequest): string {
     const topic = request?.context?.topic?.trim()
     const videoTitle = request?.context?.videoTitle?.trim()

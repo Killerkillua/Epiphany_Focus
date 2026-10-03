@@ -7,7 +7,7 @@ import type { ChatMsg } from '../overlay/ChatPane'
 /**
  * 共享 AI 流式问答 hook（H-07/H-09/H-11 统一）。
  *
- * B 站学习助手的两处入口——悬浮面板（OverlayApp）与学习助手抽屉
+ * 视频学习助手的两处入口——悬浮面板（OverlayApp）与学习助手抽屉
  * （LearningAssistantDrawer）——过去各自实现一遍"ai:bili-ask + ai:chunk 流式问答"
  * （requestId 关联、最近 8 轮历史、错误处理）。本 hook 抽出这份逻辑，两处共用。
  *

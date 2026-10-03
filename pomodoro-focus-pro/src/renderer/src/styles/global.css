@@ -249,7 +249,7 @@ body {
   container-name: page;
 }
 
-/* 数据密集型页面（统计 / B 站）内容容器：上限放宽到 1600px（阶段二随视口媒体查询生效） */
+/* 数据密集型页面（统计 / 视频学习）内容容器：上限放宽到 1600px（阶段二随视口媒体查询生效） */
 .page-dashboard {
   max-width: var(--dashboard-max);
   margin-inline: auto;
@@ -466,7 +466,7 @@ body {
   margin-top: 2px;
 }
 
-/* ===== 学习会话计时条（B 站 / 英语模式） ===== */
+/* ===== 学习会话计时条（视频学习 / 英语模式） ===== */
 .session-bar {
   margin-bottom: 16px;
   background: var(--bg2);
@@ -800,7 +800,7 @@ body {
   width: clamp(200px, 18vw, 300px);
 }
 
-/* ===== B 站学习模式 ===== */
+/* ===== 视频学习模式 ===== */
 
 /* 页面头（标题 + 反馈入口，R-1） */
 .bili-page-head {
@@ -1047,7 +1047,7 @@ body {
   margin-top: 20px;
 }
 
-/* B 站学习页：视频播放期间的"结束学习会话"退出浮层。
+/* 视频学习页：视频播放期间的"结束学习会话"退出浮层。
    用 position: sticky 而非 fixed：.app-content 的容器查询（container-type）隐含 contain: layout，
    会把 .app-content 变成 fixed 后代的包含块，导致按钮随内容滚动失效；
    sticky 相对滚动区（ScrollArea 的 viewport）固定，滚动时始终吸附在顶部右上角 */
@@ -1072,7 +1072,7 @@ body {
   align-items: center;
 }
 
-/* ===== 学习助手抽屉（问题 3：B 站学习页顶部导航入口，非视频模式） ===== */
+/* ===== 学习助手抽屉（问题 3：视频学习页顶部导航入口，非视频模式） ===== */
 
 .assistant-drawer .ant-drawer-header {
   height: 38px;
@@ -1721,7 +1721,7 @@ body,
   font-size: var(--text-lg);
 }
 
-/* B 站学习复盘（R-4） */
+/* 视频学习复盘（R-4） */
 .bili-review-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
@@ -1899,7 +1899,7 @@ body,
 /* ===== 阶段二：响应式布局（窗口 ↔ 全屏连续谱系） ===== */
 
 /* 默认（窄于 Medium 断点 <768px）：两栏页面堆叠为单栏
-   注：主窗口 minWidth 940px、B 站窗口 min 900px，本段实际不触发，保留供未来兼容 */
+   注：主窗口 minWidth 940px、视频学习窗口 min 900px，本段实际不触发，保留供未来兼容 */
 .focus-layout,
 .english-layout {
   flex-direction: column;
@@ -1942,7 +1942,7 @@ body,
     max-width: var(--content-max);
     margin-inline: auto;
   }
-  /* 统计 / B 站等数据型页面（.page-dashboard）：宽容器下即可达 1600px 目标宽度，
+  /* 统计 / 视频学习等数据型页面（.page-dashboard）：宽容器下即可达 1600px 目标宽度，
      不再被 .app-content 的 1200px 上限卡住；阅读型页面保持 --content-max（1200px） */
   .app-content:has(.page-dashboard) {
     max-width: var(--dashboard-max);
@@ -1959,7 +1959,7 @@ body,
     flex: 0 0 280px !important;
   }
 
-  /* 阅读型页面保持 --content-max（1200px）；统计 / B 站等数据型页面放宽到 --dashboard-max（1600px）。
+  /* 阅读型页面保持 --content-max（1200px）；统计 / 视频学习等数据型页面放宽到 --dashboard-max（1600px）。
      （Wide 断点已放宽数据型页面，此处声明保持语义一致，随视口继续居中） */
   .app-content:has(.page-dashboard) {
     max-width: var(--dashboard-max);

@@ -114,7 +114,7 @@ const api: RendererApi = {
       ) as Promise<DistractionPolicy>
   },
 
-  /* ===== B 站模式 ===== */
+  /* ===== 视频学习模式 ===== */
   bili: {
     search: (keyword: string, options?: Partial<BiliSearchOptions>): Promise<BiliSearchResponse> =>
       ipcRenderer.invoke(IPC_CHANNELS.bili.search, keyword, options) as Promise<BiliSearchResponse>,
@@ -147,7 +147,7 @@ const api: RendererApi = {
       ipcRenderer.invoke(IPC_CHANNELS.bili.getVideoDuration) as Promise<number>
   },
 
-  /* ===== 学习会话计时（B 站 / 英语模式） ===== */
+  /* ===== 学习会话计时（视频学习 / 英语模式） ===== */
   session: {
     start: (options: SessionStartOptions): Promise<SessionState> =>
       ipcRenderer.invoke(IPC_CHANNELS.session.start, options) as Promise<SessionState>,
@@ -334,7 +334,7 @@ const api: RendererApi = {
     ask: (request: AiAskRequest): Promise<BiliAiReply> =>
       ipcRenderer.invoke(IPC_CHANNELS.ai.ask, request) as Promise<BiliAiReply>,
 
-    /** B 站学习助手：流式问答（增量经 ai:chunk 事件推送，requestId 关联；F-4/P-2） */
+    /** 视频学习助手：流式问答（增量经 ai:chunk 事件推送，requestId 关联；F-4/P-2） */
     biliAsk: (request: AiAskRequest): Promise<BiliAiReply> =>
       ipcRenderer.invoke(IPC_CHANNELS.ai.biliAsk, request) as Promise<BiliAiReply>,
 

@@ -58,7 +58,7 @@ function listWindowProcessNames(): Promise<string[]> {
 
 export interface WindowGuardStartOpts {
   /**
-   * 失焦拉回豁免：聚焦窗口命中时（如 B 站悬浮面板）不拉回本窗口。
+   * 失焦拉回豁免：聚焦窗口命中时（如 视频学习悬浮面板）不拉回本窗口。
    * 用于悬浮面板交互场景——点击面板（AI 输入 / 记事本）时视频窗口会失焦，
    * 若不豁免会被 400ms 后 show()+focus() 抢回焦点并置前，导致面板不可用。
    */

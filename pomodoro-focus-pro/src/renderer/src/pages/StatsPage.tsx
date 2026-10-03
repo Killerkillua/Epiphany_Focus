@@ -78,7 +78,7 @@ function StatsPage(): JSX.Element {
   const loading = useStatsStore((s) => s.loading)
   const error = useStatsStore((s) => s.error)
 
-  /* ===== R-4 B 站学习复盘卡（play_records + notes + feedback 聚合） ===== */
+  /* ===== R-4 视频学习复盘卡（play_records + notes + feedback 聚合） ===== */
   const [biliReview, setBiliReview] = useState<{
     records: PlayRecord[]
     feedback: FeedbackStats
@@ -315,7 +315,7 @@ function StatsPage(): JSX.Element {
             </Typography.Text>
           </Card>
 
-          <Card size="small" title="📺 B 站学习复盘（R-4）" className="stats-card">
+          <Card size="small" title="📺 视频学习复盘（R-4）" className="stats-card">
             {review ? (
               <div className="bili-review-grid">
                 <div className="bili-review-item">
@@ -351,7 +351,7 @@ function StatsPage(): JSX.Element {
                 </div>
               </div>
             ) : (
-              <Empty description="暂无 B 站学习数据：打开视频学习后这里会生成复盘" />
+              <Empty description="暂无视频学习数据：打开视频学习后这里会生成复盘" />
             )}
             <Typography.Text type="secondary" style={{ fontSize: 11 }}>
               数据源 play_records（按视频进度）+ notes（笔记/重点）+

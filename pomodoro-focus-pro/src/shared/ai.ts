@@ -58,7 +58,7 @@ export interface AiStreamChunk {
   sources?: AiSource[]
 }
 
-/** 完整回复（invoke 返回值，英语模式）。与 B 站 shared/bili.ts 的 BiliAiReply 命名区分。 */
+/** 完整回复（invoke 返回值，英语模式）。与 视频学习 shared/bili.ts 的 BiliAiReply 命名区分。 */
 export interface AiReply {
   content: string
   sources: AiSource[]

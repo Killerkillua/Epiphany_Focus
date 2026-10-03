@@ -9,7 +9,7 @@ export type LockLevel = 'L0' | 'L1' | 'L2'
 /** 到点动作：锁屏 / 全屏遮罩 / 仅提示 */
 export type EndAction = 'lock' | 'overlay' | 'notify'
 
-/** B 站内容相关度档位（方案 2.6） */
+/** 视频学习内容相关度档位（方案 2.6） */
 export type BiliStrictness = 'strict' | 'standard' | 'loose'
 
 export interface PomodoroSettings {
@@ -80,7 +80,7 @@ export interface AppSettings {
   endAction: EndAction
   /** 会话时长上限（小时），默认 4，防止误锁过久 */
   sessionMaxHours: number
-  /** 学习会话全屏遮罩（英语 / B 站计时开始后对主窗口施加与专注模式一致的遮罩；默认开启） */
+  /** 学习会话全屏遮罩（英语 / 视频学习计时开始后对主窗口施加与专注模式一致的遮罩；默认开启） */
   sessionOverlay: boolean
   bili: BiliSettings
   ai: AiSettings

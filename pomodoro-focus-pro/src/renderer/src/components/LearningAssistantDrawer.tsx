@@ -18,7 +18,7 @@ interface LearningAssistantDrawerProps {
 }
 
 /**
- * 学习助手抽屉（问题 3）：B 站学习页顶部导航栏右侧入口。
+ * 学习助手抽屉（问题 3）：视频学习页顶部导航栏右侧入口。
  * - 非视频模式可用：对话（基于学习主题）/ 笔记（增删改 + 导出 + OCR）/ 进度三页签
  * - 复用 overlay 的 ChatPane / NotesPane / ProgressPane，与视频模式共享 SQLite 数据
  * - H-07：AI 问答与笔记逻辑复用共享 hook useAiChat / useNotes（与悬浮面板 OverlayApp 消除重复）

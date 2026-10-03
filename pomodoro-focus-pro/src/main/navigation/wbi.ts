@@ -2,7 +2,7 @@ import { net } from 'electron'
 import { createHash } from 'node:crypto'
 
 /**
- * B 站 WBI 签名（核心版）。
+ * 视频学习 WBI 签名（核心版）。
  *
  * 流程：启动/失效时调 GET /x/web-interface/nav 取当日 img-key / sub-key，
  * 按 MIXIN_KEY_ENC_TAB 重排映射表生成 mixin-key（取拼接串前 32 位），
@@ -19,7 +19,7 @@ const NAV_URL = 'https://api.bilibili.com/x/web-interface/nav'
 export const WBI_KEY_TTL_MS = 4 * 60 * 60 * 1000
 
 /**
- * B 站前端内置的全局默认密钥对（公开、长期稳定、与登录状态无关）。
+ * 视频学习前端内置的全局默认密钥对（公开、长期稳定、与登录状态无关）。
  * 当 nav 未返回 wbi_img（如未登录 code=-101 且无密钥字段）时回退使用。
  */
 const FALLBACK_WBI_KEYS: WbiKeys = {

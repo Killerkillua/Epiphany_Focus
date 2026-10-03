@@ -20,17 +20,17 @@ import { AiStore } from './store'
 import { recordTelemetry } from '../telemetry'
 import { ValidationError, str, optStr, num, arr, oneOf } from '../validate'
 /**
- * AI 网关（英语教学模式 + B 站学习助手）。
+ * AI 网关（英语教学模式 + 视频学习助手）。
  * - 流式问答：ai:english-ask（增量经 ai:chunk 事件推送，requestId 关联）
  * - 分层 Prompt + CoT + RAG（prompts.ts / rag.ts）
- * - B 站学习助手：ai:ask / ai:stream（bili 档位，注入学习上下文 topic/bvid + 多轮历史）
+ * - 视频学习助手：ai:ask / ai:stream（bili 档位，注入学习上下文 topic/bvid + 多轮历史）
  * - 图片文字识别：ai:ocr（OCR 模型）
  * - BYOK 配置与 SQLite 生词本 / 语法要点（store.ts）
  */
 
 const AI_SCENARIOS = ['grammar', 'vocabulary', 'conversation', 'writing', 'free'] as const
 
-/** H-01：B 站学习助手请求校验（message 必填，上下文/历史可选） */
+/** H-01：视频学习助手请求校验（message 必填，上下文/历史可选） */
 function parseBiliAskRequest(raw: unknown): AiAskRequest {
   const r = raw as AiAskRequest | null
   if (!r || typeof r !== 'object') throw new ValidationError('ai 请求必须是对象')
@@ -90,7 +90,7 @@ export function registerAiIpc(): void {
   const gateway = new EnglishGateway(() => store.getConfig())
   const ocr = new OcrGateway(() => store.getConfig())
 
-  // ================= B 站学习助手（悬浮面板） =================
+  // ================= 视频学习助手（悬浮面板） =================
 
   ipcMain.handle(
     IPC_CHANNELS.ai.ask,
@@ -121,7 +121,7 @@ export function registerAiIpc(): void {
     return reply.content
   })
 
-  // B 站档流式问答（F-4/P-2）：增量经 ai:chunk 事件推送，requestId 关联；
+  // 视频学习档流式问答（F-4/P-2）：增量经 ai:chunk 事件推送，requestId 关联；
   // 复用 englishAsk 的流式链路，长回答逐字渲染，消除"一次性全量返回"的等待空白。
   ipcMain.handle(
     IPC_CHANNELS.ai.biliAsk,

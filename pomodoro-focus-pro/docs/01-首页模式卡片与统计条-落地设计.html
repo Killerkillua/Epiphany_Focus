@@ -355,7 +355,7 @@
         <div class="kicker">落地设计文档 · 01 / 03</div>
         <h1>首页模式卡片 + 统计条</h1>
         <p class="sub">
-          番茄专注 Pro · B 站学习 / 英语学习 / 专注 三模式入口 · 顶部今日概览 · 进入前时长配置浮层
+          番茄专注 Pro · 视频学习 / 英语学习 / 专注 三模式入口 · 顶部今日概览 · 进入前时长配置浮层
         </p>
         <div class="meta">
           <span><b>方案依据</b>：v2.0 §2.2 信息架构 / §3.4 数据模型</span>
@@ -405,7 +405,7 @@
             <td>接入真实数据 + loading 态</td>
           </tr>
           <tr>
-            <td>三张模式卡片（B 站 / 英语 / 专注）</td>
+            <td>三张模式卡片（视频学习 / 英语 / 专注）</td>
             <td>无，仅侧边菜单可进</td>
             <td>新增 <code class="inline">ModeCard</code>，点击进入</td>
           </tr>
@@ -417,7 +417,7 @@
         </table>
       </div>
       <p class="callout info">
-        <b>范围说明</b>：本文件只负责首页入口与统计条。B 站/英语模式"进入后的强制锁定"属于文档 ②（B
+        <b>范围说明</b>：本文件只负责首页入口与统计条。视频学习/英语模式"进入后的强制锁定"属于文档 ②（B
         站接入强制引擎），此处进入后仅完成页面跳转与时长回传。
       </p>
 
@@ -768,7 +768,7 @@ import</span> { useHomeStore } <span class="k">from</span> <span class="s">'../s
 }
 
 <span class="k">const</span> FOCUS_PRESETS = [<span class="n">25</span>, <span class="n">45</span>, <span class="n">60</span>, <span class="n">90</span>]
-<span class="k">const</span> SESSION_PRESETS = [<span class="n">60</span>, <span class="n">120</span>, <span class="n">240</span>]   <span class="c">// B 站/英语会话上限（分钟）</span></code></pre>
+<span class="k">const</span> SESSION_PRESETS = [<span class="n">60</span>, <span class="n">120</span>, <span class="n">240</span>]   <span class="c">// 视频学习/英语会话上限（分钟）</span></code></pre>
       <p>
         交互：预设按钮 + 自定义数字输入（clamp 到合法区间），确认后
         <code class="inline">onConfirm(minutes)</code>。专注默认值取
@@ -806,7 +806,7 @@ import</span> { useHomeStore } <span class="k">from</span> <span class="s">'../s
       &lt;<span class="t">h1</span> className=<span class="s">"page-title"</span>&gt;首页&lt;/<span class="t">h1</span>&gt;
       &lt;<span class="t">StatsBar</span> /&gt;
       &lt;<span class="t">div</span> className=<span class="s">"mode-grid"</span>&gt;
-        &lt;<span class="t">ModeCard</span> mark=<span class="s">"▶"</span> title=<span class="s">"B 站学习"</span> accent=<span class="s">"#ff6b4a"</span>
+        &lt;<span class="t">ModeCard</span> mark=<span class="s">"▶"</span> title=<span class="s">"视频学习"</span> accent=<span class="s">"#ff6b4a"</span>
           tagline=<span class="s">"输入学习主题，进入锁定网页学习"</span>
           highlights={[<span class="s">'WBI 搜索'</span>, <span class="s">'导航管控'</span>, <span class="s">'AI 助手 + 记事本'</span>]}
           onClick={() =&gt; setTarget(<span class="s">'bili'</span>)} /&gt;
@@ -853,8 +853,8 @@ import</span> { useHomeStore } <span class="k">from</span> <span class="s">'../s
             </td>
           </tr>
           <tr>
-            <td>点击「B 站学习」卡片</td>
-            <td>弹浮层选会话上限 → 确认 → 跳转 B 站页（进入后强制锁定属文档 ②）</td>
+            <td>点击「视频学习」卡片</td>
+            <td>弹浮层选会话上限 → 确认 → 跳转 视频学习页（进入后强制锁定属文档 ②）</td>
           </tr>
           <tr>
             <td>点击「英语学习」卡片</td>

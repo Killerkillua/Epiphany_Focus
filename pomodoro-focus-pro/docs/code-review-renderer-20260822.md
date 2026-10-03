@@ -8,7 +8,7 @@
 
 ## 审查结论
 
-整体代码质量较高，架构分层清晰（IPC 驱动 + Zustand 状态 + 组件化 UI），注释充分，领域逻辑（番茄钟 / 白噪音 / B 站学习）封装合理。但存在以下突出问题：
+整体代码质量较高，架构分层清晰（IPC 驱动 + Zustand 状态 + 组件化 UI），注释充分，领域逻辑（番茄钟 / 白噪音 / 视频学习）封装合理。但存在以下突出问题：
 
 1. **内存泄漏风险（Critical）**：多个 store 的 IPC 事件订阅使用模块级 `subscribed` 标志防重，从不取消订阅；应用生命周期内虽无影响，但 HMR / 未来多窗口场景下会泄漏。
 2. **过度重渲染（High）**：大量组件直接解构整个 store 而非使用 selector，每秒 tick 触发全量重渲染；`NoiseControl` 滑块拖拽时 `emit()` 触发所有订阅组件刷新。
@@ -190,7 +190,7 @@ function FocusPage(): JSX.Element {
 **严重程度**：High
 **维度**：性能 / React 规范
 
-**问题描述**：与 H-01 相同模式，`SessionTimerBar` 全量解构 `useSessionStore()`，每秒 tick 触发重渲染。该组件在 B 站学习页和英语学习页都存在，影响范围更广。
+**问题描述**：与 H-01 相同模式，`SessionTimerBar` 全量解构 `useSessionStore()`，每秒 tick 触发重渲染。该组件在 视频学习页和英语学习页都存在，影响范围更广。
 
 **修复建议**：同 H-01，使用细粒度 selector。
 
@@ -340,7 +340,7 @@ private emit(): void {
 
 - 强制控制（锁定级别、到点动作、恢复码）
 - 番茄钟参数（4 个时长配置）
-- B 站模式（严格度、自动全屏）
+- 视频学习模式（严格度、自动全屏）
 - 学习会话（遮罩开关）
 - AI 设置（5 项配置）
 - 白噪音（默认预设）
@@ -367,11 +367,11 @@ private emit(): void {
 `EnglishModePage` 中定义了 `MessageItem` 组件，内部直接调用 `useEnglishStore()` 的 `addVocab` / `addGrammar` 方法，并包含"提取单词"、"去除 Markdown"等辅助函数。
 同时 overlay 的 `ChatPane` 组件也有类似的"记入笔记"操作，但走的是完全不同的路径（`onSaveToNotes` prop → 父组件处理 → notes API）。
 
-英语模式的 AI 对话与 B 站模式的 AI 对话虽然共享 `ai:chunk` 事件，但各自维护一套消息状态和流式处理逻辑，数据流不统一。
+英语模式的 AI 对话与 视频学习模式的 AI 对话虽然共享 `ai:chunk` 事件，但各自维护一套消息状态和流式处理逻辑，数据流不统一。
 
 **修复建议**：
 
-1. 统一 AI 对话的 store 层：将 `englishStore` 扩展为通用的 `useAiChatStore`，支持不同场景（英语 / B 站 / 通用）
+1. 统一 AI 对话的 store 层：将 `englishStore` 扩展为通用的 `useAiChatStore`，支持不同场景（英语 / 视频学习 / 通用）
 2. `MessageItem` 组件移到 `components/` 目录复用
 3. 词汇/语法提取逻辑作为 store 的 action 方法
 
@@ -522,7 +522,7 @@ AI 生成的内容可能被注入恶意 HTML / JavaScript，安全边界需要�
 **维度**：状态管理 / 数据持久化
 
 **问题描述**：
-`autoFullscreen` 配置使用 `localStorage` 存储（key: `bili.autoFullscreen`），但 B 站模式的其他配置（`strictness`）走 `settings store`（electron-store）。同属 B 站模式的配置分散在两个存储系统中，不一致。
+`autoFullscreen` 配置使用 `localStorage` 存储（key: `bili.autoFullscreen`），但 视频学习模式的其他配置（`strictness`）走 `settings store`（electron-store）。同属 视频学习模式的配置分散在两个存储系统中，不一致。
 
 同时 `SettingsPage` 中也有 `autoFullscreen` 设置项（`bili.autoFullscreen`），但 `BiliModePage` 并未读取该设置，而是读自己的 localStorage。两者可能产生冲突。
 
@@ -759,7 +759,7 @@ if (isOverlay) return <OverlayApp />
 1. **统一 AI 对话层**：`englishStore`、`OverlayApp`、`LearningAssistantDrawer` 三套 AI 对话逻辑 → 统一为 `useAiChatStore`
 2. **统一笔记层**：overlay 和 drawer 两套笔记逻辑 → 统一为 `useNotesStore` 或 `useNotes()` hook
 3. **音频状态 Zustand 化**：`NoiseEngine` 的订阅模式与 React 生态不太契合 → 迁移到 zustand store，天然支持 selector 和 devtools
-4. **设置系统统一**：白噪音设置、B 站 autoFullscreen 等 localStorage 项 → 全部迁入 electron-store
+4. **设置系统统一**：白噪音设置、视频学习 autoFullscreen 等 localStorage 项 → 全部迁入 electron-store
 5. **引入测试**：核心逻辑（CrossfadeLoop、时间格式化、store reducer）建议添加单元测试
 
 ---
