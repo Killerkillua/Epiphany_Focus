@@ -1,4 +1,4 @@
-import { BrowserWindow, dialog, ipcMain, safeStorage } from 'electron'
+import { BrowserWindow, dialog, ipcMain, safeStorage, shell } from 'electron'
 import Store from 'electron-store'
 import { IPC_CHANNELS, IPC_EVENTS } from '../../shared/ipc'
 import { ENV_KEY_API_KEY } from '../env'
@@ -6,6 +6,7 @@ import { SETTINGS_DEFAULTS, type AppSettings } from '../../shared/settings'
 import { safeRecord } from '../validate'
 import { ENFORCED_SESSION_FROZEN, validateRendererSetting } from './settingsSchema'
 import { GUARDED_KEYS, readGuarded, writeGuarded, type GuardedPayload } from './guardStore'
+import { getLogDir, getLogFilePath } from '../logger'
 
 /**
  * 轻量配置存储（方案 3.4：用 electron-store）。
@@ -279,5 +280,12 @@ export function registerSettingsIpc(): void {
     if (result.canceled || !result.filePaths[0]) return null
     lastPickedBackupDir = result.filePaths[0]
     return lastPickedBackupDir
+  })
+  // 系统日志路径与目录打开
+  ipcMain.handle(IPC_CHANNELS.settings.getLogPath, () => getLogFilePath())
+  ipcMain.handle(IPC_CHANNELS.settings.openLogDir, async () => {
+    const dir = getLogDir()
+    await shell.openPath(dir)
+    return dir
   })
 }

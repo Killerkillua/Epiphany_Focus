@@ -218,6 +218,10 @@ export interface RendererApi {
     set(entries: Record<string, unknown>): Promise<AppSettings>
     /** 选择备份目录（M5；取消返回 null） */
     pickBackupDir(): Promise<string | null>
+    /** 打开系统日志目录 */
+    openLogDir(): Promise<string>
+    /** 获取系统日志文件绝对路径 */
+    getLogPath(): Promise<string>
   }
 
   /** 学习统计 */

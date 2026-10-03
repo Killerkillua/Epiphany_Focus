@@ -94,6 +94,19 @@ export default function GeneralAboutCard(): JSX.Element {
           <Button size="small" loading={checkingUpdate} onClick={handleCheckUpdate}>
             检查更新
           </Button>
+          <Button
+            size="small"
+            onClick={async () => {
+              try {
+                await window.api.settings.openLogDir()
+                message.success('已在文件管理器中打开日志目录')
+              } catch (err) {
+                message.error(`打开日志目录失败: ${err instanceof Error ? err.message : String(err)}`)
+              }
+            }}
+          >
+            打开系统日志目录
+          </Button>
         </Space>
       </div>
 

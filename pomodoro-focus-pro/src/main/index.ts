@@ -15,6 +15,7 @@ import { startAutoBackup } from './storage/backup'
 import { getDb } from './storage/db'
 import { registerSessionModule } from './session'
 import { getAppIcon } from './icon'
+import { logger, getLogFilePath } from './logger'
 
 /**
  * 主进程入口：窗口管理 + 模块装配（方案 3.3 进程模型）。
@@ -60,11 +61,11 @@ const isDev = !app.isPackaged
  * 只做日志 + 不崩溃，业务层仍需各自 try/catch；这是最后的防御线。
  */
 process.on('unhandledRejection', (reason) => {
-  console.error('[main] 未处理的 Promise rejection:', reason)
+  logger.error('main', '未处理的 Promise rejection:', reason)
 })
 
 process.on('uncaughtException', (error) => {
-  console.error('[main] 未捕获的异常:', error)
+  logger.error('main', '未捕获的异常:', error)
 })
 
 /** 当前主窗口（惰性获取：macOS activate 重建窗口后仍能取到最新实例） */
@@ -188,6 +189,7 @@ function registerWindowControlIpc(): void {
 }
 
 app.whenReady().then(() => {
+  logger.info('main', `静界专注主进程已启动，系统日志写入: ${getLogFilePath()}`)
   // .env 加载必须在任何模块读取配置之前（根因 B 修复）：
   // 把应用根目录 .env 中的 POMODORO_AI_API_KEY 注入 process.env，
   // 供 settings 默认值回退使用（见 storage/settings.ts getSettings）。

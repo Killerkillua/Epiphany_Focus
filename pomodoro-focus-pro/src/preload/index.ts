@@ -313,7 +313,13 @@ const api: RendererApi = {
       ipcRenderer.invoke(IPC_CHANNELS.settings.set, entries) as Promise<AppSettings>,
     /** 选择备份目录（M5；取消返回 null） */
     pickBackupDir: (): Promise<string | null> =>
-      ipcRenderer.invoke(IPC_CHANNELS.settings.pickBackupDir) as Promise<string | null>
+      ipcRenderer.invoke(IPC_CHANNELS.settings.pickBackupDir) as Promise<string | null>,
+    /** 打开系统日志目录 */
+    openLogDir: (): Promise<string> =>
+      ipcRenderer.invoke(IPC_CHANNELS.settings.openLogDir) as Promise<string>,
+    /** 获取系统日志文件路径 */
+    getLogPath: (): Promise<string> =>
+      ipcRenderer.invoke(IPC_CHANNELS.settings.getLogPath) as Promise<string>
   },
 
   /* ===== 学习统计 ===== */

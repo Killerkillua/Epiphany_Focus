@@ -3,6 +3,7 @@ import type { BrowserWindow } from 'electron'
 import { IPC_CHANNELS, IPC_EVENTS } from '../../shared/ipc'
 import { searchBiliVideo } from './biliSearch'
 import { warmupWbiCache, resetWbiCache } from './wbi'
+import { warmupFingerprint } from './biliFingerprint'
 import { isAllowedBiliUrl } from './guard'
 import { getSettings } from '../storage/settings'
 import { buildBackupFile, readBackupFile, writeBackupFile } from '../storage/backup'
@@ -189,7 +190,8 @@ export function registerNavigationModule(
     }
   })
 
-  // 启动预热 WBI 密钥（4h 缓存；失败静默，首次搜索时重试）
+  // 启动预热设备指纹与 WBI 密钥（4h/24h 缓存；失败静默，首次搜索时重试）
+  warmupFingerprint()
   warmupWbiCache()
 
   /* ===== 搜索 ===== */

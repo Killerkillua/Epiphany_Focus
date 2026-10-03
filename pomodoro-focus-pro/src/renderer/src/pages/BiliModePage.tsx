@@ -105,6 +105,9 @@ function BiliModePage(): JSX.Element {
       try {
         // 分页修复：不再硬编码 page:1，传当前目标页码；消费 resp 返回的分页元数据
         const resp = await window.api.bili.search(kw, { order: targetOrder, page: targetPage })
+        console.info(
+          `[BiliMode] 搜索完成: kw="${kw}" page=${targetPage} 条数=${resp.items.length} numResults=${resp.numResults}`
+        )
         setItems(resp.items)
         setNumResults(resp.numResults)
         setNumPages(Math.max(1, resp.numPages))
@@ -115,6 +118,7 @@ function BiliModePage(): JSX.Element {
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
+        console.error(`[BiliMode] 搜索异常: kw="${kw}"`, err)
         setError(msg)
         setItems([])
       } finally {
@@ -335,7 +339,16 @@ function BiliModePage(): JSX.Element {
           <Spin tip="搜索中…" />
         </div>
       ) : searched && items.length === 0 && !error ? (
-        <Empty description="没有找到相关视频" />
+        <Empty
+          description={
+            <div style={{ color: 'var(--muted)', fontSize: 13, lineHeight: 1.6 }}>
+              <div>没有找到相关视频</div>
+              <div style={{ fontSize: 12, marginTop: 4, opacity: 0.8 }}>
+                建议更换关键词或切换排序；若确信有该视频，可按 F12 打开控制台查看搜索诊断日志。
+              </div>
+            </div>
+          }
+        />
       ) : (
         <div ref={gridRef} className="bili-grid">
           {items.map((item) => (

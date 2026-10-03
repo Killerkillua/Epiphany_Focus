@@ -197,7 +197,11 @@ export const IPC_CHANNELS = {
     get: 'settings:get',
     set: 'settings:set',
     /** 选择备份目录（M5：dialog 目录选择，返回路径；取消返回 null） */
-    pickBackupDir: 'settings:pick-backup-dir'
+    pickBackupDir: 'settings:pick-backup-dir',
+    /** 打开系统日志目录 */
+    openLogDir: 'settings:open-log-dir',
+    /** 获取系统日志文件路径 */
+    getLogPath: 'settings:get-log-path'
   },
   /** 应用级信息 */
   app: {
