@@ -1,5 +1,4 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
-import { spawn } from 'child_process'
 import { writeFileSync, unlinkSync, existsSync } from 'fs'
 import { randomBytes, createHmac } from 'crypto'
 import { join } from 'path'
@@ -20,6 +19,8 @@ import * as emergency from './emergencyExit'
 import { registerShortcutGuard, unregisterShortcutGuard } from './shortcutGuard'
 import { WindowGuard } from './windowGuard'
 import { startTaskmgrKill, stopTaskmgrKill } from './processGuard'
+import { planGuardianSpawn, spawnGuardianProcess } from './guardianLaunch'
+import { createSessionCapWatch } from './sessionCap'
 import { applyLevelWindow, releaseLevelWindow, lockWorkstation } from './lockScreen'
 import { ValidationError, str, num, bool, arr, oneOf } from '../validate'
 import { showAppNotification } from '../notify'
@@ -145,7 +146,9 @@ export function registerEnforcementModule(
 
   const windowGuard = new WindowGuard()
   let active: ActiveSession | null = null
-  let guardian: ReturnType<typeof spawn> | null = null
+  let guardian: ReturnType<typeof spawnGuardianProcess> | null = null
+  /** 墙钟会话上限：到点解除锁定，不依赖倒计时到点或重启恢复 */
+  const sessionCap = createSessionCapWatch(() => releaseExpiredSession())
   let lastPomos = 0
   let currentPolicy: DistractionPolicy = { ...DEFAULT_POLICY }
   /** 视频学习悬浮面板窗口：失焦拉回豁免对象（面板交互时视频窗口不抢焦点） */
@@ -167,6 +170,7 @@ export function registerEnforcementModule(
     target?: BrowserWindow,
     link?: { taskId: string | null; taskTitle: string | null; timerMode: TimerMode }
   ): void {
+    const cappedPlanned = emergency.capToSessionMax(plannedMs)
     const level = getSettings().lockLevel
     // L1/L2 前置：必须已设置恢复码（安全兜底，方案 2.10）
     emergency.assertExitSafety(level)
@@ -186,7 +190,7 @@ export function registerEnforcementModule(
         mode,
         level,
         startedAt: Date.now(),
-        durationPlanned: plannedMs,
+        durationPlanned: cappedPlanned,
         taskId: link?.taskId ?? null
       }) ?? 0
 
@@ -242,31 +246,48 @@ export function registerEnforcementModule(
         level,
         mode,
         startedAt: active.startedAt,
-        plannedMs,
+        plannedMs: cappedPlanned,
         sessionId,
         taskId: active.taskId,
         taskTitle: active.taskTitle,
         timerMode: active.timerMode
       }
     })
+    sessionCap.arm(active.startedAt)
   }
 
   function endEnforcement(
     reason: 'manual' | 'completed' | 'emergency' | 'expired',
     target?: BrowserWindow
   ): void {
+    sessionCap.clear()
     const win = target ?? getWindow()
     // 在 active 置空前保存 level（用于后续 L0 置顶还原等判定）
     const level = active ? active.level : getSettings().lockLevel
     if (active) {
       const after = timer.getSnapshot()
-      const status = after.completedPomodoros > lastPomos ? 'done' : 'abandoned'
+      // 正序学习不会自己到点；上限到达时按已学习时长记完成一段
+      const expiredCountup =
+        reason === 'expired' && after.mode === 'countup' && after.elapsedMs > 5000
+      const pomosCompleted = expiredCountup
+        ? Math.max(1, after.completedPomodoros - lastPomos)
+        : Math.max(0, after.completedPomodoros - lastPomos)
+      const status =
+        reason === 'emergency'
+          ? 'emergency_exit'
+          : expiredCountup || after.completedPomodoros > lastPomos
+            ? 'done'
+            : 'abandoned'
       recordSessionEnd(active.sessionId, {
         durationActual: after.elapsedMs,
-        pomosCompleted: Math.max(0, after.completedPomodoros - lastPomos),
+        pomosCompleted,
         interruptions: 0,
-        status: reason === 'emergency' ? 'emergency_exit' : status
+        status
       })
+      // 倒计时自然到点已记过统计；这里只补上限打断、遮罩仍在的情况
+      if (reason === 'expired' && after.status !== 'finished') {
+        recordStudyStats(todayLocal(), active.mode, after.elapsedMs, expiredCountup ? 1 : 0)
+      }
       active = null
     }
     const locked = enforcedWindow ?? win
@@ -298,9 +319,28 @@ export function registerEnforcementModule(
       escSpamHandler = null
     }
     setSettings({ enforced: null })
+    if (reason === 'expired') {
+      const status = timer.getSnapshot().status
+      if (status === 'running' || status === 'paused' || status === 'finished') {
+        timer.stop()
+      }
+      showAppNotification('会话已达时长上限', '已自动解除锁定。')
+    }
     if (reason === 'emergency' && LEVEL_CAPS[getSettings().lockLevel].guardian) {
       emergency.startL2CoolDown()
     }
+  }
+
+  /** 应用保持打开时，墙钟超过 sessionMaxHours 则解除锁定 */
+  function releaseExpiredSession(): void {
+    if (!active || !emergency.isSessionExpired(active.startedAt)) return
+    try {
+      timer.finishIfElapsed()
+    } catch (err) {
+      console.warn('[enforcement] 到点结算失败:', err instanceof Error ? err.message : err)
+    }
+    if (!active) return
+    endEnforcement('expired')
   }
 
   /** 到点：记录统计 + 按"到点动作"执行（方案 4.2） */
@@ -343,29 +383,22 @@ export function registerEnforcementModule(
       // 打包态：应用可执行文件直接拉起；开发态：electron + 应用目录。
       const relaunchExe = process.execPath
       const relaunchArgs = app.isPackaged ? [] : [app.getAppPath()]
-      // 独立 Node 进程（模拟系统服务行为；真实 Windows Service 注册见 guardian.ts --install-service）
-      guardian = spawn(
-        process.env.ELECTRON_RUN_AS_NODE ? process.execPath : 'node',
-        [
-          script,
-          '--watch',
-          pidFile,
-          '--kill-taskmgr',
-          '--interval',
-          '2000',
-          '--relaunch-exe',
-          relaunchExe,
-          '--relaunch-args',
-          JSON.stringify(relaunchArgs)
-        ],
-        {
-          stdio: 'ignore',
-          detached: true,
-          windowsHide: true,
-          env: { ...process.env, POMODORO_GUARDIAN_SECRET: secret }
-        }
-      )
-      guardian.unref()
+      // 用应用自身可执行文件当 Node 跑守护脚本（打包后 PATH 里通常没有 node）
+      const plan = planGuardianSpawn({
+        execPath: process.execPath,
+        script,
+        pidFile,
+        relaunchExe,
+        relaunchArgs,
+        secret,
+        env: process.env
+      })
+      const child = spawnGuardianProcess(plan)
+      guardian = child
+      child.on('error', (err) => {
+        console.warn('[enforcement] 守护进程拉起失败:', err instanceof Error ? err.message : err)
+        if (guardian === child) guardian = null
+      })
     } catch (err) {
       console.warn('[enforcement] 守护进程拉起失败:', err instanceof Error ? err.message : err)
     }
@@ -397,28 +430,36 @@ export function registerEnforcementModule(
 
     const elapsedMs = Date.now() - enforced.startedAt
     const remainingMs = enforced.plannedMs - elapsedMs
+    const expiredByCap = emergency.isSessionExpired(enforced.startedAt)
 
-    if (remainingMs <= 0) {
-      // 离线期间已到期：倒计时专注才结算任务番茄（幂等，重复启动不会再加）
+    if (remainingMs <= 0 || expiredByCap) {
+      // 计划时长已过：按完成结算。墙钟已过会话上限但计划还没走完（暂停或旧的未截断时长）：只解除锁定
+      const unfinishedCap = expiredByCap && remainingMs > 0
+      const durationActual = unfinishedCap
+        ? Math.min(elapsedMs, emergency.sessionMaxMs())
+        : enforced.plannedMs
       if (
+        !unfinishedCap &&
         enforced.mode === 'focus' &&
         (enforced.timerMode ?? 'countdown') === 'countdown' &&
         enforced.sessionId
       ) {
         creditFocusPomodoro(enforced.sessionId, enforced.plannedMs)
       }
-      // 离线期间已到期：记为完成并解除
-      recordStudyStats(todayLocal(), enforced.mode, enforced.plannedMs, 1)
+      recordStudyStats(todayLocal(), enforced.mode, durationActual, unfinishedCap ? 0 : 1)
       if (enforced.sessionId) {
         recordSessionEnd(enforced.sessionId, {
-          durationActual: enforced.plannedMs,
-          pomosCompleted: 1,
+          durationActual,
+          pomosCompleted: unfinishedCap ? 0 : 1,
           interruptions: 0,
-          status: 'done'
+          status: unfinishedCap ? 'abandoned' : 'done'
         })
       }
       setSettings({ enforced: null })
-      showAppNotification('强制会话已到期', '应用离线期间专注计时已自动完成。')
+      showAppNotification(
+        unfinishedCap ? '会话已达时长上限' : '强制会话已到期',
+        unfinishedCap ? '已自动解除锁定。' : '应用离线期间专注计时已自动完成。'
+      )
       return
     }
 
@@ -468,6 +509,7 @@ export function registerEnforcementModule(
       externalInterruptions: ctx?.externalInterruptions ?? 0
     }
     lastPomos = timer.getSnapshot().completedPomodoros
+    sessionCap.arm(enforced.startedAt)
     showAppNotification(
       '已恢复强制会话',
       `剩余 ${Math.ceil(remainingMs / 60_000)} 分钟（级别 ${enforced.level}）。`
@@ -482,10 +524,11 @@ export function registerEnforcementModule(
     const opts = options ?? ({} as TimerOptions)
     const mode = oneOf(opts.mode, 'timer.mode', ['countdown', 'countup'] as const)
     if (!mode) throw new ValidationError('timer.mode 必须是 countdown/countup')
-    const durationMs = num(opts.durationMs, 'timer.durationMs')
-    if (durationMs < 0 || durationMs > 24 * 60 * 60 * 1000) {
+    const requestedMs = num(opts.durationMs, 'timer.durationMs')
+    if (requestedMs < 0 || requestedMs > 24 * 60 * 60 * 1000) {
       throw new ValidationError('timer.durationMs 超出允许范围')
     }
+    const durationMs = emergency.capToSessionMax(requestedMs)
     let taskId: string | null = null
     let taskTitle: string | null = null
     if (opts.taskId != null && opts.taskId !== '') {
@@ -655,7 +698,7 @@ export function registerEnforcementModule(
     videoWin: BrowserWindow,
     opts: { plannedMs: number; topic: string }
   ): void {
-    const cap = Math.min(opts.plannedMs || 0, getSettings().sessionMaxHours * 3600_000)
+    const cap = emergency.capToSessionMax(opts.plannedMs || 0)
     beginEnforcement(mode, cap, videoWin)
     timer.start({ mode: 'countup', durationMs: cap })
   }
@@ -693,7 +736,8 @@ export function registerEnforcementModule(
     win.setSkipTaskbar(false)
     win.focus()
     const minutes = getSettings().pomodoro.focusMin
-    const durationMs = Math.min(24 * 60 * 60 * 1000, Math.max(60_000, Math.round(minutes) * 60_000))
+    const requestedMs = Math.min(24 * 60 * 60 * 1000, Math.max(60_000, Math.round(minutes) * 60_000))
+    const durationMs = emergency.capToSessionMax(requestedMs)
     beginEnforcement('focus', durationMs, undefined, {
       taskId: null,
       taskTitle: null,

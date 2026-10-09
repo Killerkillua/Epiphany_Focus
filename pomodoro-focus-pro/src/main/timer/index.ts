@@ -113,6 +113,17 @@ export class TimerService {
     return this.getSnapshot()
   }
 
+  /**
+   * 倒计时已经走完、但 1 秒轮询还没跑到时立即完成。
+   * 会话墙钟上限和到点可能差一次 tick，避免整轮被记成放弃。
+   */
+  finishIfElapsed(): boolean {
+    if (this.status !== 'running' || this.mode !== 'countdown') return false
+    if (this.getSnapshot().remainingMs > 0) return false
+    this.finishCountdown()
+    return true
+  }
+
   /** 逆序计时到点：完成 + 通知 */
   private finishCountdown(): void {
     this.stopLoop()

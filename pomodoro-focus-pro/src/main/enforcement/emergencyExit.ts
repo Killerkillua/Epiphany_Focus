@@ -153,10 +153,36 @@ async function doVerify(code: string, _level: string): Promise<EmergencyExitResu
   return { ok: false, error: `恢复码错误（还可尝试 ${MAX_FAILS - failCount} 次）` }
 }
 
-/** 会话是否超时（默认上限 4h） */
+/** 当前设置的会话时长上限（毫秒） */
+export function sessionMaxMs(): number {
+  const hours = getSettings().sessionMaxHours
+  return (Number.isFinite(hours) ? hours : 0) * 3_600_000
+}
+
+/**
+ * 把计划时长截断到会话上限。
+ * 专注（含托盘默认开场）与视频/网站学习共用，避免只在学习入口生效。
+ * 非正数或非有限值记为 0，由调用方再套自己的下限。
+ */
+export function capToSessionMax(plannedMs: number): number {
+  const maxMs = sessionMaxMs()
+  if (!Number.isFinite(plannedMs) || plannedMs <= 0) return 0
+  return Math.min(plannedMs, maxMs)
+}
+
+/**
+ * 距离墙钟上限的等待毫秒。
+ * isSessionExpired 是严格大于，因此等到上限后再过 1ms；已过期则尽快（1ms）触发。
+ */
+export function msUntilSessionExpiry(startedAt: number, now = Date.now()): number {
+  const deadline = startedAt + sessionMaxMs() + 1
+  if (!Number.isFinite(deadline)) return 1
+  return Math.max(1, deadline - now)
+}
+
+/** 会话是否超时（默认上限 4h，墙钟，含暂停时间） */
 export function isSessionExpired(startedAt: number): boolean {
-  const maxMs = getSettings().sessionMaxHours * 3_600_000
-  return Date.now() - startedAt > maxMs
+  return Date.now() - startedAt > sessionMaxMs()
 }
 
 /** 会话开始时校验前置条件（L1/L2 必须已设置恢复码） */

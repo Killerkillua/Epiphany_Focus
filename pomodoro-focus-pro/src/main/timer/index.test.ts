@@ -137,6 +137,30 @@ describe('倒计时推进 / 暂停 / 恢复', () => {
 })
 
 describe('到点完成（countdown）', () => {
+  it('finishIfElapsed：倒计时已走完但轮询未到时立即完成', () => {
+    const { timer, onComplete } = makeService()
+    timer.start({ mode: 'countdown', durationMs: 5_000 })
+    nowMs += 4_000
+    expect(timer.finishIfElapsed()).toBe(false)
+    expect(onComplete).not.toHaveBeenCalled()
+
+    nowMs += 1_000
+    expect(timer.getSnapshot().status).toBe('running')
+    expect(timer.finishIfElapsed()).toBe(true)
+    expect(timer.getSnapshot().status).toBe('finished')
+    expect(onComplete).toHaveBeenCalledTimes(1)
+    expect(timer.finishIfElapsed()).toBe(false)
+  })
+
+  it('finishIfElapsed：正序计时不按计划时长自动完成', () => {
+    const { timer, onComplete } = makeService()
+    timer.start({ mode: 'countup', durationMs: 5_000 })
+    nowMs += 10_000
+    expect(timer.finishIfElapsed()).toBe(false)
+    expect(onComplete).not.toHaveBeenCalled()
+    timer.stop()
+  })
+
   it('到点：status=finished、elapsed=时长、remaining=0、番茄 +1、onComplete 触发', () => {
     const { timer, onTick, onComplete } = makeService()
     timer.start({ mode: 'countdown', durationMs: 5_000 })

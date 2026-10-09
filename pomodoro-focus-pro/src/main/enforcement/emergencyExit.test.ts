@@ -278,6 +278,31 @@ describe('isSessionExpired（会话上限，默认 4h）', () => {
   })
 })
 
+describe('capToSessionMax / msUntilSessionExpiry', () => {
+  it('计划时长与会话上限取较小值；专注 10h 在 4h 上限下被截断', () => {
+    mockSettings.state.sessionMaxHours = 4
+    expect(exit.capToSessionMax(25 * 60_000)).toBe(25 * 60_000)
+    expect(exit.capToSessionMax(10 * 3_600_000)).toBe(4 * 3_600_000)
+    expect(exit.capToSessionMax(24 * 3_600_000)).toBe(4 * 3_600_000)
+    expect(exit.capToSessionMax(0)).toBe(0)
+    expect(exit.capToSessionMax(Number.NaN)).toBe(0)
+  })
+
+  it('上限改成 1h 后，托盘最长 24h 的请求也被截断', () => {
+    mockSettings.state.sessionMaxHours = 1
+    const trayMax = Math.min(24 * 3_600_000, Math.max(60_000, 600 * 60_000))
+    expect(exit.capToSessionMax(trayMax)).toBe(3_600_000)
+  })
+
+  it('到期等待落到上限之后 1ms；已过期则尽快触发', () => {
+    mockSettings.state.sessionMaxHours = 4
+    const start = now()
+    expect(exit.msUntilSessionExpiry(start, start)).toBe(4 * 3_600_000 + 1)
+    expect(exit.msUntilSessionExpiry(start, start + 4 * 3_600_000)).toBe(1)
+    expect(exit.msUntilSessionExpiry(start - 5 * 3_600_000, start)).toBe(1)
+  })
+})
+
 describe('assertExitSafety（强制会话前置条件）', () => {
   it('L0 无需恢复码即可开始', () => {
     expect(() => exit.assertExitSafety('L0')).not.toThrow()
