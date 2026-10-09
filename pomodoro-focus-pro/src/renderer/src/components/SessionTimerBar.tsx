@@ -17,6 +17,11 @@ const MODE_META: Record<SessionMode, { title: string; icon: string; hint: string
     icon: '📺',
     hint: '倒计时结束将自动关闭视频窗口并休息'
   },
+  study: {
+    title: '视频学习会话',
+    icon: '📺',
+    hint: '倒计时结束将自动关闭学习窗口并休息'
+  },
   english: {
     title: '英语学习会话',
     icon: '📖',
@@ -26,6 +31,7 @@ const MODE_META: Record<SessionMode, { title: string; icon: string; hint: string
 
 const MODE_ACCENT: Record<SessionMode, string> = {
   bili: 'var(--accent)',
+  study: 'var(--accent)',
   english: 'var(--accent2)'
 }
 

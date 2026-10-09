@@ -66,7 +66,6 @@ export const IPC_CHANNELS = {
   },
   /** 记事本 */
   notes: {
-    save: 'notes:save',
     load: 'notes:load'
   },
   /** 白噪音（主进程侧：素材信息；混音引擎在渲染层） */
@@ -148,13 +147,13 @@ export const IPC_EVENTS = {
 } as const
 
 /** 扁平化全部 invoke 通道名（白名单） */
-export const IPC_WHITELIST: readonly string[] = Object.values(IPC_CHANNELS).flatMap(
-  (group) => Object.values(group)
+export const IPC_WHITELIST: readonly string[] = Object.values(IPC_CHANNELS).flatMap((group) =>
+  Object.values(group)
 )
 
 /** 扁平化全部事件通道名（白名单） */
-export const IPC_EVENT_WHITELIST: readonly string[] = Object.values(IPC_EVENTS).flatMap(
-  (group) => Object.values(group)
+export const IPC_EVENT_WHITELIST: readonly string[] = Object.values(IPC_EVENTS).flatMap((group) =>
+  Object.values(group)
 )
 
 /** 校验 invoke 通道名是否在声明白名单内 */

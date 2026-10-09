@@ -5,6 +5,7 @@ import { ENV_KEY_API_KEY } from '../env'
 import { SETTINGS_DEFAULTS, type AppSettings } from '../../shared/settings'
 import { safeRecord } from '../validate'
 import { ENFORCED_SESSION_FROZEN, validateRendererSetting } from './settingsSchema'
+import { applyLaunchAtLogin } from '../launchAtLogin'
 import { GUARDED_KEYS, readGuarded, writeGuarded, type GuardedPayload } from './guardStore'
 import { getLogDir, getLogFilePath } from '../logger'
 
@@ -57,7 +58,12 @@ function encryptApiKey(plain: string): string {
   if (!plain || plain.startsWith(ENC_PREFIX)) return plain
   const ss = getSafeStorage()
   if (!ss) return plain
-  return ENC_PREFIX + ss.encryptString(plain).toString('base64')
+  try {
+    return ENC_PREFIX + ss.encryptString(plain).toString('base64')
+  } catch {
+    // Linux Secret Service 可能在 isEncryptionAvailable 为 true 时仍抛错
+    return plain
+  }
 }
 
 /** 存储形态 → 明文（解密失败返回空串，视为未配置） */
@@ -103,7 +109,7 @@ export function getSettings(): AppSettings {
   // 受保护字段（recoveryCodeHash / enforced / lockLevel / sessionMaxHours / emergencyGuard）
   // 只认带 HMAC 签名的 guard.json，settings.json 中的同名字段被忽略，直接编辑无效。
   const guarded = readGuarded(legacyGuarded)
-  const snapshot: AppSettings = { ...getStore().store }
+  const snapshot: AppSettings = { ...SETTINGS_DEFAULTS, ...getStore().store }
   for (const k of GUARDED_KEYS) {
     if (guarded[k] !== undefined) (snapshot as unknown as Record<string, unknown>)[k] = guarded[k]
     else (snapshot as unknown as Record<string, unknown>)[k] = SETTINGS_DEFAULTS[k]
@@ -264,6 +270,9 @@ export function registerSettingsIpc(): void {
       const clean = sanitizeRendererSettingsWrite(safeRecord(entries))
       await confirmEndpointChange(event, clean)
       setSettings(clean)
+      if (Object.prototype.hasOwnProperty.call(clean, 'launchAtLogin')) {
+        applyLaunchAtLogin(clean.launchAtLogin === true)
+      }
       return getPublicSettings()
     }
   )

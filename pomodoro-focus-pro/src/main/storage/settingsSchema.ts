@@ -1,4 +1,5 @@
 import { isAbsolute } from 'node:path'
+import { normalizeSiteRules } from '../../shared/study'
 import { ValidationError } from '../validate'
 
 /**
@@ -78,6 +79,13 @@ export const RENDERER_WRITABLE: Record<string, Validator> = {
   'pomodoro.longBreakEvery': int(1, 50),
   'bili.strictness': oneOf(['strict', 'standard', 'loose']),
   'bili.autoFullscreen': bool,
+  'learning.sites': (v, key) => {
+    try {
+      return normalizeSiteRules(v)
+    } catch (err) {
+      return fail(key, err instanceof Error ? err.message : '无效')
+    }
+  },
   'ai.baseURL': baseURL,
   'ai.apiKey': apiKey,
   'ai.model': modelName,
@@ -95,7 +103,8 @@ export const RENDERER_WRITABLE: Record<string, Validator> = {
     if (s !== '' && !isAbsolute(s)) return fail(key, '必须是绝对路径')
     return s
   },
-  telemetryEnabled: bool
+  telemetryEnabled: bool,
+  launchAtLogin: bool
 }
 
 /** 强制会话进行中禁止修改的键（防止"改设置 → 绕过强制"） */
@@ -103,7 +112,8 @@ export const ENFORCED_SESSION_FROZEN = new Set([
   'lockLevel',
   'sessionMaxHours',
   'endAction',
-  'bili.strictness'
+  'bili.strictness',
+  'learning.sites'
 ])
 
 /** 校验单个键值；未知键抛错 */

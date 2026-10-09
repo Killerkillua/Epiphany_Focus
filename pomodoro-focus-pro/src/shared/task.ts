@@ -93,3 +93,10 @@ export interface FocusSessionBackup {
   status: string
   pomoCredited: boolean
 }
+
+/** 任务、专注会话和打扰的备份切片 */
+export interface TaskBackupSlice {
+  tasks: Task[]
+  focusSessions: FocusSessionBackup[]
+  interruptionEvents: InterruptionEvent[]
+}

@@ -58,6 +58,14 @@ export const IPC_CHANNELS = {
     /** 读取视频总时长（秒，HTML5 video.duration；用于进度百分比与"回到上次位置"） */
     getVideoDuration: 'bili:get-video-duration'
   },
+  /** 通用学习：本地视频与白名单网站（B 站通道保持兼容） */
+  study: {
+    pickLocal: 'study:pick-local',
+    openLocal: 'study:open-local',
+    openWeb: 'study:open-web',
+    resume: 'study:resume',
+    previewSite: 'study:preview-site'
+  },
   /** AI 网关 */
   ai: {
     /** 视频学习 overlay 兼容：单轮完整回复 */
@@ -72,6 +80,9 @@ export const IPC_CHANNELS = {
     ocr: 'ai:ocr',
     /** LLM 配置（BYOK，只读；写入走 settings:set） */
     getConfig: 'ai:get-config',
+    /** 用已保存的 Key / 端点 / 模型发一次 1 token 请求 */
+    ping: 'ai:ping',
+    abort: 'ai:abort',
     /** 会话提问用量 */
     usage: 'ai:usage',
     /** 生词本 */
@@ -83,9 +94,8 @@ export const IPC_CHANNELS = {
     listGrammar: 'ai:list-grammar',
     deleteGrammar: 'ai:delete-grammar'
   },
-  /** 记事本（增量 upsert + 按视频归档） */
+  /** 记事本（按 id 增量 upsert，不再整表覆盖） */
   notes: {
-    save: 'notes:save',
     load: 'notes:load',
     /** 单条增量保存（P-1：不再整份覆盖） */
     upsert: 'notes:upsert',
@@ -93,6 +103,12 @@ export const IPC_CHANNELS = {
     delete: 'notes:delete',
     /** 按视频归档读取 */
     loadByVideo: 'notes:load-by-video'
+  },
+  /** 标准化导出（CSV / Excel / Markdown / Anki），与应用内 JSON 备份分开 */
+  export: {
+    stats: 'export:stats',
+    notesMarkdown: 'export:notes-markdown',
+    vocab: 'export:vocab'
   },
   /** 按视频学习进度（F-3 / M1 / M2 / M3 / M4 / M5） */
   playRecords: {
@@ -186,6 +202,7 @@ export const IPC_CHANNELS = {
     list: 'tasks:list',
     create: 'tasks:create',
     update: 'tasks:update',
+    delete: 'tasks:delete',
     setStatus: 'tasks:set-status',
     review: 'tasks:review'
   },
@@ -203,7 +220,9 @@ export const IPC_CHANNELS = {
     /** 时段热力图（星期 × 小时） */
     heatmap: 'stats:heatmap',
     /** 首页聚合汇总（今日专注 / 完成番茄 / 连续天数） */
-    homeSummary: 'stats:home-summary'
+    homeSummary: 'stats:home-summary',
+    /** 视频学习复盘聚合（观看分钟 / 课程状态 / 笔记数） */
+    review: 'stats:review'
   },
   /** 全局设置（electron-store，即时生效） */
   settings: {
@@ -219,7 +238,9 @@ export const IPC_CHANNELS = {
   /** 应用级信息 */
   app: {
     getVersion: 'app:get-version',
-    platform: 'app:platform'
+    platform: 'app:platform',
+    /** 是否为安装包运行（开发模式不写开机登录项） */
+    isPackaged: 'app:is-packaged'
   },
   /** 自定义标题栏窗口控制 */
   window: {

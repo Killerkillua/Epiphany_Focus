@@ -5,10 +5,12 @@ import { registerEnforcementModule } from './enforcement'
 import { registerNavigationModule } from './navigation'
 import { closeVideo } from './navigation/biliWindow'
 import { installBiliImageProxy } from './navigation/biliImageProxy'
+import { installLocalMediaProtocol } from './study/localMediaProtocol'
+import { registerStudyModule } from './study'
 import { registerAiIpc } from './ai'
 import { registerAudioModule } from './audio'
 import { loadEnvFile } from './env'
-import { registerSettingsIpc } from './storage/settings'
+import { getSettings, registerSettingsIpc } from './storage/settings'
 import { registerStatsIpc } from './storage/stats'
 import { registerTaskIpc } from './storage/tasks'
 import { registerAuthIpc } from './auth'
@@ -17,6 +19,9 @@ import { getDb } from './storage/db'
 import { registerSessionModule } from './session'
 import { getAppIcon } from './icon'
 import { logger, getLogFilePath } from './logger'
+import { APP_USER_MODEL_ID } from './notify'
+import { applyLaunchAtLogin, wasOpenedAsHidden } from './launchAtLogin'
+import { installAppTray } from './tray'
 
 /**
  * 主进程入口：窗口管理 + 模块装配（方案 3.3 进程模型）。
@@ -50,10 +55,34 @@ protocol.registerSchemesAsPrivileged([
       // H-05：移除 bypassCSP——渲染层 CSP 已用 img-src 显式放行 bili-image:，
       // 无需给该协议"绕过全部 CSP"的后门特权（最小权限原则）。
     }
+  },
+  {
+    scheme: 'tomato-media',
+    privileges: {
+      standard: true,
+      secure: true,
+      stream: true,
+      supportFetchAPI: true,
+      corsEnabled: true
+    }
   }
 ])
 
 const isDev = !app.isPackaged
+
+// Windows 通知要认这个身份，必须和 electron-builder.yml 的 appId 一致，且早于任何 Notification
+app.setAppUserModelId(APP_USER_MODEL_ID)
+
+/** 托盘菜单或系统触发的真正退出；为 false 时关闭主窗口只是藏进托盘 */
+let isQuitting = false
+/** 托盘创建失败时退回「关掉窗口就退出」 */
+let trayEnabled = false
+/** 第二实例来得比主窗口更早时，等窗口创建后再拉到前台 */
+let pendingFocus = false
+/** 开机登录项以隐藏方式拉起：第一扇主窗口先不显示 */
+let suppressInitialShow = false
+/** 强制引擎注册前恒为 false；L1/L2 会话中为 true */
+let isQuitBlocked = (): boolean => false
 
 /**
  * H-03：全局异步异常保护。Electron 主进程存在大量"发射后不管"的 Promise
@@ -81,14 +110,19 @@ function getMainWindow(): BrowserWindow | null {
   return mainWindowRef
 }
 
-/** 已有实例被再次启动时，把主窗口拉到前台 */
-function focusMainWindow(): void {
+/** 已有实例被再次启动、或托盘要求显示时，把主窗口拉到前台。窗口还不存在则返回 false */
+function focusMainWindow(): boolean {
   const win = getMainWindow()
-  if (!win) return
+  if (!win) return false
+  // 用户已经要求看到窗口，开机隐藏不能再把它藏回去
+  suppressInitialShow = false
+  pendingFocus = false
   if (win.isMinimized()) win.restore()
   win.show()
+  if (!isQuitBlocked()) win.setSkipTaskbar(false)
   win.moveTop()
   win.focus()
+  return true
 }
 
 /** 外链协议白名单：仅 http/https，杜绝 file:/smb:/自定义协议处理器被诱导调用 */
@@ -138,12 +172,55 @@ function createMainWindow(): BrowserWindow {
   })
 
   mainWindowRef = mainWindow
+  let renderReloads = 0
+  let stableTimer: ReturnType<typeof setTimeout> | null = null
+  const MAX_RENDER_RELOADS = 3
+
   mainWindow.on('closed', () => {
+    if (stableTimer) clearTimeout(stableTimer)
     if (mainWindowRef === mainWindow) mainWindowRef = null
   })
 
   mainWindow.on('ready-to-show', () => {
+    const hide = suppressInitialShow && !pendingFocus
+    suppressInitialShow = false
+    pendingFocus = false
+    if (hide) {
+      mainWindow.hide()
+      mainWindow.setSkipTaskbar(true)
+      return
+    }
     mainWindow.show()
+    if (!isQuitBlocked()) mainWindow.setSkipTaskbar(false)
+  })
+
+  // 非强制会话：关闭只藏进托盘。强制会话仍由 lockScreen 拦截关闭，这里再挡一层避免藏起来绕过全屏锁
+  mainWindow.on('close', (event) => {
+    if (isQuitting || !trayEnabled) return
+    event.preventDefault()
+    if (isQuitBlocked()) return
+    mainWindow.hide()
+    mainWindow.setSkipTaskbar(true)
+  })
+
+  // React Error Boundary 抓不到渲染进程崩溃。有限次重载，避免 L1/L2 全屏白屏后无法连按 Esc
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    logger.error('main', `渲染进程退出 reason=${details.reason} exit=${details.exitCode}`)
+    if (details.reason === 'clean-exit') return
+    if (mainWindow.isDestroyed()) return
+    if (renderReloads >= MAX_RENDER_RELOADS) {
+      logger.error('main', '渲染进程反复崩溃，已停止自动重载')
+      return
+    }
+    renderReloads += 1
+    logger.info('main', `正在重载界面（${renderReloads}/${MAX_RENDER_RELOADS}）`)
+    mainWindow.webContents.reload()
+  })
+  mainWindow.webContents.on('did-finish-load', () => {
+    if (stableTimer) clearTimeout(stableTimer)
+    stableTimer = setTimeout(() => {
+      renderReloads = 0
+    }, 10_000)
   })
 
   mainWindow.on('maximize', () => {
@@ -209,6 +286,8 @@ function registerWindowControlIpc(): void {
     const win = getMainWindow()
     return win ? win.isMaximized() : false
   })
+
+  ipcMain.handle(IPC_CHANNELS.app.isPackaged, () => app.isPackaged)
 }
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock()
@@ -216,7 +295,7 @@ if (!hasSingleInstanceLock) {
   app.quit()
 } else {
   app.on('second-instance', () => {
-    focusMainWindow()
+    if (!focusMainWindow()) pendingFocus = true
   })
 }
 
@@ -232,11 +311,13 @@ app.whenReady().then(() => {
   // 供 settings 默认值回退使用（见 storage/settings.ts getSettings）。
   loadEnvFile()
 
+  suppressInitialShow = wasOpenedAsHidden()
   createMainWindow()
   registerWindowControlIpc()
 
   // 视频学习封面图代理（bili-image:// 协议 + Referer 注入 + 磁盘缓存），修复 CDN 防盗链 403
   installBiliImageProxy()
+  installLocalMediaProtocol()
 
   // 预打开中央 SQLite（创建规约 6 张表，方案 3.4）
   getDb()
@@ -253,13 +334,19 @@ app.whenReady().then(() => {
 
   // 强制引擎（计时 / 锁定分级 / 紧急退出 / 分心拦截 / 守护进程）。
   // CR-05：closeVideo 由装配层注入，enforcement 不反向 import navigation（消除循环依赖）
-  const enforcement = registerEnforcementModule(getMainWindow, { closeVideo })
+  const enforcement = registerEnforcementModule(getMainWindow, {
+    closeVideo,
+    closeStudyWindow: closeVideo
+  })
+  isQuitBlocked = () => enforcement.isQuitBlocked()
 
   // 学习会话计时（视频学习 / 英语模式，与强制引擎解耦；返回遮罩联动句柄）
   const session = registerSessionModule(getMainWindow)
 
   // 视频学习模式（接入强制引擎 + 四层导航判定 + 学习会话遮罩联动）
   registerNavigationModule(getMainWindow, enforcement, session)
+  // 本地视频与白名单网站。注册独立于 B 站预热，搜索服务异常不影响这两个入口。
+  registerStudyModule(getMainWindow)
 
   // AI 网关（英语模式）
   registerAiIpc()
@@ -267,19 +354,49 @@ app.whenReady().then(() => {
   // 白噪音（全局热键 + 采样素材解析）
   registerAudioModule(getMainWindow)
 
-  // 重启后恢复强制会话（防重启绕过，方案 2.5）
+  try {
+    const tray = installAppTray(enforcement, {
+      showWindow: () => {
+        if (!focusMainWindow()) pendingFocus = true
+      },
+      requestQuit: () => {
+        if (isQuitBlocked()) {
+          focusMainWindow()
+          return
+        }
+        app.quit()
+      }
+    })
+    trayEnabled = true
+    app.on('will-quit', () => tray.destroy())
+  } catch (err) {
+    logger.error('main', '系统托盘创建失败，关闭窗口将退出应用:', err)
+  }
+
+  applyLaunchAtLogin(getSettings().launchAtLogin === true)
+
+  // 重启后恢复强制会话（防重启绕过，方案 2.5）。托盘已就绪，恢复后的 tick 能刷新 Tooltip
   enforcement.restoreAfterRestart()
 
-  // macOS：点击 Dock 图标且无窗口时重新创建
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createMainWindow()
+  app.on('before-quit', (event) => {
+    if (isQuitBlocked()) {
+      event.preventDefault()
+      focusMainWindow()
+      return
     }
+    isQuitting = true
+  })
+
+  // macOS：点击 Dock 图标时显示已隐藏的主窗口；窗口已被销毁才重建
+  app.on('activate', () => {
+    if (!getMainWindow()) createMainWindow()
+    else focusMainWindow()
   })
 })
 
-// Windows / Linux：所有窗口关闭即退出（macOS 保留在 Dock）
+// 托盘常驻时隐藏窗口不算退出。托盘创建失败时，Windows / Linux 仍在最后一个窗口关闭后退出
 app.on('window-all-closed', () => {
+  if (trayEnabled) return
   if (process.platform !== 'darwin') {
     app.quit()
   }

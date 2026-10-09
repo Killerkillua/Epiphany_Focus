@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Notification } from 'electron'
+import { app, BrowserWindow, ipcMain } from 'electron'
 import { spawn } from 'child_process'
 import { writeFileSync, unlinkSync, existsSync } from 'fs'
 import { randomBytes, createHmac } from 'crypto'
@@ -22,6 +22,7 @@ import { WindowGuard } from './windowGuard'
 import { startTaskmgrKill, stopTaskmgrKill } from './processGuard'
 import { applyLevelWindow, releaseLevelWindow, lockWorkstation } from './lockScreen'
 import { ValidationError, str, num, bool, arr, oneOf } from '../validate'
+import { showAppNotification } from '../notify'
 import type { DistractionPolicy, TimerMode, TimerOptions, TimerSnapshot } from '../../shared/types'
 import type { EmergencyExitResult, LockLevel } from '../../shared/settings'
 
@@ -52,15 +53,23 @@ const DEFAULT_POLICY: DistractionPolicy = { enabled: false, blacklist: [], white
  * 依赖方向约定：navigation → enforcement；enforcement 需要导航能力时经此回调获取。
  */
 export interface EnforcementDeps {
-  /** 紧急退出时销毁 学习视频窗口（由主进程入口注入 closeVideo 实现） */
+  /** 紧急退出时销毁学习内容窗口（由主进程入口注入） */
   closeVideo?: () => void
+  /** 与 closeVideo 相同，供通用学习窗口语义使用 */
+  closeStudyWindow?: () => void
+}
+
+function isPlaybackMode(mode: string): boolean {
+  return mode === 'bili' || mode === 'study'
 }
 
 /** 强制引擎句柄（供导航模块接入） */
 export interface EnforcementHandle {
   restoreAfterRestart: () => void
-  /** 打开 学习视频时启动强制会话（正向计时 + 会话上限） */
+  /** 打开学习视频时启动强制会话（正向计时 + 会话上限） */
   enterBiliSession: (videoWin: BrowserWindow, opts: { plannedMs: number; topic: string }) => void
+  /** 打开本地视频或白名单网站时启动强制会话 */
+  enterStudySession: (videoWin: BrowserWindow, opts: { plannedMs: number; topic: string }) => void
   /** 关闭 学习视频时结束强制会话并落库 */
   exitBiliSession: (reason: 'manual' | 'completed' | 'emergency') => void
   /**
@@ -73,19 +82,46 @@ export interface EnforcementHandle {
    * 避免视频窗口把焦点抢回，用户输入不了恢复码）。
    */
   setPullBackPaused: (paused: boolean) => void
+  /** 当前计时快照（托盘 Tooltip / 菜单） */
+  getTimerSnapshot: () => TimerSnapshot
+  /** 按设置里的专注分钟开始一轮倒计时（已有强制会话时拒绝） */
+  startDefaultFocus: () => TimerSnapshot
+  pauseTimer: () => TimerSnapshot
+  resumeTimer: () => TimerSnapshot
+  /** 设置中的专注时长（分钟） */
+  getFocusMinutes: () => number
+  /** L1/L2 强制会话进行中：拒绝托盘退出与 app.quit */
+  isQuitBlocked: () => boolean
+  /** 计时状态变化（每秒 tick 与到点）；返回取消订阅 */
+  onTimerChanged: (listener: (snap: TimerSnapshot) => void) => () => void
 }
 
 export function registerEnforcementModule(
   getWindow: () => BrowserWindow | null,
   deps: EnforcementDeps = {}
 ): EnforcementHandle {
+  const timerListeners = new Set<(snap: TimerSnapshot) => void>()
+
+  function notifyTimer(snap: TimerSnapshot): void {
+    for (const listener of timerListeners) {
+      try {
+        listener(snap)
+      } catch (err) {
+        console.warn('[enforcement] 计时监听失败:', err instanceof Error ? err.message : err)
+      }
+    }
+  }
+
   const timer = new TimerService(
     (snap) => {
-      getWindow()?.webContents.send(IPC_EVENTS.timer.tick, enrich(snap))
+      const next = enrich(snap)
+      getWindow()?.webContents.send(IPC_EVENTS.timer.tick, next)
+      notifyTimer(next)
     },
     (snap) => {
       const next = enrich(snap)
       getWindow()?.webContents.send(IPC_EVENTS.timer.complete, next)
+      notifyTimer(next)
       onTimerComplete(next)
     }
   )
@@ -114,6 +150,8 @@ export function registerEnforcementModule(
   let currentPolicy: DistractionPolicy = { ...DEFAULT_POLICY }
   /** 视频学习悬浮面板窗口：失焦拉回豁免对象（面板交互时视频窗口不抢焦点） */
   let overlayExemptWindow: BrowserWindow | null = null
+  /** 当前全屏锁实际加在哪个窗口上。切到学习窗口时要先卸掉上一扇，避免两扇全屏互抢焦点 */
+  let enforcedWindow: BrowserWindow | null = null
   /** 主进程 5×Esc 兜底检测处理器（主窗口强制会话专用，学习视频窗口由 fullscreenLock.ts 负责） */
   let escSpamHandler: ((_e: Electron.Event, input: Electron.Input) => void) | null = null
 
@@ -135,6 +173,17 @@ export function registerEnforcementModule(
 
     const win = target ?? getWindow()
     if (!win) return
+    if (enforcedWindow && enforcedWindow !== win && !enforcedWindow.isDestroyed()) {
+      // #region agent log
+      fetch('http://127.0.0.1:7545/ingest/e2f82ed8-e164-46c1-bb02-7e41a5591a63',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'359fe5'},body:JSON.stringify({sessionId:'359fe5',runId:'post-fix',hypothesisId:'H2',location:'enforcement/index.ts:beginEnforcement',message:'release previous fullscreen window',data:{previousId:enforcedWindow.id,nextId:win.id,previousFull:enforcedWindow.isFullScreen()},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      if (escSpamHandler) {
+        enforcedWindow.webContents.removeListener('before-input-event', escSpamHandler)
+        escSpamHandler = null
+      }
+      releaseLevelWindow(enforcedWindow)
+    }
+    enforcedWindow = win
     const sessionId =
       recordSessionStart({
         mode,
@@ -148,10 +197,10 @@ export function registerEnforcementModule(
     if (LEVEL_CAPS[level].fullscreenOverlay) {
       // 视频学习模式：视频窗口不设置顶（悬浮面板须浮于视频之上；全屏由 attachFullscreenLock 管理），
       // 其余锁定属性（禁缩放 / 隐藏任务栏 / 拦截关闭）照常施加
-      applyLevelWindow(win, { skipAlwaysOnTop: mode === 'bili' })
+      applyLevelWindow(win, { skipAlwaysOnTop: isPlaybackMode(mode) })
       // 主窗口 L1/L2 强制会话：主进程兜底 5×Esc 检测（3 秒窗口）
       // 渲染层也有 keydown 检测，但全屏时主进程兜底更可靠（与 fullscreenLock.ts 学习视频窗口对齐）
-      if (mode !== 'bili') {
+      if (!isPlaybackMode(mode)) {
         const ESC_COUNT = 5
         const ESC_WINDOW_MS = 3000
         let escTimes: number[] = []
@@ -169,7 +218,7 @@ export function registerEnforcementModule(
         }
         win.webContents.on('before-input-event', escSpamHandler)
       }
-    } else if (LEVEL_CAPS[level].alwaysOnTop && mode !== 'bili') {
+    } else if (LEVEL_CAPS[level].alwaysOnTop && !isPlaybackMode(mode)) {
       // L0 轻量级别：仅置顶，不进入全屏遮罩（bili 模式跳过置顶，与 L1/L2 一致）
       win.setAlwaysOnTop(true)
     }
@@ -223,11 +272,13 @@ export function registerEnforcementModule(
       })
       active = null
     }
-    if (win && !win.isDestroyed()) {
-      releaseLevelWindow(win)
+    const locked = enforcedWindow ?? win
+    enforcedWindow = null
+    if (locked && !locked.isDestroyed()) {
+      releaseLevelWindow(locked)
       // L0 轻量级别：beginEnforcement 中直接 setAlwaysOnTop(true)，此处对称还原
       if (!LEVEL_CAPS[level].fullscreenOverlay && LEVEL_CAPS[level].alwaysOnTop) {
-        win.setAlwaysOnTop(false)
+        locked.setAlwaysOnTop(false)
       }
     }
     // P-2：紧急退出兜底销毁 学习视频窗口——video.destroy() 绕过 applyLevelWindow 的
@@ -235,7 +286,7 @@ export function registerEnforcementModule(
     // 避免紧急退出成功后视频窗口仍保持全屏 + 拦截关闭 + 隐藏任务栏，把用户困在全屏
     if (reason === 'emergency') {
       try {
-        deps.closeVideo?.()
+        ;(deps.closeStudyWindow ?? deps.closeVideo)?.()
       } catch {
         /* 忽略 */
       }
@@ -245,8 +296,8 @@ export function registerEnforcementModule(
     stopTaskmgrKill()
     stopGuardian()
     // 清理主进程 5×Esc 兜底检测（主窗口强制会话）
-    if (escSpamHandler && win && !win.isDestroyed()) {
-      win.webContents.removeListener('before-input-event', escSpamHandler)
+    if (escSpamHandler && locked && !locked.isDestroyed()) {
+      locked.webContents.removeListener('before-input-event', escSpamHandler)
       escSpamHandler = null
     }
     setSettings({ enforced: null })
@@ -268,6 +319,11 @@ export function registerEnforcementModule(
       lockWorkstation()
     }
     // overlay：保持全屏遮罩（完成态 UI）；notify：仅通知（已完成推送）
+    // 窗口藏在托盘时渲染层不可见，专注到点补一条桌面通知
+    if ((active?.mode ?? 'focus') === 'focus') {
+      const minutes = Math.max(1, Math.round(snap.elapsedMs / 60_000))
+      showAppNotification('番茄时间到', `本轮专注 ${minutes} 分钟。`)
+    }
   }
 
   // ================= L2 守护进程 =================
@@ -365,11 +421,7 @@ export function registerEnforcementModule(
         })
       }
       setSettings({ enforced: null })
-      new Notification({
-        title: '🍅 强制会话已到期',
-        body: '应用离线期间专注计时已自动完成。',
-        silent: true
-      }).show()
+      showAppNotification('强制会话已到期', '应用离线期间专注计时已自动完成。')
       return
     }
 
@@ -377,9 +429,9 @@ export function registerEnforcementModule(
     // 与 beginEnforcement 对齐：bili 模式跳过置顶（悬浮面板须浮于视频之上）、
     // 登记失焦拉回豁免，避免重启恢复后的强制配置与运行时不一致
     if (LEVEL_CAPS[enforced.level].fullscreenOverlay) {
-      applyLevelWindow(win, { skipAlwaysOnTop: enforced.mode === 'bili' })
+      applyLevelWindow(win, { skipAlwaysOnTop: isPlaybackMode(enforced.mode) })
       // 重启恢复：主进程兜底 5×Esc 检测（与 beginEnforcement 对齐）
-      if (enforced.mode !== 'bili') {
+      if (!isPlaybackMode(enforced.mode)) {
         const ESC_COUNT = 5
         const ESC_WINDOW_MS = 3000
         let escTimes: number[] = []
@@ -395,10 +447,11 @@ export function registerEnforcementModule(
         }
         win.webContents.on('before-input-event', escSpamHandler)
       }
-    } else if (LEVEL_CAPS[enforced.level].alwaysOnTop && enforced.mode !== 'bili') {
+    } else if (LEVEL_CAPS[enforced.level].alwaysOnTop && !isPlaybackMode(enforced.mode)) {
       win.setAlwaysOnTop(true)
     }
     if (LEVEL_CAPS[enforced.level].globalShortcuts) registerShortcutGuard()
+    enforcedWindow = win
     windowGuard.start(win, enforced.level, currentPolicy, { exemptFromPullBack: overlayExempt })
     if (LEVEL_CAPS[enforced.level].killTaskmgr) startTaskmgrKill()
     if (LEVEL_CAPS[enforced.level].guardian) spawnGuardian()
@@ -418,11 +471,10 @@ export function registerEnforcementModule(
       externalInterruptions: ctx?.externalInterruptions ?? 0
     }
     lastPomos = timer.getSnapshot().completedPomodoros
-    new Notification({
-      title: '🔒 已恢复强制会话',
-      body: `剩余 ${Math.ceil(remainingMs / 60_000)} 分钟（级别 ${enforced.level}）。`,
-      silent: true
-    }).show()
+    showAppNotification(
+      '已恢复强制会话',
+      `剩余 ${Math.ceil(remainingMs / 60_000)} 分钟（级别 ${enforced.level}）。`
+    )
   }
 
   // ================= IPC 注册 =================
@@ -586,9 +638,7 @@ export function registerEnforcementModule(
             : str(password, 'emergency.password', { max: 200, allowEmpty: true })
         const authResult = await verifyCurrentPassword(pwd)
         if (!authResult.ok) {
-          const wait = authResult.retryInSec
-            ? `（约 ${authResult.retryInSec} 秒后可再试）`
-            : ''
+          const wait = authResult.retryInSec ? `（约 ${authResult.retryInSec} 秒后可再试）` : ''
           throw new Error(`${authResult.error}${wait}`)
         }
       }
@@ -603,28 +653,81 @@ export function registerEnforcementModule(
 
   // ================= 视频学习强制会话句柄 =================
 
-  function enterBiliSession(
+  function enterPlaybackSession(
+    mode: 'bili' | 'study',
     videoWin: BrowserWindow,
     opts: { plannedMs: number; topic: string }
   ): void {
     const cap = Math.min(opts.plannedMs || 0, getSettings().sessionMaxHours * 3600_000)
-    beginEnforcement('bili', cap, videoWin)
+    beginEnforcement(mode, cap, videoWin)
     timer.start({ mode: 'countup', durationMs: cap })
+  }
+
+  function enterBiliSession(
+    videoWin: BrowserWindow,
+    opts: { plannedMs: number; topic: string }
+  ): void {
+    enterPlaybackSession('bili', videoWin, opts)
+  }
+
+  function enterStudySession(
+    videoWin: BrowserWindow,
+    opts: { plannedMs: number; topic: string }
+  ): void {
+    enterPlaybackSession('study', videoWin, opts)
   }
 
   function exitBiliSession(reason: 'manual' | 'completed' | 'emergency'): void {
     endEnforcement(reason)
   }
 
+  function startDefaultFocus(): TimerSnapshot {
+    const snap = timer.getSnapshot()
+    if (snap.status === 'running' || snap.status === 'paused') {
+      throw new Error('已有进行中的专注')
+    }
+    if (active && isEnforcedLevel(active.level)) {
+      throw new Error('强制会话中无法开始新的专注')
+    }
+    const win = getWindow()
+    if (!win || win.isDestroyed()) throw new Error('主窗口不可用')
+    if (win.isMinimized()) win.restore()
+    win.show()
+    win.setSkipTaskbar(false)
+    win.focus()
+    const minutes = getSettings().pomodoro.focusMin
+    const durationMs = Math.min(24 * 60 * 60 * 1000, Math.max(60_000, Math.round(minutes) * 60_000))
+    beginEnforcement('focus', durationMs, undefined, {
+      taskId: null,
+      taskTitle: null,
+      timerMode: 'countdown'
+    })
+    if (!active) throw new Error('专注未能开始')
+    return enrich(timer.start({ mode: 'countdown', durationMs }))
+  }
+
   return {
     restoreAfterRestart,
     enterBiliSession,
+    enterStudySession,
     exitBiliSession,
     setOverlayExempt: (win) => {
       overlayExemptWindow = win
     },
     setPullBackPaused: (paused) => {
       windowGuard.setPaused(paused)
+    },
+    getTimerSnapshot: () => enrich(timer.getSnapshot()),
+    startDefaultFocus,
+    pauseTimer: () => enrich(timer.pause()),
+    resumeTimer: () => enrich(timer.resume()),
+    getFocusMinutes: () => getSettings().pomodoro.focusMin,
+    isQuitBlocked: () => active !== null && isEnforcedLevel(active.level),
+    onTimerChanged: (listener) => {
+      timerListeners.add(listener)
+      return () => {
+        timerListeners.delete(listener)
+      }
     }
   }
 }

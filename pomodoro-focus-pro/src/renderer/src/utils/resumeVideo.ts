@@ -14,6 +14,11 @@ export async function resumeVideo(rec: PlayRecord): Promise<void> {
   } catch {
     /* 设置不可用时取默认 */
   }
+  const recordId = rec.bvid
+  if (rec.resourceType === 'local' || rec.resourceType === 'web' || recordId.startsWith('local:') || recordId.startsWith('web:')) {
+    await window.api.study.resume(recordId)
+    return
+  }
   const plannedMs = useSessionStore.getState().snapshot.durationMs
   await window.api.bili.openVideo({
     bvid: rec.bvid,

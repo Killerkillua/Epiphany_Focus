@@ -3,7 +3,14 @@ import { IPC_CHANNELS } from '../../shared/ipc'
 import type { Task, TaskFilter, TaskPriority, TaskReview } from '../../shared/task'
 import { num, oneOf, str } from '../validate'
 import { getDb } from './db'
-import { createTask, getTaskReview, listTasks, setTaskStatus, updateTask } from './taskRepository'
+import {
+  createTask,
+  deleteTask,
+  getTaskReview,
+  listTasks,
+  setTaskStatus,
+  updateTask
+} from './taskRepository'
 
 function requireDb(): void {
   if (!getDb()) throw new Error('本地数据库不可用，任务清单暂不可用')
@@ -66,6 +73,13 @@ export function registerTaskIpc(): void {
       return task
     }
   )
+
+  ipcMain.handle(IPC_CHANNELS.tasks.delete, (_event, id: string): boolean => {
+    requireDb()
+    const taskId = str(id ?? '', 'tasks.id', { max: 80 })
+    if (!deleteTask(taskId)) throw new Error('任务不存在')
+    return true
+  })
 
   ipcMain.handle(IPC_CHANNELS.tasks.setStatus, (_event, id: string, status: string): Task => {
     requireDb()

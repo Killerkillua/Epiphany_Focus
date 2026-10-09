@@ -8,6 +8,7 @@ import AiSettingsCard from './settings/AiSettingsCard'
 import EnforcementCard from './settings/EnforcementCard'
 import PomodoroCard from './settings/PomodoroCard'
 import BiliCard from './settings/BiliCard'
+import LearningSitesCard from './settings/LearningSitesCard'
 import StudySessionCard from './settings/StudySessionCard'
 import NoiseCard from './settings/NoiseCard'
 import DataManagementCard from './settings/DataManagementCard'
@@ -41,13 +42,35 @@ export default function SettingsPage(): JSX.Element {
       {
         id: 'account',
         title: '账号与安全',
-        keywords: ['账号', '安全', '游客', '登录', '注册', '昵称', '密码', '用户名', 'account', 'user'],
+        keywords: [
+          '账号',
+          '安全',
+          '游客',
+          '登录',
+          '注册',
+          '昵称',
+          '密码',
+          '用户名',
+          'account',
+          'user'
+        ],
         component: <AccountCard />
       },
       {
         id: 'ai',
         title: 'AI 设置 (BYOK)',
-        keywords: ['ai', 'byok', 'api', 'key', '端点', '对话模型', 'ocr', '单会话上限', 'qwen', 'model'],
+        keywords: [
+          'ai',
+          'byok',
+          'api',
+          'key',
+          '端点',
+          '对话模型',
+          'ocr',
+          '单会话上限',
+          'qwen',
+          'model'
+        ],
         component: (
           <AiSettingsCard
             form={form}
@@ -61,7 +84,19 @@ export default function SettingsPage(): JSX.Element {
       {
         id: 'enforcement',
         title: '强制控制 (方案 2.5)',
-        keywords: ['强制', '控制', '锁定', 'l0', 'l1', 'l2', '到点动作', '会话上限', '恢复码', 'esc', 'lock'],
+        keywords: [
+          '强制',
+          '控制',
+          '锁定',
+          'l0',
+          'l1',
+          'l2',
+          '到点动作',
+          '会话上限',
+          '恢复码',
+          'esc',
+          'lock'
+        ],
         component: (
           <EnforcementCard form={form} saving={saving} update={update} onCodeSaved={load} />
         )
@@ -75,8 +110,14 @@ export default function SettingsPage(): JSX.Element {
       {
         id: 'bili',
         title: '视频学习模式',
-        keywords: ['视频', '学习', 'bili', 'b站', '相关度', '全屏', 'strictness'],
+        keywords: ['视频', '学习', 'bili', 'b站', '相关度', '全屏', 'strictness', 'mp4'],
         component: <BiliCard form={form} saving={saving} update={update} />
+      },
+      {
+        id: 'learning-sites',
+        title: '学习网站白名单',
+        keywords: ['白名单', '网站', '域名', 'leetcode', 'github', '路径', '学习网站'],
+        component: <LearningSitesCard />
       },
       {
         id: 'study-session',
@@ -93,7 +134,18 @@ export default function SettingsPage(): JSX.Element {
       {
         id: 'data-management',
         title: '数据管理 (M5: 本地备份 / 恢复)',
-        keywords: ['数据', '备份', '恢复', '导出', 'json', '自动备份', '频率', '保留份数', '目录', 'backup'],
+        keywords: [
+          '数据',
+          '备份',
+          '恢复',
+          '导出',
+          'json',
+          '自动备份',
+          '频率',
+          '保留份数',
+          '目录',
+          'backup'
+        ],
         component: (
           <DataManagementCard
             form={form}
@@ -114,13 +166,39 @@ export default function SettingsPage(): JSX.Element {
       {
         id: 'general-about',
         title: '通用与关于',
-        keywords: ['通用', '关于', '语言', '主题', '字体', '版本', '协议', '隐私', '更新', 'general', 'about'],
-        component: <GeneralAboutCard />
+        keywords: [
+          '通用',
+          '关于',
+          '语言',
+          '主题',
+          '字体',
+          '版本',
+          '协议',
+          '隐私',
+          '更新',
+          '开机',
+          '自启',
+          '托盘',
+          'general',
+          'about',
+          'launch'
+        ],
+        component: <GeneralAboutCard form={form} saving={saving} update={update} />
       },
       {
         id: 'danger-zone',
         title: '危险操作',
-        keywords: ['危险', '危险操作', '退出', '退出登录', '切换账号', '删除账号', '注销', 'logout', 'delete'],
+        keywords: [
+          '危险',
+          '危险操作',
+          '退出',
+          '退出登录',
+          '切换账号',
+          '删除账号',
+          '注销',
+          'logout',
+          'delete'
+        ],
         component: <DangerZoneCard />
       }
     ]
@@ -157,7 +235,9 @@ export default function SettingsPage(): JSX.Element {
         />
       </div>
 
-      <Divider style={{ margin: '0 0 20px 0', borderColor: 'var(--rule, rgba(255, 255, 255, 0.08))' }} />
+      <Divider
+        style={{ margin: '0 0 20px 0', borderColor: 'var(--rule, rgba(255, 255, 255, 0.08))' }}
+      />
 
       <div className="settings-layout">
         {filteredModules.length > 0 ? (

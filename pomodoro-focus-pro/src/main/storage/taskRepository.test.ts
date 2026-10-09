@@ -9,17 +9,20 @@ vi.mock('electron', () => ({
   BrowserWindow: { getAllWindows: () => [] }
 }))
 
-import { closeDb, recordSessionEnd, recordSessionStart } from './db'
+import { closeDb, getDb, recordSessionEnd, recordSessionStart } from './db'
 import { buildBackupFile, parseBackupFile } from './backup'
 import {
   addInterruption,
   createTask,
   creditFocusPomodoro,
+  deleteTask,
   exportTaskBackup,
   getTask,
   getTaskReview,
   importTaskBackup,
-  listTasks
+  listTasks,
+  setTaskStatus,
+  updateTask
 } from './taskRepository'
 
 let dir: string
@@ -144,5 +147,50 @@ describe('任务与番茄结算', () => {
     )
     expect(getTask(task!.id)?.actualPomodoros).toBe(1)
     expect(exportTaskBackup().interruptionEvents).toHaveLength(1)
+  })
+
+  it('归档任务仍可修改标题、优先级和预估番茄', () => {
+    const task = createTask({ title: '旧标题', priority: 'low', estimatedPomodoros: 1 })
+    setTaskStatus(task!.id, 'archived')
+    const next = updateTask(task!.id, {
+      title: '新标题',
+      priority: 'high',
+      estimatedPomodoros: 5
+    })
+    expect(next?.status).toBe('archived')
+    expect(next?.title).toBe('新标题')
+    expect(next?.priority).toBe('high')
+    expect(next?.estimatedPomodoros).toBe(5)
+  })
+
+  it('删除任务后会话仍在，关联被清空，再次结算不会加回番茄', () => {
+    const task = createTask({ title: '待删', estimatedPomodoros: 2 })
+    const id = recordSessionStart({
+      mode: 'focus',
+      level: 'L0',
+      startedAt: Date.now(),
+      durationPlanned: 25 * 60_000,
+      taskId: task!.id
+    })
+    addInterruption({
+      sessionId: id!,
+      taskId: task!.id,
+      type: 'internal',
+      note: '闪念',
+      elapsedMs: 1000
+    })
+    expect(creditFocusPomodoro(id!, 25 * 60_000)).toBe(true)
+    expect(deleteTask(task!.id)).toBe(true)
+    expect(getTask(task!.id)).toBeNull()
+    const session = getDb()
+      ?.prepare('SELECT task_id FROM sessions WHERE id = ?')
+      .get(id) as { task_id: string | null }
+    expect(session.task_id).toBeNull()
+    const event = getDb()
+      ?.prepare('SELECT task_id FROM interruption_events WHERE session_id = ?')
+      .get(id) as { task_id: string | null }
+    expect(event.task_id).toBeNull()
+    expect(creditFocusPomodoro(id!, 25 * 60_000)).toBe(false)
+    expect(listTasks({ status: 'all' }).some((t) => t.id === task!.id)).toBe(false)
   })
 })

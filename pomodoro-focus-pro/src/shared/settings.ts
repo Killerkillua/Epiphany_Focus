@@ -3,6 +3,8 @@
  * 轻量配置统一存 electron-store（userData/settings.json）。
  */
 
+import type { LearningSiteRule } from './study'
+
 /** 锁定强度分级（方案 2.5）：L0 置顶提醒 / L1 标准 / L2 强化守护 */
 export type LockLevel = 'L0' | 'L1' | 'L2'
 
@@ -11,6 +13,11 @@ export type EndAction = 'lock' | 'overlay' | 'notify'
 
 /** 视频学习内容相关度档位（方案 2.6） */
 export type BiliStrictness = 'strict' | 'standard' | 'loose'
+
+/** 用户自定义学习网站。B 站规则独立保存在 bili，不放进此列表。 */
+export interface LearningSettings {
+  sites: LearningSiteRule[]
+}
 
 export interface PomodoroSettings {
   /** 专注时长（分钟），默认 25 */
@@ -88,6 +95,8 @@ export interface AppSettings {
   /** 学习会话全屏遮罩（英语 / 视频学习计时开始后对主窗口施加与专注模式一致的遮罩；默认开启） */
   sessionOverlay: boolean
   bili: BiliSettings
+  /** 自定义学习网站白名单（域名 + 可选路径前缀） */
+  learning: LearningSettings
   ai: AiSettings
   /** 白噪音预设 key（audio 模块清单） */
   noisePreset: string
@@ -107,6 +116,11 @@ export interface AppSettings {
    * 不上送任何内容 / URL / 笔记文本，可随时一键关闭。
    */
   telemetryEnabled: boolean
+  /**
+   * 开机自启并隐藏到托盘。仅安装包会写入系统登录项；
+   * 开发模式只保存这个开关，避免把 electron.exe 注册成开机启动。
+   */
+  launchAtLogin: boolean
 }
 
 /** 紧急退出防暴力破解状态 */
@@ -137,6 +151,7 @@ export const SETTINGS_DEFAULTS: AppSettings = {
   sessionMaxHours: 4,
   sessionOverlay: true,
   bili: { strictness: 'standard', autoFullscreen: true },
+  learning: { sites: [] },
   ai: {
     baseURL: 'https://api.siliconflow.cn/v1',
     apiKey: '',
@@ -150,5 +165,6 @@ export const SETTINGS_DEFAULTS: AppSettings = {
   emergencyGuard: { failCount: 0, failLockedUntil: 0, lockoutStrikes: 0, l2CoolDownUntil: 0 },
   studyGoals: { dailyMinutes: 60, weeklyDays: 5 },
   backup: { enabled: true, frequency: 'daily', time: '03:00', keepCount: 7, directory: '' },
+  launchAtLogin: false,
   telemetryEnabled: false
 }

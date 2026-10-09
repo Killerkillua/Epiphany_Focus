@@ -44,12 +44,15 @@ const KEY_PREFIX_PLAIN = 'plain:'
 let cache: GuardedPayload | null = null
 let cachedKey: Buffer | null = null
 let tamperDetected = false
+/** 密钥环暂时不可用：不要当成篡改，也不要重写 guard.key */
+let keyUnavailable = false
 
 /** 测试用：重置内存状态 */
 export function __resetGuardStoreForTests(): void {
   cache = null
   cachedKey = null
   tamperDetected = false
+  keyUnavailable = false
 }
 
 /** 是否发现过篡改（供日志 / UI 提示） */
@@ -86,39 +89,64 @@ function atomicWrite(file: string, data: string): void {
 function createKeyFile(): Buffer {
   const key = randomBytes(32)
   const ss = getSafeStorage()
-  const encoded = ss
-    ? KEY_PREFIX_ENC + ss.encryptString(key.toString('hex')).toString('base64')
-    : KEY_PREFIX_PLAIN + key.toString('hex')
+  let encoded = KEY_PREFIX_PLAIN + key.toString('hex')
+  if (ss) {
+    try {
+      encoded = KEY_PREFIX_ENC + ss.encryptString(key.toString('hex')).toString('base64')
+    } catch {
+      encoded = KEY_PREFIX_PLAIN + key.toString('hex')
+    }
+  }
   atomicWrite(join(baseDir(), KEY_FILE), encoded)
   cachedKey = key
   return key
 }
 
-/** 读取（或首次生成）HMAC 密钥；密钥文件存在但无法解密视为篡改，返回 null */
-function loadKey(): { key: Buffer; created: boolean } | null {
-  if (cachedKey) return { key: cachedKey, created: false }
+type LoadedKey =
+  | { kind: 'ok'; key: Buffer; created: boolean }
+  | { kind: 'unavailable' }
+  | { kind: 'tamper' }
+
+/** 读取（或首次生成）HMAC 密钥。enc: 但密钥环不可用时返回 unavailable，不当成篡改。 */
+function loadKey(): LoadedKey {
+  if (cachedKey) {
+    keyUnavailable = false
+    return { kind: 'ok', key: cachedKey, created: false }
+  }
   const keyPath = join(baseDir(), KEY_FILE)
-  if (!existsSync(keyPath)) return { key: createKeyFile(), created: true }
+  if (!existsSync(keyPath)) {
+    keyUnavailable = false
+    return { kind: 'ok', key: createKeyFile(), created: true }
+  }
   try {
     const raw = readFileSync(keyPath, 'utf8').trim()
     let key: Buffer
     if (raw.startsWith(KEY_PREFIX_ENC)) {
       const ss = getSafeStorage()
-      if (!ss) return null
-      key = Buffer.from(
-        ss.decryptString(Buffer.from(raw.slice(KEY_PREFIX_ENC.length), 'base64')),
-        'hex'
-      )
+      if (!ss) {
+        keyUnavailable = true
+        return { kind: 'unavailable' }
+      }
+      try {
+        key = Buffer.from(
+          ss.decryptString(Buffer.from(raw.slice(KEY_PREFIX_ENC.length), 'base64')),
+          'hex'
+        )
+      } catch {
+        keyUnavailable = true
+        return { kind: 'unavailable' }
+      }
     } else if (raw.startsWith(KEY_PREFIX_PLAIN)) {
       key = Buffer.from(raw.slice(KEY_PREFIX_PLAIN.length), 'hex')
     } else {
-      return null
+      return { kind: 'tamper' }
     }
-    if (key.length !== 32) return null
+    if (key.length !== 32) return { kind: 'tamper' }
     cachedKey = key
-    return { key, created: false }
+    keyUnavailable = false
+    return { kind: 'ok', key, created: false }
   } catch {
-    return null
+    return { kind: 'tamper' }
   }
 }
 
@@ -167,8 +195,13 @@ export function readGuarded(legacy: () => GuardedPayload): GuardedPayload {
   const guardPath = join(baseDir(), GUARD_FILE)
   const loaded = loadKey()
 
-  // 密钥不可用（被替换 / 损坏 / 凭据库解密失败）
-  if (!loaded) return handleTamper('密钥文件不可用')
+  if (loaded.kind === 'unavailable') {
+    console.warn('[guardStore] 系统凭据库暂不可用，保留原密钥文件，本次不写入')
+    return cache ?? { recoveryCodeHash: null, enforced: null }
+  }
+
+  // 密钥文件损坏或格式不对
+  if (loaded.kind === 'tamper') return handleTamper('密钥文件不可用')
 
   // 首次启用：从旧版 settings.json 迁移并签名
   if (loaded.created) {
@@ -215,9 +248,14 @@ function handleTamper(reason: string): GuardedPayload {
 
 /** 合并写入受保护负载（先校验当前文件，再带签名落盘） */
 export function writeGuarded(patch: GuardedPayload, legacy: () => GuardedPayload): GuardedPayload {
+  if (keyUnavailable && !cachedKey) {
+    console.warn('[guardStore] 系统凭据库暂不可用，跳过受保护设置写入')
+    return { ...(cache ?? {}), ...patch }
+  }
   const current = readGuarded(legacy)
   const next = { ...current, ...patch }
-  const key = cachedKey ?? loadKey()?.key ?? null
+  const loaded = loadKey()
+  const key = loaded.kind === 'ok' ? loaded.key : null
   if (key) writeGuard(key, next)
   else cache = next
   return next

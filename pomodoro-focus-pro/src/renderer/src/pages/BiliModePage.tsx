@@ -5,6 +5,7 @@ import {
   Empty,
   Input,
   Pagination,
+  Segmented,
   Select,
   Space,
   Spin,
@@ -24,6 +25,7 @@ import CoverImage from '../components/CoverImage'
 import SessionTimerBar from '../components/SessionTimerBar'
 import LearningAssistantDrawer from '../components/LearningAssistantDrawer'
 import { useSessionStore } from '../store/sessionStore'
+import StudySourcePanels from './StudySourcePanels'
 import { noiseEngine } from '../audio'
 import type { BiliOrder, BiliVideoItem, OverlaySnapshot } from '../../../shared/bili'
 
@@ -85,6 +87,7 @@ function BiliModePage(): JSX.Element {
   const [overlayVisible, setOverlayVisible] = useState(true)
   /** 学习助手抽屉（非视频模式入口，问题 3；打开视频时自动关闭与悬浮面板互斥） */
   const [assistantOpen, setAssistantOpen] = useState(false)
+  const [sourceTab, setSourceTab] = useState<'bili' | 'local' | 'web'>('bili')
 
   const persistAutoFullscreen = (value: boolean): void => {
     setAutoFullscreen(value)
@@ -249,8 +252,7 @@ function BiliModePage(): JSX.Element {
         <div>
           <h1 className="page-title">视频学习模式</h1>
           <p className="page-sub">
-            输入学习主题 → WBI 签名搜索 → 结果网格 → 点击视频自动全屏；全屏时右侧悬浮学习助手（对话
-            / 笔记 / 进度，可拖拽、最小化）。
+            可以搜索 B 站、打开本地 MP4，或访问已加入白名单的学习网站。内容在全屏专注窗口中播放，右侧悬浮学习助手。
           </p>
         </div>
         {/* 问题 3：顶部导航栏右侧"学习助手"入口（非视频模式抽屉；反馈已迁移至设置页） */}
@@ -279,12 +281,25 @@ function BiliModePage(): JSX.Element {
         </div>
       )}
 
-      {/* 学习会话计时（倒计时 + 进度 + 到点自动关视频休息） */}
       <SessionTimerBar mode="bili" />
 
-      {/* 学习会话计时（倒计时 + 进度 + 到点自动关视频休息） */}
-      <SessionTimerBar mode="bili" />
+      <Segmented
+        style={{ marginBottom: 16 }}
+        value={sourceTab}
+        onChange={(value) => setSourceTab(value as 'bili' | 'local' | 'web')}
+        options={[
+          { label: 'B 站', value: 'bili' },
+          { label: '本地视频', value: 'local' },
+          { label: '学习网站', value: 'web' }
+        ]}
+      />
 
+      {sourceTab !== 'bili' && (
+        <StudySourcePanels tab={sourceTab} autoFullscreen={autoFullscreen} topic={keyword.trim() || undefined} />
+      )}
+
+      {sourceTab === 'bili' && (
+      <>
       {/* 搜索区 */}
       <div className="bili-search-bar">
         <Input
@@ -419,6 +434,9 @@ function BiliModePage(): JSX.Element {
             ? '：点击视频将全屏锁定播放（Esc/F11 无效；按 Ctrl+Shift+Q 或悬浮面板「关闭视频」退出）'
             : '：点击视频以普通窗口播放'}
         </div>
+      )}
+
+      </>
       )}
 
       <LearningAssistantDrawer

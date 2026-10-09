@@ -24,6 +24,7 @@ function formatMs(ms: number): string {
 }
 
 function FocusPage(): JSX.Element {
+  const canKillProcesses = window.api.platform === 'win32'
   // H-06：细粒度 selector 订阅，只订阅所需字段；snapshot 每秒变化，其余字段不受其连带重渲染
   const snapshot = useFocusStore((s) => s.snapshot)
   const alwaysOnTop = useFocusStore((s) => s.alwaysOnTop)
@@ -331,31 +332,41 @@ function FocusPage(): JSX.Element {
 
           <Card size="small" title="分心应用拦截（Windows）" className="focus-side-card">
             <Space direction="vertical" size={12} style={{ width: '100%' }}>
-              <Switch
-                checked={distraction.enabled}
-                onChange={(v) => void setDistraction({ enabled: v })}
-                checkedChildren="拦截中"
-                unCheckedChildren="已关闭"
-              />
-              <div className="field-label">黑名单（命中即 taskkill /F）</div>
+              {canKillProcesses ? (
+                <>
+                  <Switch
+                    checked={distraction.enabled}
+                    onChange={(v) => void setDistraction({ enabled: v })}
+                    checkedChildren="拦截中"
+                    unCheckedChildren="已关闭"
+                  />
+                  <div className="field-label">黑名单（命中即 taskkill /F）</div>
               <Select
                 mode="tags"
                 style={{ width: '100%' }}
+                disabled={window.api.platform !== 'win32'}
                 value={distraction.blacklist}
                 placeholder="如 chrome、msedge、wechat"
                 onChange={(v) => void setDistraction({ blacklist: v as string[] })}
               />
-              <div className="field-label">白名单（豁免）</div>
+                  <div className="field-label">白名单（豁免）</div>
               <Select
                 mode="tags"
                 style={{ width: '100%' }}
+                disabled={window.api.platform !== 'win32'}
                 value={distraction.whitelist}
                 placeholder="如 code、devenv、obsidian"
                 onChange={(v) => void setDistraction({ whitelist: v as string[] })}
               />
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                每 2 秒检测一次带窗口的进程；白名单优先于黑名单；系统关键进程与软件自身永不结束。
-              </Typography.Text>
+                  <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                    每 2 秒检测一次带窗口的进程；白名单优先于黑名单；系统关键进程与软件自身永不结束。
+                  </Typography.Text>
+                </>
+              ) : (
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  当前系统不提供进程拦截。全屏、快捷键屏蔽和失焦拉回仍然可用。
+                </Typography.Text>
+              )}
             </Space>
           </Card>
 

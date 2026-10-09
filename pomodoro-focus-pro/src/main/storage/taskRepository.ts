@@ -8,11 +8,14 @@ import type {
   TaskFilter,
   TaskPatch,
   TaskPriority,
+  TaskBackupSlice,
   TaskReview,
   TaskSort,
   TaskStatus
 } from '../../shared/task'
-import { getDb, type SqliteLike } from './db'
+import { deferWrite, getDb } from './db'
+import { addSessionToHeatmap } from './heatmap'
+import { applyTaskBackup, collectTaskBackup } from './backupJob'
 
 const PRIORITIES = new Set<TaskPriority>(['high', 'medium', 'low'])
 const STATUSES = new Set<TaskStatus>(['todo', 'done', 'archived'])
@@ -111,7 +114,7 @@ export function updateTask(id: string, patch: TaskPatch): Task | null {
   const d = getDb()
   if (!d || !id) return null
   const prev = getTask(id)
-  if (!prev || prev.status === 'archived') return prev
+  if (!prev) return null
   const sets: string[] = []
   const params: unknown[] = []
   if (patch.title !== undefined) {
@@ -135,6 +138,30 @@ export function updateTask(id: string, patch: TaskPatch): Task | null {
   return getTask(id)
 }
 
+/**
+ * 删除任务并解除历史关联。会话与打扰记录保留，task_id 置空。
+ */
+export function deleteTask(id: string): boolean {
+  const d = getDb()
+  if (!d || !id) return false
+  if (!getTask(id)) return false
+  d.prepare('BEGIN').run()
+  try {
+    d.prepare('UPDATE sessions SET task_id = NULL WHERE task_id = ?').run(id)
+    d.prepare('UPDATE interruption_events SET task_id = NULL WHERE task_id = ?').run(id)
+    d.prepare('DELETE FROM tasks WHERE id = ?').run(id)
+    d.prepare('COMMIT').run()
+    return true
+  } catch (err) {
+    try {
+      d.prepare('ROLLBACK').run()
+    } catch {
+      // 忽略回滚失败
+    }
+    throw err
+  }
+}
+
 export function setTaskStatus(id: string, status: 'todo' | 'done' | 'archived'): Task | null {
   const d = getDb()
   if (!d || !id) return null
@@ -153,13 +180,21 @@ export function setTaskStatus(id: string, status: 'todo' | 'done' | 'archived'):
  * 有关联任务时同步累加 actual_pomodoros。
  */
 export function creditFocusPomodoro(sessionId: number, durationActual: number): boolean {
+  if (!sessionId) return false
+  if (deferWrite(() => {
+    creditFocusPomodoro(sessionId, durationActual)
+  })) {
+    return false
+  }
   const d = getDb()
-  if (!d || !sessionId) return false
+  if (!d) return false
   d.prepare('BEGIN').run()
   try {
     const row = d
-      .prepare(`SELECT task_id, mode FROM sessions WHERE id = ?`)
-      .get(sessionId) as { task_id: string | null; mode: string } | undefined
+      .prepare(`SELECT task_id, mode, started_at, status FROM sessions WHERE id = ?`)
+      .get(sessionId) as
+      | { task_id: string | null; mode: string; started_at: number; status: string }
+      | undefined
     if (!row || row.mode !== 'focus') {
       d.prepare('COMMIT').run()
       return false
@@ -180,6 +215,9 @@ export function creditFocusPomodoro(sessionId: number, durationActual: number): 
     if ((info.changes ?? 0) < 1) {
       d.prepare('COMMIT').run()
       return false
+    }
+    if (row.status !== 'done') {
+      addSessionToHeatmap(d, Number(row.started_at), Math.max(0, Math.round(durationActual)))
     }
     if (row.task_id) {
       d.prepare(
@@ -360,75 +398,12 @@ export function getTaskReview(): TaskReview {
   }
 }
 
-export function listTasksForBackup(): Task[] {
-  const d = getDb()
-  if (!d) return []
-  const rows = d.prepare('SELECT * FROM tasks ORDER BY created_at ASC').all() as Array<
-    Parameters<typeof rowToTask>[0]
-  >
-  return rows.map(rowToTask)
-}
-
-export function listFocusSessionsForBackup(): FocusSessionBackup[] {
-  const d = getDb()
-  if (!d) return []
-  const rows = d
-    .prepare(
-      `SELECT id, task_id, level, started_at, ended_at, duration_planned, duration_actual,
-              pomos_completed, interruptions, internal_interruptions, external_interruptions,
-              status, pomo_credited
-       FROM sessions WHERE mode = 'focus' ORDER BY started_at ASC`
-    )
-    .all() as Array<Record<string, unknown>>
-  return rows.map((r) => ({
-    id: Number(r.id),
-    taskId: (r.task_id as string) || null,
-    level: String(r.level ?? 'L0'),
-    startedAt: Number(r.started_at),
-    endedAt: r.ended_at == null ? null : Number(r.ended_at),
-    durationPlanned: Number(r.duration_planned ?? 0),
-    durationActual: Number(r.duration_actual ?? 0),
-    pomosCompleted: Number(r.pomos_completed ?? 0),
-    interruptions: Number(r.interruptions ?? 0),
-    internalInterruptions: Number(r.internal_interruptions ?? 0),
-    externalInterruptions: Number(r.external_interruptions ?? 0),
-    status: String(r.status ?? 'done'),
-    pomoCredited: Number(r.pomo_credited ?? 0) === 1
-  }))
-}
-
-export function listInterruptionsForBackup(): InterruptionEvent[] {
-  const d = getDb()
-  if (!d) return []
-  const rows = d
-    .prepare(
-      `SELECT id, session_id, task_id, type, note, elapsed_ms, created_at
-       FROM interruption_events ORDER BY created_at ASC`
-    )
-    .all() as Array<Record<string, unknown>>
-  return rows.map((r) => ({
-    id: String(r.id),
-    sessionId: Number(r.session_id),
-    taskId: (r.task_id as string) || null,
-    type: r.type === 'external' ? 'external' : 'internal',
-    note: String(r.note ?? ''),
-    elapsedMs: Number(r.elapsed_ms ?? 0),
-    createdAt: Number(r.created_at)
-  }))
-}
-
-export interface TaskBackupSlice {
-  tasks: Task[]
-  focusSessions: FocusSessionBackup[]
-  interruptionEvents: InterruptionEvent[]
-}
+export type { TaskBackupSlice }
 
 export function exportTaskBackup(): TaskBackupSlice {
-  return {
-    tasks: listTasksForBackup(),
-    focusSessions: listFocusSessionsForBackup(),
-    interruptionEvents: listInterruptionsForBackup()
-  }
+  const d = getDb()
+  if (!d) return { tasks: [], focusSessions: [], interruptionEvents: [] }
+  return collectTaskBackup(d)
 }
 
 /** 恢复任务、专注会话与打扰。调用方需已清洗字段。独立事务，不嵌套进其他 BEGIN。 */
@@ -437,129 +412,7 @@ export function importTaskBackup(
   mode: 'merge' | 'replace'
 ): { tasks: number; focusSessions: number; interruptions: number } {
   const d = getDb()
-  const result = { tasks: 0, focusSessions: 0, interruptions: 0 }
-  if (!d) return result
-  const tasks = Array.isArray(data.tasks) ? data.tasks : []
-  const sessions = Array.isArray(data.focusSessions) ? data.focusSessions : []
-  const events = Array.isArray(data.interruptionEvents) ? data.interruptionEvents : []
-  d.prepare('BEGIN').run()
-  try {
-    if (mode === 'replace') {
-      d.prepare(`DELETE FROM interruption_events`).run()
-      d.prepare(`DELETE FROM sessions WHERE mode = 'focus'`).run()
-      d.prepare(`DELETE FROM tasks`).run()
-    }
-    writeTasks(d, tasks, mode)
-    result.tasks = tasks.length
-    writeFocusSessions(d, sessions, mode)
-    result.focusSessions = sessions.length
-    writeInterruptions(d, events)
-    result.interruptions = events.length
-    d.prepare('COMMIT').run()
-  } catch (err) {
-    try {
-      d.prepare('ROLLBACK').run()
-    } catch {
-      // 忽略回滚失败
-    }
-    throw err
-  }
-  return result
-}
-
-function writeTasks(d: SqliteLike, tasks: Task[], mode: 'merge' | 'replace'): void {
-  let existing = new Map<string, number>()
-  if (mode === 'merge') {
-    const rows = d.prepare('SELECT id, updated_at FROM tasks').all() as Array<{
-      id: string
-      updated_at: number
-    }>
-    existing = new Map(rows.map((r) => [r.id, Number(r.updated_at)]))
-  }
-  const stmt = d.prepare(
-    `INSERT INTO tasks (id, title, priority, estimated_pomodoros, actual_pomodoros, status, sort_order, created_at, updated_at, completed_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-     ON CONFLICT(id) DO UPDATE SET
-       title = excluded.title,
-       priority = excluded.priority,
-       estimated_pomodoros = excluded.estimated_pomodoros,
-       actual_pomodoros = excluded.actual_pomodoros,
-       status = excluded.status,
-       sort_order = excluded.sort_order,
-       completed_at = excluded.completed_at,
-       updated_at = excluded.updated_at`
-  )
-  for (const t of tasks) {
-    if (mode === 'merge' && existing.has(t.id) && t.updatedAt < (existing.get(t.id) ?? 0)) continue
-    const priority = PRIORITIES.has(t.priority) ? t.priority : 'medium'
-    const status = STATUSES.has(t.status) ? t.status : 'todo'
-    stmt.run(
-      t.id,
-      (t.title || '未命名任务').slice(0, 200),
-      priority,
-      clampEstimate(t.estimatedPomodoros),
-      Math.max(0, Math.round(t.actualPomodoros || 0)),
-      status,
-      Math.round(t.sortOrder || 0),
-      t.createdAt || Date.now(),
-      t.updatedAt || Date.now(),
-      t.completedAt
-    )
-  }
-}
-
-function writeFocusSessions(
-  d: SqliteLike,
-  sessions: FocusSessionBackup[],
-  mode: 'merge' | 'replace'
-): void {
-  const insert = d.prepare(
-    `INSERT OR IGNORE INTO sessions (
-       id, mode, level, started_at, duration_planned, duration_actual, pomos_completed,
-       interruptions, status, ended_at, task_id, internal_interruptions, external_interruptions, pomo_credited
-     ) VALUES (?, 'focus', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  )
-  for (const s of sessions) {
-    if (!s.id) continue
-    if (mode === 'merge') {
-      const prev = d.prepare('SELECT id FROM sessions WHERE id = ?').get(s.id)
-      if (prev) continue
-    }
-    insert.run(
-      s.id,
-      s.level || 'L0',
-      s.startedAt || Date.now(),
-      s.durationPlanned || 0,
-      s.durationActual || 0,
-      s.pomosCompleted || 0,
-      s.interruptions || 0,
-      s.status || 'done',
-      s.endedAt,
-      s.taskId,
-      s.internalInterruptions || 0,
-      s.externalInterruptions || 0,
-      s.pomoCredited ? 1 : 0
-    )
-  }
-}
-
-function writeInterruptions(d: SqliteLike, events: InterruptionEvent[]): void {
-  const stmt = d.prepare(
-    `INSERT OR IGNORE INTO interruption_events (id, session_id, task_id, type, note, elapsed_ms, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
-  )
-  for (const e of events) {
-    if (!e.id || !e.sessionId) continue
-    const session = d.prepare('SELECT id FROM sessions WHERE id = ?').get(e.sessionId)
-    if (!session) continue
-    stmt.run(
-      e.id,
-      e.sessionId,
-      e.taskId,
-      e.type === 'external' ? 'external' : 'internal',
-      (e.note || '').slice(0, 120),
-      Math.max(0, Math.round(e.elapsedMs || 0)),
-      e.createdAt || Date.now()
-    )
-  }
+  const empty = { tasks: 0, focusSessions: 0, interruptions: 0 }
+  if (!d) return empty
+  return applyTaskBackup(d, data, mode)
 }

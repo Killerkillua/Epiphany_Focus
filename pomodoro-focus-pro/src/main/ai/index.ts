@@ -1,4 +1,4 @@
-import { ipcMain } from 'electron'
+import { ipcMain, type WebContents } from 'electron'
 import { randomUUID } from 'crypto'
 import { IPC_CHANNELS, IPC_EVENTS } from '../../shared/ipc'
 import type { AiAskRequest, BiliAiReply } from '../../shared/bili'
@@ -14,6 +14,8 @@ import type {
   OcrResult
 } from '../../shared/ai'
 import { EnglishGateway } from './gateway'
+import { AiAbortedError, toFriendlyAiError } from './errors'
+import OpenAI from 'openai'
 import { OcrGateway } from './ocr'
 import { runRag } from './rag'
 import { AiStore } from './store'
@@ -41,10 +43,21 @@ function parseBiliAskRequest(raw: unknown): AiAskRequest {
     if (typeof r.context !== 'object' || r.context === null) {
       throw new ValidationError('ai.context 必须是对象')
     }
+    const resourceKind = oneOf(
+      r.context.resourceKind,
+      'ai.context.resourceKind',
+      ['bili', 'local', 'web'] as const,
+      true
+    )
+    const rawBvid = optStr(r.context.bvid, 'ai.context.bvid', { max: 120 })
     context = {
       topic: optStr(r.context.topic, 'ai.context.topic', { max: 500 }),
       videoTitle: optStr(r.context.videoTitle, 'ai.context.videoTitle', { max: 500 }),
-      bvid: optStr(r.context.bvid, 'ai.context.bvid', { max: 100 })
+      resourceKind,
+      // 本地路径和网站地址不进入模型上下文
+      bvid: resourceKind === 'local' || resourceKind === 'web' || (rawBvid && /[\\/]/.test(rawBvid))
+        ? undefined
+        : rawBvid
     }
   }
   let history: AiAskRequest['history']
@@ -57,7 +70,8 @@ function parseBiliAskRequest(raw: unknown): AiAskRequest {
       return { role, content: str(it?.content, `ai.history[${i}].content`, { max: 20_000 }) }
     })
   }
-  return { message, requestId, context, history }
+  const continueFrom = optStr(r.continueFrom, 'ai.continueFrom', { max: 40_000 })
+  return { message, requestId, context, history, continueFrom }
 }
 
 /** H-01：英语模式提问校验 */
@@ -82,7 +96,35 @@ function parseEnglishQuestion(raw: unknown): AiQuestion {
       }
     })
   }
-  return { requestId, scenario, message, word, history }
+  const continueFrom = optStr(q.continueFrom, 'ai.question.continueFrom', { max: 40_000 })
+  return { requestId, scenario, message, word, history, continueFrom }
+}
+
+function surfaceAiError(err: unknown): Error {
+  if (err instanceof Error && err.name === 'Error' && !('status' in err)) return err
+  return toFriendlyAiError(err)
+}
+
+const inflight = new Map<string, AbortController>()
+
+function beginRequest(requestId: string, sender: WebContents): AbortSignal {
+  for (const [id, ctrl] of inflight) {
+    if (id !== requestId) ctrl.abort()
+  }
+  inflight.get(requestId)?.abort()
+  const controller = new AbortController()
+  inflight.set(requestId, controller)
+  const onGone = (): void => controller.abort()
+  sender.once('destroyed', onGone)
+  controller.signal.addEventListener(
+    'abort',
+    () => {
+      sender.removeListener('destroyed', onGone)
+      if (inflight.get(requestId) === controller) inflight.delete(requestId)
+    },
+    { once: true }
+  )
+  return controller.signal
 }
 
 export function registerAiIpc(): void {
@@ -138,17 +180,28 @@ export function registerAiIpc(): void {
         }
       }
 
-      const reply = await gateway.chat(
-        { requestId, scenario: 'free', message: r.message },
-        [],
-        (delta) => sendChunk(delta, false),
-        { profile: 'bili', biliRequest: r }
-      )
-      sendChunk('', true, { content: reply.content, sources: reply.sources })
-      return {
-        role: 'assistant',
-        content: reply.content,
-        sources: reply.sources.map((s) => s.title)
+      const signal = beginRequest(requestId, sender)
+      try {
+        const reply = await gateway.chat(
+          { requestId, scenario: 'free', message: r.message },
+          [],
+          (delta) => sendChunk(delta, false),
+          { profile: 'bili', biliRequest: r, signal, continueFrom: r.continueFrom }
+        )
+        sendChunk('', true, { content: reply.content, sources: reply.sources })
+        return {
+          role: 'assistant',
+          content: reply.content,
+          sources: reply.sources.map((s) => s.title)
+        }
+      } catch (err) {
+        if (err instanceof AiAbortedError) {
+          sendChunk('', true, { aborted: true })
+          return { role: 'assistant', content: r.continueFrom ?? '', sources: [] }
+        }
+        const friendly = surfaceAiError(err)
+        sendChunk('', true, { incomplete: true, error: friendly.message })
+        throw friendly
       }
     }
   )
@@ -158,11 +211,10 @@ export function registerAiIpc(): void {
   ipcMain.handle(
     IPC_CHANNELS.ai.englishAsk,
     async (event, question: AiQuestion): Promise<AiReply> => {
-      if (!store.tryUseQuestion()) {
+      const q = parseEnglishQuestion(question)
+      if (!q.continueFrom && !store.tryUseQuestion()) {
         throw new Error(`已达本会话提问上限（${store.getUsage().limit} 次），请重启应用或调整设置`)
       }
-      // requestId 由渲染层生成并随问题传入，保证 ai:chunk 事件能关联到对应消息
-      const q = parseEnglishQuestion(question)
       const requestId = q.requestId
       const sender = event.sender
 
@@ -173,12 +225,53 @@ export function registerAiIpc(): void {
         }
       }
 
-      const sources = await runRag(q)
-      const reply = await gateway.chat(q, sources, (delta) => sendChunk(delta, false))
-      sendChunk('', true, { content: reply.content, sources: reply.sources })
-      return reply
+      const signal = beginRequest(requestId, sender)
+      try {
+        const sources = await runRag(q)
+        const reply = await gateway.chat(q, sources, (delta) => sendChunk(delta, false), {
+          signal,
+          continueFrom: q.continueFrom
+        })
+        sendChunk('', true, { content: reply.content, sources: reply.sources })
+        return reply
+      } catch (err) {
+        if (err instanceof AiAbortedError) {
+          sendChunk('', true, { aborted: true })
+          return { content: q.continueFrom ?? '', sources: [] }
+        }
+        const friendly = surfaceAiError(err)
+        sendChunk('', true, { incomplete: true, error: friendly.message })
+        throw friendly
+      }
     }
   )
+
+  ipcMain.handle(IPC_CHANNELS.ai.abort, (_event, requestId: unknown): void => {
+    const id = str(requestId, 'ai.abort.requestId', { max: 200 })
+    inflight.get(id)?.abort()
+  })
+
+  ipcMain.handle(IPC_CHANNELS.ai.ping, async (): Promise<{ ok: boolean; message: string }> => {
+    const cfg = store.getConfig()
+    if (!cfg.apiKey) return { ok: false, message: '请先填写并保存 API Key' }
+    try {
+      const client = new OpenAI({
+        apiKey: cfg.apiKey,
+        baseURL: cfg.baseURL || undefined,
+        timeout: 15_000,
+        maxRetries: 0
+      })
+      await client.chat.completions.create({
+        model: cfg.model,
+        messages: [{ role: 'user', content: 'ping' }],
+        max_tokens: 1,
+        stream: false
+      })
+      return { ok: true, message: '连接成功' }
+    } catch (err) {
+      return { ok: false, message: toFriendlyAiError(err).message }
+    }
+  })
 
   // ================= 配置（BYOK） =================
 

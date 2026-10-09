@@ -3,6 +3,7 @@ import {
   Button,
   Card,
   Collapse,
+  Dropdown,
   Empty,
   Input,
   List,
@@ -13,7 +14,13 @@ import {
   Typography,
   message
 } from 'antd'
-import { DeleteOutlined, BookOutlined, BulbOutlined, FileImageOutlined } from '@ant-design/icons'
+import {
+  DeleteOutlined,
+  BookOutlined,
+  BulbOutlined,
+  DownloadOutlined,
+  FileImageOutlined
+} from '@ant-design/icons'
 import MarkdownView from '../components/MarkdownView'
 import ScrollArea, { type ScrollAreaHandle } from '../components/ScrollArea'
 import SourcesPanel from '../components/SourcesPanel'
@@ -21,6 +28,7 @@ import SessionTimerBar from '../components/SessionTimerBar'
 import { useEnglishStore, type ChatMessage } from '../store/englishStore'
 import { extractErrorMessage } from '../utils/errorMessage'
 import type { AiScenario } from '../../../shared/ai'
+import type { VocabExportFormat } from '../../../shared/export'
 
 const { TextArea } = Input
 
@@ -58,7 +66,7 @@ function stripMarkdown(text: string): string {
 }
 
 function MessageItem({ msg }: { msg: ChatMessage }): JSX.Element {
-  const { addVocab, addGrammar, config } = useEnglishStore()
+  const { addVocab, addGrammar, config, continue: continueReply } = useEnglishStore()
   const [busy, setBusy] = useState(false)
 
   const isUser = msg.role === 'user'
@@ -109,6 +117,16 @@ function MessageItem({ msg }: { msg: ChatMessage }): JSX.Element {
               <span className="chat-thinking">思考中…</span>
             )}
             {msg.streaming && <span className="chat-cursor" />}
+            {msg.incomplete && !msg.streaming && (
+              <div className="chat-msg-actions">
+                <Button size="small" type="link" onClick={() => void continueReply(msg.id).catch((err) => message.error(extractErrorMessage(err)))}>
+                  继续生成
+                </Button>
+                {msg.error && (
+                  <span className="chat-thinking">{msg.error}</span>
+                )}
+              </div>
+            )}
             <SourcesPanel sources={msg.sources} />
             {!msg.streaming && msg.content && (
               <div className="chat-msg-actions">
@@ -171,6 +189,17 @@ function EnglishModePage(): JSX.Element {
     const el = listRef.current?.viewport
     if (el) el.scrollTop = el.scrollHeight
   }, [messages])
+
+  const exportVocab = async (format: VocabExportFormat): Promise<void> => {
+    try {
+      const res = await window.api.export.vocab({ format })
+      if (res.canceled) return
+      if (res.ok) message.success(format === 'apkg' ? '已导出 Anki 卡包' : '已导出 Anki 文本')
+      else message.error(res.error ?? '导出失败')
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : '导出失败')
+    }
+  }
 
   const handleSend = async (): Promise<void> => {
     const text = input.trim()
@@ -310,9 +339,34 @@ function EnglishModePage(): JSX.Element {
             title="📖 生词本"
             className="english-side-card"
             extra={
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                {vocab.length}
-              </Typography.Text>
+              <Space size={4}>
+                <Tooltip
+                  title={vocab.length === 0 ? '生词本是空的，先加入单词再导出' : '导出到 Anki'}
+                >
+                  <span>
+                    <Dropdown
+                      disabled={vocab.length === 0}
+                      menu={{
+                        items: [
+                          { key: 'apkg', label: 'Anki 卡包 (.apkg)' },
+                          { key: 'txt', label: 'Anki 文本 (.txt)' }
+                        ],
+                        onClick: ({ key }) => void exportVocab(key === 'txt' ? 'txt' : 'apkg')
+                      }}
+                    >
+                      <Button
+                        size="small"
+                        type="text"
+                        icon={<DownloadOutlined />}
+                        disabled={vocab.length === 0}
+                      />
+                    </Dropdown>
+                  </span>
+                </Tooltip>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  {vocab.length}
+                </Typography.Text>
+              </Space>
             }
           >
             <ScrollArea style={{ maxHeight: 216 }}>

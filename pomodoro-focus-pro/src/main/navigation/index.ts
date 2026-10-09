@@ -1,3 +1,4 @@
+import { writeFileSync } from 'node:fs'
 import { app, dialog, ipcMain } from 'electron'
 import type { BrowserWindow } from 'electron'
 import { IPC_CHANNELS, IPC_EVENTS } from '../../shared/ipc'
@@ -6,8 +7,7 @@ import { warmupWbiCache, resetWbiCache } from './wbi'
 import { warmupFingerprint } from './biliFingerprint'
 import { isAllowedBiliUrl } from './guard'
 import { getSettings } from '../storage/settings'
-import { buildBackupFile, readBackupFile, writeBackupFile } from '../storage/backup'
-import { importTaskBackup } from '../storage/taskRepository'
+import { runBackupJob } from '../storage/backupRunner'
 import { assertExitSafety } from '../enforcement/emergencyExit'
 import { recordTelemetry } from '../telemetry'
 import {
@@ -18,6 +18,7 @@ import {
   getOverlayWindow,
   getVideoDuration,
   getVideoPosition,
+  getPlaybackMeta,
   getVideoState,
   markRelevant,
   openVideo,
@@ -39,14 +40,16 @@ import {
   getPlayRecord,
   getProgressStats,
   getStudySessionsByVideo,
-  importBackupData,
+  holdDatabase,
   listBackupMeta,
   listFeedback,
   listPlayRecords,
   loadNotesAll,
   loadNotesByVideo,
   markPlayRecordDone,
-  saveNotesAll,
+  recordBackupMeta,
+  releaseDatabase,
+  resolveDbPath,
   searchPlayRecords,
   setPlayGoal,
   setPlayRecordTags,
@@ -83,6 +86,8 @@ import type {
   StudySession
 } from '../../shared/stats'
 import type { BackupMeta, ImportPreview } from '../../shared/backup'
+import type { ExportFileResult } from '../../shared/export'
+import { renderNotesMarkdown, renderStatsExport, renderVocabExport } from '../storage/export'
 import { join } from 'path'
 import { ValidationError, str, optStr, num, optNum, arr, oneOf, safeRecord } from '../validate'
 
@@ -109,7 +114,11 @@ export function registerNavigationModule(
       createdAt: num(e.createdAt, `${label}.createdAt`),
       content: e.content === undefined ? '' : str(e.content, `${label}.content`, { max: 200_000 })
     }
-    if (e.bvid !== undefined) note.bvid = str(e.bvid, `${label}.bvid`, { max: 100 })
+    if (e.bvid !== undefined) note.bvid = str(e.bvid, `${label}.bvid`, { max: 120 })
+    if (e.resourceKey !== undefined) {
+      const resourceKey = str(e.resourceKey, `${label}.resourceKey`, { max: 120 })
+      if (!/[\\/]/.test(resourceKey)) note.resourceKey = resourceKey
+    }
     if (e.videoTitle !== undefined)
       note.videoTitle = str(e.videoTitle, `${label}.videoTitle`, { max: 1000 })
     if (e.timestampS !== undefined) note.timestampS = num(e.timestampS, `${label}.timestampS`)
@@ -135,10 +144,18 @@ export function registerNavigationModule(
     },
     onOpen: (video, payload) => {
       try {
-        enforcement.enterBiliSession(video, {
-          plannedMs: payload.plannedMs ?? 0,
-          topic: payload.topic ?? ''
-        })
+        const meta = getPlaybackMeta()
+        if (meta.resourceType === 'bili') {
+          enforcement.enterBiliSession(video, {
+            plannedMs: payload.plannedMs ?? 0,
+            topic: payload.topic ?? ''
+          })
+        } else {
+          enforcement.enterStudySession(video, {
+            plannedMs: payload.plannedMs ?? 0,
+            topic: payload.topic ?? ''
+          })
+        }
         // F-3/M2：打开视频 → upsert play_records 并累加观看次数（标题快照用于进度页归档；
         // coverUrl / author 快照用于记录卡片封面与 UP 主展示）
         const prev = getPlayRecord(payload.bvid)
@@ -147,7 +164,10 @@ export function registerNavigationModule(
           title: payload.title,
           viewedCount: (prev?.viewedCount ?? 0) + 1,
           coverUrl: payload.coverUrl,
-          author: payload.author
+          author: payload.author,
+          resourceKey: meta.resourceKey,
+          resourceType: meta.resourceType,
+          sourceUri: meta.sourceUri
         })
         // 悬浮面板必须始终浮于视频之上：登记失焦拉回豁免（面板交互不抢焦点）+ 防御性提升置顶
         // （applyLevelWindow 已跳过视频窗口的 screen-saver 置顶，此处兜底同级 z-order 竞争）
@@ -191,9 +211,13 @@ export function registerNavigationModule(
     }
   })
 
-  // 启动预热设备指纹与 WBI 密钥（4h/24h 缓存；失败静默，首次搜索时重试）
-  warmupFingerprint()
-  warmupWbiCache()
+  // 启动预热设备指纹与 WBI 密钥（4h/24h 缓存；失败不影响本地视频和白名单网站）
+  try {
+    warmupFingerprint()
+    warmupWbiCache()
+  } catch (err) {
+    console.warn('[bili] 预热失败，B 站搜索暂不可用:', err instanceof Error ? err.message : err)
+  }
 
   /* ===== 搜索 ===== */
   ipcMain.handle(
@@ -322,10 +346,6 @@ export function registerNavigationModule(
 
   /* ===== 记事本（增量 upsert + 分视频归档，F-1/P-1） ===== */
   ipcMain.handle(IPC_CHANNELS.notes.load, async (): Promise<NoteEntry[]> => loadNotesAll())
-  ipcMain.handle(IPC_CHANNELS.notes.save, async (_event, entries: NoteEntry[]): Promise<void> => {
-    const list = arr(entries, 'notes.save', { max: 5000, itemString: false }) as NoteEntry[]
-    saveNotesAll(list.map((e) => normalizeNote(e, 'notes.save')))
-  })
   ipcMain.handle(
     IPC_CHANNELS.notes.upsert,
     async (_event, entry: NoteEntry): Promise<NoteEntry> => {
@@ -468,7 +488,6 @@ export function registerNavigationModule(
       recordCount?: number
       error?: string
     }> => {
-      const backup = buildBackupFile()
       const win = getWindow()
       const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '')
       const options = {
@@ -481,8 +500,24 @@ export function registerNavigationModule(
         : await dialog.showSaveDialog(options)
       if (result.canceled || !result.filePath) return { ok: false, canceled: true }
       try {
-        const meta = writeBackupFile(result.filePath, backup, 'manual')
-        return { ok: true, filePath: result.filePath, recordCount: meta.recordCount }
+        const goals = getSettings().studyGoals ?? { dailyMinutes: 0, weeklyDays: 0 }
+        const written = await runBackupJob<{ recordCount: number; fileSize: number }>({
+          op: 'export',
+          dbPath: resolveDbPath(),
+          filePath: result.filePath,
+          goals: {
+            dailyMinutes: Number(goals.dailyMinutes) || 0,
+            weeklyDays: Number(goals.weeklyDays) || 0
+          }
+        })
+        recordBackupMeta({
+          filePath: result.filePath,
+          fileSize: written.fileSize,
+          recordCount: written.recordCount,
+          backupType: 'manual',
+          createdAt: Date.now()
+        })
+        return { ok: true, filePath: result.filePath, recordCount: written.recordCount }
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) }
       }
@@ -510,20 +545,10 @@ export function registerNavigationModule(
       if (result.canceled || !result.filePaths?.[0]) return { ok: false, canceled: true }
       const filePath = result.filePaths[0]
       try {
-        const backup = readBackupFile(filePath)
+        const preview = await runBackupJob<ImportPreview>({ op: 'preview', filePath })
         // 路径令牌：只有经原生对话框选中并预览成功的文件才允许后续导入
         pendingImport = { filePath, expiresAt: Date.now() + IMPORT_TOKEN_TTL_MS }
-        return {
-          ok: true,
-          filePath,
-          preview: {
-            exportedAt: backup.exportedAt,
-            recordCount: backup.data.playRecords.length,
-            noteCount: backup.data.notes.length,
-            sessionCount: backup.data.studySessions.length,
-            taskCount: backup.data.tasks?.length ?? 0
-          }
-        }
+        return { ok: true, filePath, preview }
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) }
       }
@@ -554,18 +579,19 @@ export function registerNavigationModule(
         if (!token || token.filePath !== fp || Date.now() > token.expiresAt) {
           throw new Error('请先通过「选择备份文件」选定要恢复的文件')
         }
-        const backup = readBackupFile(fp)
-        const result = importBackupData(backup.data, m)
-        const taskResult = importTaskBackup(
-          {
-            tasks: backup.data.tasks ?? [],
-            focusSessions: backup.data.focusSessions ?? [],
-            interruptionEvents: backup.data.interruptionEvents ?? []
-          },
-          m
-        )
-        pendingImport = null // 令牌一次性有效
-        return { ok: true, ...result, tasks: taskResult.tasks }
+        const dbPath = holdDatabase()
+        try {
+          const result = await runBackupJob<{
+            records: number
+            notes: number
+            sessions: number
+            tasks: number
+          }>({ op: 'import', dbPath, filePath: fp, mode: m })
+          pendingImport = null
+          return { ok: true, ...result }
+        } finally {
+          releaseDatabase()
+        }
       } catch (err) {
         return {
           ok: false,
@@ -615,6 +641,96 @@ export function registerNavigationModule(
       if (!payload || typeof payload.domain !== 'string' || typeof payload.action !== 'string')
         return
       recordTelemetry(payload.domain, payload.action, payload.data)
+    }
+  )
+
+  /* ===== 标准化导出（CSV / Excel / Markdown / Anki） ===== */
+  const saveExportFile = async (
+    title: string,
+    defaultName: string,
+    filters: { name: string; extensions: string[] }[],
+    data: Buffer
+  ): Promise<ExportFileResult> => {
+    const win = getWindow()
+    const options = {
+      title,
+      defaultPath: join(app.getPath('documents'), defaultName),
+      filters
+    }
+    const picked = win
+      ? await dialog.showSaveDialog(win, options)
+      : await dialog.showSaveDialog(options)
+    if (picked.canceled || !picked.filePath) return { ok: false, canceled: true }
+    writeFileSync(picked.filePath, data)
+    return { ok: true, filePath: picked.filePath }
+  }
+
+  const stamp = (): string => new Date().toISOString().slice(0, 10).replace(/-/g, '')
+
+  ipcMain.handle(
+    IPC_CHANNELS.export.stats,
+    async (_event, payload: unknown): Promise<ExportFileResult> => {
+      try {
+        const format = oneOf(safeRecord(payload).format, 'export.stats.format', [
+          'csv',
+          'xlsx'
+        ] as const)
+        if (!format) return { ok: false, error: '缺少导出格式' }
+        const data = await renderStatsExport(format)
+        const ext = format === 'csv' ? 'zip' : 'xlsx'
+        return await saveExportFile(
+          '导出会话统计与番茄历史',
+          `pomodoro-stats-${stamp()}.${ext}`,
+          [
+            format === 'csv'
+              ? { name: 'CSV 压缩包', extensions: ['zip'] }
+              : { name: 'Excel 工作簿', extensions: ['xlsx'] }
+          ],
+          data
+        )
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
+    }
+  )
+
+  ipcMain.handle(IPC_CHANNELS.export.notesMarkdown, async (): Promise<ExportFileResult> => {
+    try {
+      const data = await renderNotesMarkdown()
+      return await saveExportFile(
+        '导出全部笔记',
+        `pomodoro-notes-${stamp()}.zip`,
+        [{ name: 'Markdown 压缩包', extensions: ['zip'] }],
+        data
+      )
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? err.message : String(err) }
+    }
+  })
+
+  ipcMain.handle(
+    IPC_CHANNELS.export.vocab,
+    async (_event, payload: unknown): Promise<ExportFileResult> => {
+      try {
+        const format = oneOf(safeRecord(payload).format, 'export.vocab.format', [
+          'apkg',
+          'txt'
+        ] as const)
+        if (!format) return { ok: false, error: '缺少导出格式' }
+        const data = await renderVocabExport(format)
+        return await saveExportFile(
+          '导出生词本',
+          `pomodoro-vocab-${stamp()}.${format}`,
+          [
+            format === 'apkg'
+              ? { name: 'Anki 卡包', extensions: ['apkg'] }
+              : { name: 'Anki 文本', extensions: ['txt'] }
+          ],
+          data
+        )
+      } catch (err) {
+        return { ok: false, error: err instanceof Error ? err.message : String(err) }
+      }
     }
   )
 

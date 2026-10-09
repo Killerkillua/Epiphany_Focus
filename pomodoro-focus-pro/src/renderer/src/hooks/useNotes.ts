@@ -68,6 +68,7 @@ export function useNotes({ source, getContext }: UseNotesOptions): {
             createdAt: existing?.createdAt ?? Date.now(),
             content: prev.noteDraft,
             bvid: ctx?.bvid,
+            resourceKey: ctx?.resourceKey,
             videoTitle: ctx?.videoTitle,
             source
           })
@@ -112,6 +113,7 @@ export function useNotes({ source, getContext }: UseNotesOptions): {
         createdAt: existing?.createdAt ?? Date.now(),
         content: savedDraft,
         bvid: ctx?.bvid,
+        resourceKey: ctx?.resourceKey,
         videoTitle: ctx?.videoTitle,
         source
       }
@@ -164,6 +166,7 @@ export function useNotes({ source, getContext }: UseNotesOptions): {
             createdAt: existing?.createdAt ?? Date.now(),
             content: cur.noteDraft,
             bvid: ctx?.bvid,
+            resourceKey: ctx?.resourceKey,
             videoTitle: ctx?.videoTitle,
             source
           })
@@ -214,6 +217,7 @@ export function useNotes({ source, getContext }: UseNotesOptions): {
         createdAt: Date.now(),
         content: msg.content,
         bvid: ctx?.bvid,
+        resourceKey: ctx?.resourceKey,
         videoTitle: ctx?.videoTitle,
         source: 'ai'
       }

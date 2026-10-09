@@ -89,6 +89,9 @@ function scheduleSimpleFullscreenFallback(win: BrowserWindow, state: OverlayStat
 function enterOverlayFullscreen(win: BrowserWindow, state: OverlayState): void {
   if (win.isDestroyed()) return
   const wasFullscreen = win.isFullScreen()
+  // #region agent log
+  fetch('http://127.0.0.1:7545/ingest/e2f82ed8-e164-46c1-bb02-7e41a5591a63',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'359fe5'},body:JSON.stringify({sessionId:'359fe5',runId:'pre-fix',hypothesisId:'H5',location:'lockScreen.ts:enterOverlayFullscreen',message:'enter fullscreen sequence',data:{id:win.id,wasFullscreen,focused:win.isFocused(),visible:win.isVisible(),top:win.isAlwaysOnTop(),skipAlwaysOnTop:state.skipAlwaysOnTop,count:state.count},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
   markTransitioning(win)
   if (!wasFullscreen) {
     win.setResizable(true) // #8166：解除可能存在的缩放钳制后再进全屏
@@ -212,10 +215,13 @@ export function releaseLevelWindow(win: BrowserWindow): void {
   overlayStates.delete(win)
 }
 
-/** 到点动作：锁屏 */
+/** 到点动作：锁屏。仅 Windows 提供 LockWorkStation。 */
 export function lockWorkstation(): void {
-  spawn('rundll32.exe', ['user32.dll,LockWorkStation'], {
+  if (process.platform !== 'win32') return
+  const child = spawn('rundll32.exe', ['user32.dll,LockWorkStation'], {
     stdio: 'ignore',
     windowsHide: true
-  }).unref()
+  })
+  child.on('error', () => undefined)
+  child.unref()
 }

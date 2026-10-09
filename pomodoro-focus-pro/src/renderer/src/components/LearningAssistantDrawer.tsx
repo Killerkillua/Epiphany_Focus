@@ -42,7 +42,7 @@ function LearningAssistantDrawer({
   const getFallbackTopic = useCallback(() => topicRef.current, [])
 
   // H-07：AI 问答与笔记逻辑复用共享 hook（抽屉 source='main'）
-  const { aiLog, aiInput, asking, setAiInput, setWelcome, askAi, logRef } = useAiChat({
+  const { aiLog, aiInput, asking, setAiInput, setWelcome, askAi, continueAi, logRef } = useAiChat({
     requestIdPrefix: 'drawer',
     getContext,
     fallbackTopic: getFallbackTopic
@@ -212,6 +212,7 @@ function LearningAssistantDrawer({
             noVideoContext={!hasBvid}
             onInput={setAiInput}
             onSend={() => void askAi()}
+            onContinue={(id) => void continueAi(id)}
             onSaveToNotes={saveReplyToNotes}
           />
         )}

@@ -178,8 +178,12 @@ export function buildBiliMessages(
   const ctx = request.context
   const contextLines: string[] = []
   if (ctx?.topic) contextLines.push(`- 学习主题：${ctx.topic}`)
-  if (ctx?.videoTitle) contextLines.push(`- 当前视频：${ctx.videoTitle}`)
-  if (ctx?.bvid) contextLines.push(`- 视频编号：${ctx.bvid}`)
+  if (ctx?.resourceKind === 'local') contextLines.push('- 内容类型：本地视频教程')
+  if (ctx?.resourceKind === 'web') contextLines.push('- 内容类型：白名单学习网站')
+  if (ctx?.videoTitle) contextLines.push(`- 当前内容：${ctx.videoTitle}`)
+  if (ctx?.bvid && ctx.resourceKind !== 'local' && ctx.resourceKind !== 'web') {
+    contextLines.push(`- 视频编号：${ctx.bvid}`)
+  }
 
   const system =
     BILI_STUDY_PROMPT +

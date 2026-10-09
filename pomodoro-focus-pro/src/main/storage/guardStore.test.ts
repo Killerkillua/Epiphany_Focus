@@ -86,6 +86,19 @@ describe('guardStore（HMAC 完整性）', () => {
     expect(wasTamperDetected()).toBe(true)
   })
 
+  it('enc: 密钥在凭据库不可用时不当成篡改，也不重写密钥文件', () => {
+    writeGuarded({ recoveryCodeHash: 'real-hash', enforced: { active: true } }, legacy)
+    writeFileSync(join(dir, 'guard.key'), 'enc:not-a-real-ciphertext')
+    __resetGuardStoreForTests()
+    const r = readGuarded(legacy)
+    expect(wasTamperDetected()).toBe(false)
+    expect(r.recoveryCodeHash).toBeNull()
+    expect(readFileSync(join(dir, 'guard.key'), 'utf8')).toBe('enc:not-a-real-ciphertext')
+    writeGuarded({ lockLevel: 'L2' }, legacy)
+    expect(readFileSync(join(dir, 'guard.key'), 'utf8')).toBe('enc:not-a-real-ciphertext')
+    expect(wasTamperDetected()).toBe(false)
+  })
+
   it('重新签名但密钥不对（攻击者自带密钥）无效', () => {
     writeGuarded({ recoveryCodeHash: 'real-hash' }, legacy)
     // 伪造：用任意密钥给篡改后的负载签名

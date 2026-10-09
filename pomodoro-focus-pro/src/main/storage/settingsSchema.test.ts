@@ -10,6 +10,8 @@ describe('settingsSchema 渲染层设置校验', () => {
       'https://'
     )
     expect(validateRendererSetting('ai.baseURL', 'http://localhost:11434/v1')).toContain('http://')
+    expect(validateRendererSetting('launchAtLogin', true)).toBe(true)
+    expect(validateRendererSetting('launchAtLogin', false)).toBe(false)
   })
 
   it('拒绝未知键与原型污染键', () => {
@@ -25,12 +27,30 @@ describe('settingsSchema 渲染层设置校验', () => {
     expect(() => validateRendererSetting('pomodoro.focusMin', 1.5)).toThrow()
     expect(() => validateRendererSetting('backup.time', '25:99')).toThrow()
     expect(() => validateRendererSetting('telemetryEnabled', 1)).toThrow()
+    expect(() => validateRendererSetting('launchAtLogin', 'yes')).toThrow()
   })
 
   it('端点必须 https（回环地址除外）且不含凭据', () => {
     expect(() => validateRendererSetting('ai.baseURL', 'http://evil.example/v1')).toThrow()
     expect(() => validateRendererSetting('ai.baseURL', 'file:///etc/passwd')).toThrow()
     expect(() => validateRendererSetting('ai.baseURL', 'https://u:p@evil.example')).toThrow()
+  })
+
+  it('学习网站白名单只接受规范化域名规则', () => {
+    const sites = validateRendererSetting('learning.sites', [
+      {
+        host: 'github.com',
+        includeSubdomains: true,
+        pathPrefixes: ['/org'],
+        enabled: true,
+        label: 'GitHub'
+      }
+    ]) as Array<{ host: string; pathPrefixes: string[] }>
+    expect(sites[0].host).toBe('github.com')
+    expect(sites[0].pathPrefixes).toEqual(['/org'])
+    expect(() =>
+      validateRendererSetting('learning.sites', [{ host: 'https://user:pass@github.com' }])
+    ).toThrow()
   })
 
   it('备份目录必须是绝对路径', () => {

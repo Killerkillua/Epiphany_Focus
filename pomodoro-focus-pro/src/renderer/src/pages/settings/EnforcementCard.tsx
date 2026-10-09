@@ -23,6 +23,7 @@ export default function EnforcementCard({
   onCodeSaved
 }: EnforcementCardProps): JSX.Element {
   const [codeOpen, setCodeOpen] = useState(false)
+  const canLockScreen = window.api.platform === 'win32'
   const [lockLevel, setLockLevel] = useSetting<LockLevel>(
     form,
     update,
@@ -63,13 +64,18 @@ export default function EnforcementCard({
           value={endAction}
           disabled={saving}
           options={[
-            { value: 'lock', label: '锁屏' },
+            { value: 'lock', label: '锁屏', disabled: !canLockScreen },
             { value: 'overlay', label: '全屏遮罩（保持）' },
             { value: 'notify', label: '仅提示' }
           ]}
           onChange={(v) => setEndAction(v as EndAction)}
         />
       </div>
+      {!canLockScreen && (
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          当前系统不提供锁屏。到点可以选择全屏遮罩或仅提示。
+        </Typography.Text>
+      )}
       <NumberSettingRow
         label="会话上限（小时）"
         dottedKey="sessionMaxHours"

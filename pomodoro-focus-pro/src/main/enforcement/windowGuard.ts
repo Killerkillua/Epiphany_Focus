@@ -1,5 +1,6 @@
-import { BrowserWindow } from 'electron'
 import { spawn } from 'child_process'
+import { BrowserWindow } from 'electron'
+import { isWindows, spawnQuiet } from './spawnQuiet'
 import type { DistractionPolicy } from '../../shared/types'
 import type { LockLevel } from '../../shared/settings'
 import { LEVEL_CAPS } from './level'
@@ -33,6 +34,7 @@ function normalize(name: string): string {
 
 /** 枚举当前有可见窗口的进程名 */
 function listWindowProcessNames(): Promise<string[]> {
+  if (!isWindows()) return Promise.resolve([])
   return new Promise((resolve, reject) => {
     const child = spawn('tasklist', ['/FI', 'WINDOWTITLE ne N/A', '/FO', 'CSV', '/NH'], {
       windowsHide: true
@@ -68,6 +70,8 @@ export interface WindowGuardStartOpts {
 export class WindowGuard {
   private killTimer: NodeJS.Timeout | null = null
   private blurHandler: (() => void) | null = null
+  /** 失焦监听实际挂上的窗口。换目标时必须从这里摘掉，不能只看 this.win */
+  private blurTarget: BrowserWindow | null = null
   private policy: DistractionPolicy = { enabled: false, blacklist: [], whitelist: [] }
   private win: BrowserWindow | null = null
   /** 失焦拉回暂停（P-2：紧急退出弹窗期间由渲染层置 true，避免视频窗口抢焦点导致输入不了恢复码） */
@@ -94,14 +98,21 @@ export class WindowGuard {
 
     const caps = LEVEL_CAPS[level]
 
-    if (caps.killDistractions && this.policy.enabled && !this.killTimer) {
+    if (isWindows() && caps.killDistractions && this.policy.enabled && !this.killTimer) {
       this.killTimer = setInterval(() => {
         void this.killCheck()
       }, 2000)
     }
 
-    if (caps.pullBackForeground && !this.blurHandler) {
+    if (caps.pullBackForeground) {
+      if (this.blurHandler && this.blurTarget !== win) this.unbindBlur()
+      if (!this.blurHandler) {
+      this.blurTarget = win
       this.blurHandler = (): void => {
+        const focusedAtBlur = BrowserWindow.getFocusedWindow()
+        // #region agent log
+        fetch('http://127.0.0.1:7545/ingest/e2f82ed8-e164-46c1-bb02-7e41a5591a63',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'359fe5'},body:JSON.stringify({sessionId:'359fe5',runId:'pre-fix',hypothesisId:'H2',location:'windowGuard.ts:blur',message:'study window blurred',data:{videoId:win.id,videoFull:win.isFullScreen(),focusedId:focusedAtBlur?.id??null,exempt:opts?.exemptFromPullBack?.(focusedAtBlur)??false,paused:this.paused},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
         // 失焦 400ms 后拉回（紧急退出弹窗期间由渲染层暂停，避免抢焦点）
         setTimeout(() => {
           const w = this.win
@@ -111,14 +122,36 @@ export class WindowGuard {
             // 避免 show()+focus() 干扰系统全屏状态正确应用（如任务栏覆盖）
             if (isLevelWindowTransitioning(w)) return
             // 聚焦窗口命中豁免（如悬浮面板）→ 不拉回，避免抢走面板交互
-            if (opts?.exemptFromPullBack?.(BrowserWindow.getFocusedWindow())) return
+            const focused = BrowserWindow.getFocusedWindow()
+            const exempt = opts?.exemptFromPullBack?.(focused) ?? false
+            // #region agent log
+            fetch('http://127.0.0.1:7545/ingest/e2f82ed8-e164-46c1-bb02-7e41a5591a63',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'359fe5'},body:JSON.stringify({sessionId:'359fe5',runId:'pre-fix',hypothesisId:'H2',location:'windowGuard.ts:blur-timeout',message:'pull-back decision',data:{videoId:w.id,videoFull:w.isFullScreen(),focusedId:focused?.id??null,exempt,willPull:!exempt},timestamp:Date.now()})}).catch(()=>{});
+            // #endregion
+            if (exempt) return
             w.show()
             w.focus()
           }
         }, 400)
+        setTimeout(() => {
+          const w = this.win
+          if (!w || w.isDestroyed()) return
+          const focused = BrowserWindow.getFocusedWindow()
+          // #region agent log
+          fetch('http://127.0.0.1:7545/ingest/e2f82ed8-e164-46c1-bb02-7e41a5591a63',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'359fe5'},body:JSON.stringify({sessionId:'359fe5',runId:'pre-fix',hypothesisId:'H2',location:'windowGuard.ts:blur-followup',message:'focus 1.2s after blur',data:{videoId:w.id,videoFull:w.isFullScreen(),videoFocused:w.isFocused(),focusedId:focused?.id??null,outsideApp:focused===null},timestamp:Date.now()})}).catch(()=>{});
+          // #endregion
+        }, 1200)
       }
       win.on('blur', this.blurHandler)
+      }
     }
+  }
+
+  private unbindBlur(): void {
+    if (this.blurHandler && this.blurTarget && !this.blurTarget.isDestroyed()) {
+      this.blurTarget.removeListener('blur', this.blurHandler)
+    }
+    this.blurHandler = null
+    this.blurTarget = null
   }
 
   stop(): void {
@@ -126,10 +159,7 @@ export class WindowGuard {
       clearInterval(this.killTimer)
       this.killTimer = null
     }
-    if (this.blurHandler && this.win && !this.win.isDestroyed()) {
-      this.win.removeListener('blur', this.blurHandler)
-      this.blurHandler = null
-    }
+    this.unbindBlur()
     this.win = null
   }
 
@@ -149,7 +179,7 @@ export class WindowGuard {
   }
 
   private killProcess(name: string): void {
-    if (NEVER_KILL.has(name)) return
-    spawn('taskkill', ['/F', '/IM', `${name}.exe`], { stdio: 'ignore', windowsHide: true }).unref()
+    if (!isWindows() || NEVER_KILL.has(name)) return
+    spawnQuiet('taskkill', ['/F', '/IM', `${name}.exe`])
   }
 }

@@ -51,8 +51,11 @@ export interface DistractionPolicy {
   whitelist: string[]
 }
 
-/** 学习会话模式：视频学习 / 英语学习（与专注模式解耦的轻量计时） */
-export type SessionMode = 'bili' | 'english'
+/**
+ * 学习会话模式。
+ * bili 为历史视频学习模式；study 为本地视频 / 白名单网站。读取旧数据时两者都表示视频学习。
+ */
+export type SessionMode = 'bili' | 'study' | 'english'
 
 /** session:start 参数 */
 export interface SessionStartOptions {

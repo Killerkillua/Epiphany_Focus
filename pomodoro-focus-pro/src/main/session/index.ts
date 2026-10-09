@@ -1,4 +1,4 @@
-import { BrowserWindow, Notification, ipcMain } from 'electron'
+import { BrowserWindow, ipcMain } from 'electron'
 import { IPC_CHANNELS, IPC_EVENTS } from '../../shared/ipc'
 import { TimerService } from '../timer'
 import { recordSessionEnd, recordSessionStart, recordStudyStats, todayLocal } from '../storage/db'
@@ -6,6 +6,8 @@ import { closeVideo, getVideoState } from '../navigation/biliWindow'
 import { applyLevelWindow, releaseLevelWindow } from '../enforcement/lockScreen'
 import { getSettings } from '../storage/settings'
 import { recordTelemetry } from '../telemetry'
+import { showAppNotification } from '../notify'
+import { isVideoStudyMode } from '../../shared/study'
 import type {
   SessionMode,
   SessionStartOptions,
@@ -93,8 +95,8 @@ export function registerSessionModule(getWindow: () => BrowserWindow | null): Se
       sessionId = null
     }
 
-    // 视频学习模式到点：自动关闭视频窗口（到点休息，方案 2.2）
-    if (currentMode === 'bili') {
+    // 视频学习模式到点：自动关闭学习内容窗口（到点休息）
+    if (isVideoStudyMode(currentMode)) {
       try {
         closeVideo()
       } catch {
@@ -102,11 +104,10 @@ export function registerSessionModule(getWindow: () => BrowserWindow | null): Se
       }
     }
 
-    new Notification({
-      title: currentMode === 'bili' ? '📺 视频学习时间到' : '📖 英语学习时间到',
-      body: `本轮学习 ${minutes} 分钟，休息一下吧！`,
-      silent: true
-    }).show()
+    showAppNotification(
+      isVideoStudyMode(currentMode) ? '视频学习时间到' : '英语学习时间到',
+      `本轮学习 ${minutes} 分钟，休息一下吧！`
+    )
 
     // 到点完成：解除主窗口学习会话遮罩
     releaseSessionOverlay()
@@ -117,7 +118,7 @@ export function registerSessionModule(getWindow: () => BrowserWindow | null): Se
       MIN_SESSION_MS,
       Math.min(MAX_SESSION_MS, Number.isFinite(opts?.durationMs) ? opts.durationMs : 60 * 60_000)
     )
-    currentMode = opts?.mode === 'bili' ? 'bili' : 'english'
+    currentMode = opts?.mode === 'study' ? 'study' : opts?.mode === 'bili' ? 'bili' : 'english'
     recordTelemetry('session', 'start', {
       mode: currentMode,
       durationMinutes: Math.round(durationMs / 60_000)

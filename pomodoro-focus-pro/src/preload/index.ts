@@ -40,6 +40,7 @@ import type {
   HeatmapCell,
   HomeSummary,
   ModeStat,
+  StudyReviewTotals,
   PlayRecord,
   PlayRecordTick,
   PlayRecordUpdate,
@@ -48,6 +49,7 @@ import type {
   StudySession
 } from '../shared/stats'
 import type { BackupMeta, ImportPreview } from '../shared/backup'
+import type { ExportFileResult, StatsExportFormat, VocabExportFormat } from '../shared/export'
 import type {
   AuthResult,
   AuthState,
@@ -65,6 +67,7 @@ import type {
   TimerSnapshot
 } from '../shared/types'
 import type { Task, TaskDraft, TaskFilter, TaskPatch, TaskReview, TaskStatus } from '../shared/task'
+import type { LocalMediaPickResult, OpenWebStudyPayload, SiteRulePreview } from '../shared/study'
 
 /**
  * preload：通过 contextBridge 向渲染层暴露受限 API。
@@ -157,6 +160,33 @@ const api: RendererApi = {
       ipcRenderer.invoke(IPC_CHANNELS.bili.getVideoDuration) as Promise<number>
   },
 
+  /** 本地视频与白名单学习网站 */
+  study: {
+    pickLocal: (): Promise<LocalMediaPickResult & { token?: string }> =>
+      ipcRenderer.invoke(IPC_CHANNELS.study.pickLocal) as Promise<
+        LocalMediaPickResult & { token?: string }
+      >,
+    openLocal: (payload: {
+      token: string
+      resourceKey: string
+      title: string
+      autoFullscreen: boolean
+      topic?: string
+      plannedMs?: number
+      seekSeconds?: number
+    }): Promise<void> => ipcRenderer.invoke(IPC_CHANNELS.study.openLocal, payload) as Promise<void>,
+    openWeb: (payload: OpenWebStudyPayload): Promise<void> =>
+      ipcRenderer.invoke(IPC_CHANNELS.study.openWeb, payload) as Promise<void>,
+    resume: (recordId: string): Promise<void> =>
+      ipcRenderer.invoke(IPC_CHANNELS.study.resume, recordId) as Promise<void>,
+    previewSite: (payload: {
+      text: string
+      pathPrefixes?: string[]
+      label?: string
+    }): Promise<SiteRulePreview> =>
+      ipcRenderer.invoke(IPC_CHANNELS.study.previewSite, payload) as Promise<SiteRulePreview>
+  },
+
   /* ===== 学习会话计时（视频学习 / 英语模式） ===== */
   session: {
     start: (options: SessionStartOptions): Promise<SessionState> =>
@@ -173,8 +203,6 @@ const api: RendererApi = {
 
   /* ===== 记事本（增量 upsert + 分视频归档） ===== */
   notes: {
-    save: (entries: NoteEntry[]): Promise<void> =>
-      ipcRenderer.invoke(IPC_CHANNELS.notes.save, entries) as Promise<void>,
     load: (): Promise<NoteEntry[]> =>
       ipcRenderer.invoke(IPC_CHANNELS.notes.load) as Promise<NoteEntry[]>,
     upsert: (entry: NoteEntry): Promise<NoteEntry> =>
@@ -183,6 +211,15 @@ const api: RendererApi = {
       ipcRenderer.invoke(IPC_CHANNELS.notes.delete, id) as Promise<void>,
     loadByVideo: (bvid: string): Promise<NoteEntry[]> =>
       ipcRenderer.invoke(IPC_CHANNELS.notes.loadByVideo, bvid) as Promise<NoteEntry[]>
+  },
+
+  export: {
+    stats: (payload: { format: StatsExportFormat }): Promise<ExportFileResult> =>
+      ipcRenderer.invoke(IPC_CHANNELS.export.stats, payload) as Promise<ExportFileResult>,
+    notesMarkdown: (): Promise<ExportFileResult> =>
+      ipcRenderer.invoke(IPC_CHANNELS.export.notesMarkdown) as Promise<ExportFileResult>,
+    vocab: (payload: { format: VocabExportFormat }): Promise<ExportFileResult> =>
+      ipcRenderer.invoke(IPC_CHANNELS.export.vocab, payload) as Promise<ExportFileResult>
   },
 
   /* ===== 按视频学习进度（F-3 / M1 管理 / M2 快捷访问 / M3 统计） ===== */
@@ -339,6 +376,8 @@ const api: RendererApi = {
       ipcRenderer.invoke(IPC_CHANNELS.tasks.create, draft) as Promise<Task>,
     update: (id: string, patch: TaskPatch): Promise<Task> =>
       ipcRenderer.invoke(IPC_CHANNELS.tasks.update, id, patch) as Promise<Task>,
+    delete: (id: string): Promise<boolean> =>
+      ipcRenderer.invoke(IPC_CHANNELS.tasks.delete, id) as Promise<boolean>,
     setStatus: (id: string, status: TaskStatus): Promise<Task> =>
       ipcRenderer.invoke(IPC_CHANNELS.tasks.setStatus, id, status) as Promise<Task>,
     review: (): Promise<TaskReview> =>
@@ -347,7 +386,10 @@ const api: RendererApi = {
 
   /* ===== 专注打扰 ===== */
   interruptions: {
-    add: (payload: { type: 'internal' | 'external'; note?: string }): Promise<{
+    add: (payload: {
+      type: 'internal' | 'external'
+      note?: string
+    }): Promise<{
       eventId: string
       snapshot: TimerSnapshot
     }> =>
@@ -368,7 +410,9 @@ const api: RendererApi = {
     heatmap: (): Promise<HeatmapCell[]> =>
       ipcRenderer.invoke(IPC_CHANNELS.stats.heatmap) as Promise<HeatmapCell[]>,
     homeSummary: (): Promise<HomeSummary> =>
-      ipcRenderer.invoke(IPC_CHANNELS.stats.homeSummary) as Promise<HomeSummary>
+      ipcRenderer.invoke(IPC_CHANNELS.stats.homeSummary) as Promise<HomeSummary>,
+    review: (): Promise<StudyReviewTotals> =>
+      ipcRenderer.invoke(IPC_CHANNELS.stats.review) as Promise<StudyReviewTotals>
   },
 
   /* ===== 本地账号 ===== */
@@ -386,7 +430,11 @@ const api: RendererApi = {
     logout: (): Promise<AuthResult> =>
       ipcRenderer.invoke(IPC_CHANNELS.auth.logout) as Promise<AuthResult>,
     changePassword: (oldPassword: string, newPassword: string): Promise<AuthResult> =>
-      ipcRenderer.invoke(IPC_CHANNELS.auth.changePassword, oldPassword, newPassword) as Promise<AuthResult>,
+      ipcRenderer.invoke(
+        IPC_CHANNELS.auth.changePassword,
+        oldPassword,
+        newPassword
+      ) as Promise<AuthResult>,
     updateNickname: (nickname: string): Promise<AuthResult<{ user: AuthUser }>> =>
       ipcRenderer.invoke(IPC_CHANNELS.auth.updateNickname, nickname) as Promise<
         AuthResult<{ user: AuthUser }>
@@ -427,6 +475,12 @@ const api: RendererApi = {
     getConfig: (): Promise<AiConfig> =>
       ipcRenderer.invoke(IPC_CHANNELS.ai.getConfig) as Promise<AiConfig>,
 
+    ping: (): Promise<{ ok: boolean; message: string }> =>
+      ipcRenderer.invoke(IPC_CHANNELS.ai.ping) as Promise<{ ok: boolean; message: string }>,
+
+    abort: (requestId: string): Promise<void> =>
+      ipcRenderer.invoke(IPC_CHANNELS.ai.abort, requestId) as Promise<void>,
+
     usage: (): Promise<AiUsage> => ipcRenderer.invoke(IPC_CHANNELS.ai.usage) as Promise<AiUsage>,
 
     /* 图片文字识别（OCR 模型） */
@@ -448,6 +502,11 @@ const api: RendererApi = {
       ipcRenderer.invoke(IPC_CHANNELS.ai.listGrammar) as Promise<GrammarPoint[]>,
     deleteGrammar: (id: number): Promise<boolean> =>
       ipcRenderer.invoke(IPC_CHANNELS.ai.deleteGrammar, id) as Promise<boolean>
+  },
+
+  app: {
+    isPackaged: (): Promise<boolean> =>
+      ipcRenderer.invoke(IPC_CHANNELS.app.isPackaged) as Promise<boolean>
   },
 
   /* 窗口控制（自定义标题栏） */

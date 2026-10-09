@@ -10,9 +10,8 @@ import {
   XAxis,
   YAxis
 } from 'recharts'
-import type { FeedbackStats, HeatmapCell, PlayRecord } from '../../../shared/stats'
+import type { FeedbackStats, HeatmapCell, StudyReviewTotals } from '../../../shared/stats'
 import type { TaskReview } from '../../../shared/task'
-import type { NoteEntry } from '../../../shared/bili'
 import { modeColor, modeLabel } from '../../../shared/constants'
 import { useStatsStore } from '../store/statsStore'
 
@@ -82,22 +81,20 @@ function StatsPage(): JSX.Element {
   /* ===== R-4 视频学习复盘卡（play_records + notes + feedback 聚合） ===== */
   const [taskReview, setTaskReview] = useState<TaskReview | null>(null)
   const [biliReview, setBiliReview] = useState<{
-    records: PlayRecord[]
+    totals: StudyReviewTotals
     feedback: FeedbackStats
-    notes: NoteEntry[]
   } | null>(null)
 
   useEffect(() => {
     let alive = true
     void Promise.all([
-      window.api.playRecords.list(),
+      window.api.stats.review(),
       window.api.feedback.stats(),
-      window.api.notes.load(),
       window.api.tasks.review().catch(() => null)
     ])
-      .then(([records, feedback, notes, reviewStats]) => {
+      .then(([totals, feedback, reviewStats]) => {
         if (!alive) return
-        setBiliReview({ records, feedback, notes })
+        setBiliReview({ totals, feedback })
         setTaskReview(reviewStats)
       })
       .catch(() => {
@@ -143,17 +140,12 @@ function StatsPage(): JSX.Element {
   /* ===== R-4 复盘派生数据 ===== */
   const review = useMemo(() => {
     if (!biliReview) return null
-    const records = biliReview.records
-    const watchedMinutes = records.reduce((sum, r) => sum + r.watchedS, 0) / 60
-    const doneCount = records.filter((r) => r.status === 'done').length
-    const learningCount = records.filter((r) => r.status === 'learning').length
-    const keyCount = biliReview.notes.filter((n) => n.isKey).length
     return {
-      watchedMinutes,
-      doneCount,
-      learningCount,
-      noteCount: biliReview.notes.length,
-      keyCount,
+      watchedMinutes: biliReview.totals.watchedMinutes,
+      doneCount: biliReview.totals.doneCount,
+      learningCount: biliReview.totals.learningCount,
+      noteCount: biliReview.totals.noteCount,
+      keyCount: biliReview.totals.keyCount,
       feedbackCount: biliReview.feedback.count,
       avgRating: biliReview.feedback.avgRating
     }

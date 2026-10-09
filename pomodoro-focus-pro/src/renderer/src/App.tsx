@@ -21,6 +21,7 @@ import NotesPage from './pages/NotesPage'
 import TasksPage from './pages/TasksPage'
 import SettingsPage from './pages/SettingsPage'
 import OverlayApp from './overlay/OverlayApp'
+import LocalPlayerApp from './local-player/LocalPlayerApp'
 import LoginPage from './pages/LoginPage'
 import AccountMenu from './components/AccountMenu'
 import type { AuthState } from '../../shared/auth'
@@ -171,6 +172,10 @@ function App(): JSX.Element {
 
   if (route === '#overlay') {
     return <OverlayApp />
+  }
+
+  if (route.startsWith('#local-player')) {
+    return <LocalPlayerApp />
   }
 
   if (auth === null) return <div className="login-root" />

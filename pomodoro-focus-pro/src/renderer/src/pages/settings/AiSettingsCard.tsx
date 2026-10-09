@@ -1,5 +1,6 @@
-import type { Dispatch, SetStateAction } from 'react'
-import { AutoComplete, Card, Input, InputNumber } from 'antd'
+import { useState, type Dispatch, SetStateAction } from 'react'
+import { AutoComplete, Button, Card, Input, InputNumber, Typography } from 'antd'
+import { extractErrorMessage } from '../../utils/errorMessage'
 import type { LocalForm, UpdateFn } from './types'
 
 interface AiSettingsCardProps {
@@ -27,6 +28,33 @@ export default function AiSettingsCard({
   update,
   reload
 }: AiSettingsCardProps): JSX.Element {
+  const [pinging, setPinging] = useState(false)
+  const [pingText, setPingText] = useState('')
+
+  const testConnection = async (): Promise<void> => {
+    const patch: Record<string, unknown> = {}
+    const baseURL = form.baseURL.trim()
+    const model = form.model.trim()
+    const key = form.apiKey.trim()
+    if (baseURL) patch['ai.baseURL'] = baseURL
+    if (model) patch['ai.model'] = model
+    if (key && !key.startsWith('••••')) patch['ai.apiKey'] = key
+    if (!key) {
+      setPingText('请先填写 API Key')
+      return
+    }
+    setPinging(true)
+    try {
+      if (Object.keys(patch).length > 0) await update(patch)
+      const res = await window.api.ai.ping()
+      setPingText(res.message)
+    } catch (err) {
+      setPingText(extractErrorMessage(err))
+    } finally {
+      setPinging(false)
+    }
+  }
+
   return (
     <Card size="small" title="🤖 AI 设置 (BYOK)" className="settings-card">
       <div className="settings-row">
@@ -71,6 +99,17 @@ export default function AiSettingsCard({
           onChange={(val) => setForm((f) => ({ ...f, model: val }))}
           onBlur={() => void update({ 'ai.model': form.model.trim() }, '对话模型已更新')}
         />
+      </div>
+      <div className="settings-row">
+        <span className="settings-label">连接</span>
+        <Button size="small" loading={pinging} disabled={saving} onClick={() => void testConnection()}>
+          测试连接
+        </Button>
+        {pingText && (
+          <Typography.Text type={pingText === '连接成功' ? 'success' : 'danger'} style={{ fontSize: 12 }}>
+            {pingText}
+          </Typography.Text>
+        )}
       </div>
       <div className="settings-row">
         <span className="settings-label">OCR 模型</span>

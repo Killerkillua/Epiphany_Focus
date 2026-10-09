@@ -1,5 +1,18 @@
 import { useEffect, useState } from 'react'
-import { Button, Card, Empty, Input, InputNumber, Segmented, Select, Space, Tag, message } from 'antd'
+import {
+  Button,
+  Card,
+  Empty,
+  Input,
+  InputNumber,
+  Modal,
+  Popconfirm,
+  Segmented,
+  Select,
+  Space,
+  Tag,
+  message
+} from 'antd'
 import type { Task, TaskPriority, TaskSort, TaskStatus } from '../../../shared/task'
 
 const PRIORITY_LABEL: Record<TaskPriority, string> = { high: '高', medium: '中', low: '低' }
@@ -13,6 +26,10 @@ function TasksPage(): JSX.Element {
   const [priority, setPriority] = useState<TaskPriority>('medium')
   const [estimate, setEstimate] = useState(1)
   const [revision, setRevision] = useState(0)
+  const [editing, setEditing] = useState<Task | null>(null)
+  const [editTitle, setEditTitle] = useState('')
+  const [editPriority, setEditPriority] = useState<TaskPriority>('medium')
+  const [editEstimate, setEditEstimate] = useState(1)
 
   const reload = (): void => setRevision((n) => n + 1)
 
@@ -54,12 +71,39 @@ function TasksPage(): JSX.Element {
     }
   }
 
-  const changeEstimate = async (task: Task, value: number): Promise<void> => {
+  const openEdit = (task: Task): void => {
+    setEditing(task)
+    setEditTitle(task.title)
+    setEditPriority(task.priority)
+    setEditEstimate(task.estimatedPomodoros)
+  }
+
+  const saveEdit = async (): Promise<void> => {
+    if (!editing) return
+    const name = editTitle.trim()
+    if (!name) {
+      message.warning('标题不能为空')
+      return
+    }
     try {
-      await window.api.tasks.update(task.id, { estimatedPomodoros: value })
+      await window.api.tasks.update(editing.id, {
+        title: name,
+        priority: editPriority,
+        estimatedPomodoros: editEstimate
+      })
+      setEditing(null)
       reload()
     } catch (err) {
       message.error(err instanceof Error ? err.message : '更新失败')
+    }
+  }
+
+  const remove = async (task: Task): Promise<void> => {
+    try {
+      await window.api.tasks.delete(task.id)
+      reload()
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : '删除失败')
     }
   }
 
@@ -142,16 +186,20 @@ function TasksPage(): JSX.Element {
                   </div>
                 </div>
                 <Space wrap>
-                  {task.status !== 'archived' && (
-                    <InputNumber
-                      min={1}
-                      max={48}
-                      size="small"
-                      value={task.estimatedPomodoros}
-                      addonBefore="预估"
-                      onChange={(v) => v != null && void changeEstimate(task, v)}
-                    />
-                  )}
+                  <Button size="small" onClick={() => openEdit(task)}>
+                    编辑
+                  </Button>
+                  <Popconfirm
+                    title="删除后不能恢复"
+                    okText="删除"
+                    cancelText="取消"
+                    okButtonProps={{ danger: true }}
+                    onConfirm={() => void remove(task)}
+                  >
+                    <Button size="small" danger>
+                      删除
+                    </Button>
+                  </Popconfirm>
                   {task.status === 'todo' && (
                     <Button size="small" type="primary" onClick={() => void changeStatus(task, 'done')}>
                       完成
@@ -178,6 +226,44 @@ function TasksPage(): JSX.Element {
           })}
         </div>
       )}
+
+      <Modal
+        title="编辑任务"
+        open={editing !== null}
+        onOk={() => void saveEdit()}
+        onCancel={() => setEditing(null)}
+        okText="保存"
+        cancelText="取消"
+        destroyOnClose
+      >
+        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          <Input
+            value={editTitle}
+            maxLength={200}
+            placeholder="任务标题"
+            onChange={(e) => setEditTitle(e.target.value)}
+            onPressEnter={() => void saveEdit()}
+          />
+          <Select
+            value={editPriority}
+            style={{ width: '100%' }}
+            options={[
+              { value: 'high', label: '高优先级' },
+              { value: 'medium', label: '中优先级' },
+              { value: 'low', label: '低优先级' }
+            ]}
+            onChange={setEditPriority}
+          />
+          <InputNumber
+            min={1}
+            max={48}
+            value={editEstimate}
+            addonAfter="预估番茄"
+            style={{ width: '100%' }}
+            onChange={(v) => v != null && setEditEstimate(v)}
+          />
+        </Space>
+      </Modal>
     </div>
   )
 }

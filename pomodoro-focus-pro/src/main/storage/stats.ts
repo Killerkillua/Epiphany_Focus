@@ -1,7 +1,20 @@
 import { ipcMain } from 'electron'
 import { IPC_CHANNELS } from '../../shared/ipc'
-import { getDayTrend, getDb, getHomeSummary, getHourHeatmap, getModeCompare } from './db'
-import type { DayTrendPoint, HeatmapCell, HomeSummary, ModeStat } from '../../shared/stats'
+import {
+  getDayTrend,
+  getDb,
+  getHomeSummary,
+  getHourHeatmap,
+  getModeCompare,
+  getStudyReviewTotals
+} from './db'
+import type {
+  DayTrendPoint,
+  HeatmapCell,
+  HomeSummary,
+  ModeStat,
+  StudyReviewTotals
+} from '../../shared/stats'
 
 /**
  * 学习统计 IPC（从 study_stats / sessions 聚合，方案 3.4）。
@@ -33,5 +46,10 @@ export function registerStatsIpc(): void {
   ipcMain.handle(IPC_CHANNELS.stats.homeSummary, (): HomeSummary => {
     requireDb()
     return getHomeSummary()
+  })
+
+  ipcMain.handle(IPC_CHANNELS.stats.review, (): StudyReviewTotals => {
+    requireDb()
+    return getStudyReviewTotals()
   })
 }

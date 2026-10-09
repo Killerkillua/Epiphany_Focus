@@ -21,7 +21,15 @@ const mockState = vi.hoisted(() => ({
     presence_penalty?: number
   }>,
   /** 注入下一次 create 抛出的错误（模拟 401 / 网络故障等） */
-  nextError: null as null | Error
+  nextError: null as null | Error,
+  /** 连续失败次数，不会在第一次后清掉 */
+  failTimes: 0,
+  failError: null as null | Error,
+  /** 下一次流先吐一个片段再抛 429 */
+  partialThen429: false,
+  /** 续写请求只返回新增片段 */
+  resumeTail: false,
+  sentMessages: [] as unknown[]
 }))
 
 vi.mock('openai', () => {
@@ -62,12 +70,30 @@ vi.mock('openai', () => {
               frequency_penalty: (opts as { frequency_penalty?: number }).frequency_penalty,
               presence_penalty: (opts as { presence_penalty?: number }).presence_penalty
             })
+            mockState.sentMessages.push(opts.messages)
+            if (mockState.failTimes > 0 && mockState.failError) {
+              mockState.failTimes -= 1
+              throw mockState.failError
+            }
             if (mockState.nextError) {
               const err = mockState.nextError
               mockState.nextError = null
               throw err
             }
-            // openai SDK 在 stream:true 时直接返回可异步迭代的 Stream 对象
+            if (mockState.partialThen429) {
+              mockState.partialThen429 = false
+              mockState.resumeTail = true
+              return (async function* () {
+                yield { choices: [{ delta: { content: 'Hello' } }] }
+                throw Object.assign(new Error('rate limit'), { status: 429 })
+              })()
+            }
+            if (mockState.resumeTail) {
+              mockState.resumeTail = false
+              return (async function* () {
+                yield { choices: [{ delta: { content: ' world' } }] }
+              })()
+            }
             return fakeStream()
           }
         }
@@ -109,6 +135,11 @@ describe('EnglishGateway 演示模式 / 真实模式判定', () => {
     mockState.instances.length = 0
     mockState.calls.length = 0
     mockState.nextError = null
+    mockState.failTimes = 0
+    mockState.failError = null
+    mockState.partialThen429 = false
+    mockState.resumeTail = false
+    mockState.sentMessages.length = 0
   })
 
   it('apiKey 为空（空字符串）时返回演示模板回复，且不创建 OpenAI 客户端', async () => {
@@ -195,15 +226,37 @@ describe('EnglishGateway 演示模式 / 真实模式判定', () => {
     expect((err as Error).message).not.toContain('401 status code (no body)')
   })
 
-  it('网络错误（fetch failed）：抛出中文「无法连接 AI 服务」提示', async () => {
-    mockState.nextError = new Error('fetch failed')
+  it('网络错误（fetch failed）：最多请求 3 次后抛出中文「无法连接 AI 服务」提示', async () => {
+    mockState.failTimes = 3
+    mockState.failError = new Error('fetch failed')
     const gateway = new EnglishGateway(() => makeConfig())
     const err = await collectDeltas(gateway).then(
       () => null,
       (e: unknown) => e
     )
+    expect(mockState.calls).toHaveLength(3)
     expect(err).toBeInstanceOf(Error)
     expect((err as Error).message).toContain('无法连接 AI 服务')
     expect((err as Error).message).toContain('设置 → AI 设置')
+  })
+
+  it('HTTP 401 不重试', async () => {
+    mockState.failTimes = 1
+    mockState.failError = Object.assign(new Error('401'), { status: 401 })
+    const gateway = new EnglishGateway(() => makeConfig())
+    await collectDeltas(gateway).catch(() => undefined)
+    expect(mockState.calls).toHaveLength(1)
+  })
+
+  it('流中途 429：保留已生成文本并续写，只推送新增片段', async () => {
+    mockState.partialThen429 = true
+    const gateway = new EnglishGateway(() => makeConfig())
+    const deltas: string[] = []
+    const reply = await gateway.chat(QUESTION, [], (delta) => deltas.push(delta))
+    expect(deltas).toEqual(['Hello', ' world'])
+    expect(reply.content).toBe('Hello world')
+    const second = mockState.sentMessages[1] as Array<{ role: string; content: string }>
+    expect(second.some((m) => m.role === 'assistant' && m.content === 'Hello')).toBe(true)
+    expect(second.some((m) => m.content.includes('从中断处继续'))).toBe(true)
   })
 })

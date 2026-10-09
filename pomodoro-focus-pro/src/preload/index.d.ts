@@ -36,6 +36,7 @@ import type {
   FeedbackStats,
   HeatmapCell,
   HomeSummary,
+  StudyReviewTotals,
   ModeStat,
   PlayRecord,
   PlayRecordTick,
@@ -45,6 +46,7 @@ import type {
   StudySession
 } from '../shared/stats'
 import type { BackupMeta, ImportPreview } from '../shared/backup'
+import type { ExportFileResult, StatsExportFormat, VocabExportFormat } from '../shared/export'
 import type {
   AuthResult,
   AuthState,
@@ -62,6 +64,7 @@ import type {
   TimerSnapshot
 } from '../shared/types'
 import type { Task, TaskDraft, TaskFilter, TaskPatch, TaskReview, TaskStatus } from '../shared/task'
+import type { LocalMediaPickResult, OpenWebStudyPayload, SiteRulePreview } from '../shared/study'
 
 /** preload 暴露给渲染层的受限 API 类型定义 */
 export interface RendererApi {
@@ -117,9 +120,29 @@ export interface RendererApi {
     getVideoDuration(): Promise<number>
   }
 
+  /** 本地视频与白名单学习网站 */
+  study: {
+    pickLocal(): Promise<LocalMediaPickResult & { token?: string }>
+    openLocal(payload: {
+      token: string
+      resourceKey: string
+      title: string
+      autoFullscreen: boolean
+      topic?: string
+      plannedMs?: number
+      seekSeconds?: number
+    }): Promise<void>
+    openWeb(payload: OpenWebStudyPayload): Promise<void>
+    resume(recordId: string): Promise<void>
+    previewSite(payload: {
+      text: string
+      pathPrefixes?: string[]
+      label?: string
+    }): Promise<SiteRulePreview>
+  }
+
   /** 记事本（增量 upsert + 分视频归档） */
   notes: {
-    save(entries: NoteEntry[]): Promise<void>
     load(): Promise<NoteEntry[]>
     /** 单条增量保存（P-1：不再整份覆盖） */
     upsert(entry: NoteEntry): Promise<NoteEntry>
@@ -127,6 +150,13 @@ export interface RendererApi {
     delete(id: string): Promise<void>
     /** 按视频归档读取 */
     loadByVideo(bvid: string): Promise<NoteEntry[]>
+  }
+
+  /** 标准化导出（CSV / Excel / Markdown / Anki） */
+  export: {
+    stats(payload: { format: StatsExportFormat }): Promise<ExportFileResult>
+    notesMarkdown(): Promise<ExportFileResult>
+    vocab(payload: { format: VocabExportFormat }): Promise<ExportFileResult>
   }
 
   /** 按视频学习进度（F-3 / M1 管理 / M2 快捷访问 / M3 统计） */
@@ -237,6 +267,7 @@ export interface RendererApi {
     list(filter?: TaskFilter): Promise<Task[]>
     create(draft: TaskDraft): Promise<Task>
     update(id: string, patch: TaskPatch): Promise<Task>
+    delete(id: string): Promise<boolean>
     setStatus(id: string, status: TaskStatus): Promise<Task>
     review(): Promise<TaskReview>
   }
@@ -256,6 +287,7 @@ export interface RendererApi {
     modeCompare(): Promise<ModeStat[]>
     heatmap(): Promise<HeatmapCell[]>
     homeSummary(): Promise<HomeSummary>
+    review(): Promise<StudyReviewTotals>
   }
 
   /** 本地账号 */
@@ -290,6 +322,10 @@ export interface RendererApi {
     englishAsk(question: AiQuestion): Promise<AiReply>
     /** LLM 配置（BYOK，只读；写入走 设置页 settings:set） */
     getConfig(): Promise<AiConfig>
+    /** 用已保存的 Key、端点和模型发一次 1 token 请求 */
+    ping(): Promise<{ ok: boolean; message: string }>
+    /** 取消进行中的流式请求 */
+    abort(requestId: string): Promise<void>
     /** 会话提问用量 */
     usage(): Promise<AiUsage>
     /** 图片文字识别（OCR 模型） */
@@ -302,6 +338,12 @@ export interface RendererApi {
     addGrammar(payload: AddGrammarPayload): Promise<GrammarPoint>
     listGrammar(): Promise<GrammarPoint[]>
     deleteGrammar(id: number): Promise<boolean>
+  }
+
+  /** 应用运行形态 */
+  app: {
+    /** 安装包为 true；开发模式为 false，此时开机自启开关不可用 */
+    isPackaged(): Promise<boolean>
   }
 
   /** 自定义标题栏窗口控制 */

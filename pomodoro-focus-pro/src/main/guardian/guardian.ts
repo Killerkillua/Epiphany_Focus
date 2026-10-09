@@ -15,6 +15,7 @@
  */
 
 import { spawn } from 'child_process'
+import { isWindows, spawnQuiet } from '../enforcement/spawnQuiet'
 import { readFileSync, existsSync } from 'fs'
 import { createHmac } from 'crypto'
 
@@ -32,7 +33,8 @@ function parseArgs(): Record<string, string> {
 }
 
 function killTaskmgr(): void {
-  spawn('taskkill', ['/F', '/IM', 'taskmgr.exe'], { stdio: 'ignore', windowsHide: true }).unref()
+  if (!isWindows()) return
+  spawnQuiet('taskkill', ['/F', '/IM', 'taskmgr.exe'])
 }
 
 /**
@@ -108,6 +110,7 @@ function tryRelaunch(): void {
     stdio: 'ignore',
     windowsHide: true
   })
+  child.on('error', () => undefined)
   child.unref()
 }
 
@@ -122,17 +125,27 @@ function run(): void {
 }
 
 function installService(): void {
+  if (!isWindows()) {
+    console.warn('[guardian] 服务安装仅支持 Windows')
+    return
+  }
   const nodeExe = process.execPath
   const script = process.argv[1]
   const binPath = `"${nodeExe}" "${script}" --watch "${pidFile}" --kill-taskmgr --interval ${intervalMs}`
-  spawn('sc.exe', ['create', 'PomodoroGuardian', `binPath= ${binPath}`, 'start= auto'], {
+  const child = spawn('sc.exe', ['create', 'PomodoroGuardian', `binPath= ${binPath}`, 'start= auto'], {
     stdio: 'inherit',
     windowsHide: true
   })
+  child.on('error', () => undefined)
 }
 
 function uninstallService(): void {
-  spawn('sc.exe', ['delete', 'PomodoroGuardian'], { stdio: 'inherit', windowsHide: true })
+  if (!isWindows()) {
+    console.warn('[guardian] 服务卸载仅支持 Windows')
+    return
+  }
+  const child = spawn('sc.exe', ['delete', 'PomodoroGuardian'], { stdio: 'inherit', windowsHide: true })
+  child.on('error', () => undefined)
 }
 
 if (args['install-service']) {

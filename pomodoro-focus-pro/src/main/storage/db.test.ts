@@ -35,6 +35,7 @@ import {
   getHourHeatmap,
   getModeCompare,
   getPlayRecord,
+  getPlaySourceUri,
   getProgressStats,
   getStudySessionsByVideo,
   importBackupData,
@@ -50,7 +51,6 @@ import {
   recordStudySessionEnd,
   recordStudySessionStart,
   recordStudyStats,
-  saveNotesAll,
   searchPlayRecords,
   setPlayGoal,
   setPlayRecordTags,
@@ -60,6 +60,8 @@ import {
   upsertNote,
   upsertPlayRecord
 } from './db'
+import { backfillHeatmapIfEmpty } from './heatmap'
+import { creditFocusPomodoro } from './taskRepository'
 import { setSettings } from './settings'
 import { buildBackupFile, parseBackupFile, pruneBackups, writeBackupFile } from './backup'
 import type { PlayStatus } from '../../shared/stats'
@@ -226,6 +228,44 @@ describe('getHourHeatmap（sessions 聚合）', () => {
     expect(cell!.minutes).toBeCloseTo(2.5, 5)
     expect(cell!.sessions).toBe(2)
   })
+
+  it('空表从已完成会话回填；倒计时入账后再结束不重复计数', () => {
+    const t0 = new Date(2024, 0, 8, 11, 0, 0).getTime()
+    const id = recordSessionStart({
+      mode: 'focus',
+      level: 'L0',
+      startedAt: t0,
+      durationPlanned: 60_000
+    })
+    const d = getDb()
+    expect(d).toBeTruthy()
+    d!.prepare(
+      `UPDATE sessions SET status = 'done', ended_at = ?, duration_actual = 120000 WHERE id = ?`
+    ).run(t0 + 120_000, id)
+    d!.exec('DELETE FROM heatmap_cells')
+    backfillHeatmapIfEmpty(d!)
+    const filled = getHourHeatmap().find((c) => c.weekday === 1 && c.hour === 11)
+    expect(filled?.sessions).toBe(1)
+    expect(filled?.minutes).toBeCloseTo(2, 5)
+
+    const t1 = new Date(2024, 0, 8, 12, 0, 0).getTime()
+    const id2 = recordSessionStart({
+      mode: 'focus',
+      level: 'L0',
+      startedAt: t1,
+      durationPlanned: 60_000
+    })
+    expect(creditFocusPomodoro(id2!, 90_000)).toBe(true)
+    recordSessionEnd(id2!, {
+      durationActual: 90_000,
+      pomosCompleted: 1,
+      interruptions: 0,
+      status: 'done'
+    })
+    const credited = getHourHeatmap().find((c) => c.weekday === 1 && c.hour === 12)
+    expect(credited?.sessions).toBe(1)
+    expect(credited?.minutes).toBeCloseTo(1.5, 5)
+  })
 })
 
 /* ================= notes（增量 upsert + 分视频归档，F-1/P-1） ================= */
@@ -292,17 +332,12 @@ describe('notes（增量 upsert / 按 id 删除 / 分视频归档）', () => {
     expect(entry.source).toBe('time-mark')
   })
 
-  it('saveNotesAll 以入参集合为应有集合：删除集合外、保留集合内（兼容旧契约）', () => {
-    upsertNote({ id: 'keep', createdAt: 1000, content: '保留' })
-    upsertNote({ id: 'drop', createdAt: 1000, content: '删除' })
-    saveNotesAll([
-      { id: 'keep', createdAt: 1000, content: '保留（改）' },
-      { id: 'new', createdAt: 2000, content: '新增' }
-    ])
-
+  it('只 upsert B 时已存在的 A 仍在（不会整表覆盖）', () => {
+    upsertNote({ id: 'a', createdAt: 1000, content: 'A' })
+    upsertNote({ id: 'b', createdAt: 2000, content: 'B' })
     const all = loadNotesAll()
-    expect(all.map((n) => n.id).sort()).toEqual(['keep', 'new'])
-    expect(all.find((n) => n.id === 'keep')?.content).toBe('保留（改）')
+    expect(all.map((n) => n.id).sort()).toEqual(['a', 'b'])
+    expect(all.find((n) => n.id === 'a')?.content).toBe('A')
   })
 })
 
@@ -443,6 +478,12 @@ describe('play_records（进度累计 / 状态 / 目标）', () => {
     tickPlayRecord({ bvid: 'BV2', watchedDeltaS: 5, positionS: 5 })
     const list = listPlayRecords()
     expect(list.map((r) => r.bvid)).toEqual(['BV2', 'BV1'])
+  })
+
+  it('listPlayRecords 默认最多 2000 条，unlimited 仍返回全量', () => {
+    for (let i = 0; i < 2001; i++) upsertPlayRecord({ bvid: `BVc${i}`, title: String(i) })
+    expect(listPlayRecords()).toHaveLength(2000)
+    expect(listPlayRecords({ unlimited: true })).toHaveLength(2001)
   })
 })
 
@@ -858,7 +899,13 @@ describe('backup.ts 文件层（parseBackupFile / pruneBackups / writeBackupFile
     const legacy = {
       version: '1.0',
       exportedAt: 1,
-      data: { playRecords: [], notes: [], studySessions: [], tags: [], settings: { dailyMinutes: 0, weeklyDays: 0 } }
+      data: {
+        playRecords: [],
+        notes: [],
+        studySessions: [],
+        tags: [],
+        settings: { dailyMinutes: 0, weeklyDays: 0 }
+      }
     }
     expect(parseBackupFile(JSON.stringify(legacy)).data.tasks).toEqual([])
     expect(() => parseBackupFile('not json')).toThrow('不是有效的 JSON')
@@ -901,5 +948,40 @@ describe('backup.ts 文件层（parseBackupFile / pruneBackups / writeBackupFile
     const metas = listBackupMeta()
     expect(metas).toHaveLength(1)
     expect(metas[0].filePath).toBe(filePath)
+  })
+})
+
+describe('学习资源列迁移（旧 bvid 回填为 bili: 键）', () => {
+  it('旧进度行保留主键，并补上 resource_key', () => {
+    closeDb()
+    const { DatabaseSync } = createRequire(__filename)(
+      'node:sqlite'
+    ) as typeof import('node:sqlite')
+    const raw = new DatabaseSync(process.env.POMODORO_DB_PATH!)
+    raw.exec(`
+      CREATE TABLE play_records (
+        bvid TEXT PRIMARY KEY,
+        title TEXT DEFAULT '',
+        duration_s INTEGER DEFAULT 0,
+        watched_s INTEGER DEFAULT 0,
+        last_position_s INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'planned',
+        viewed_count INTEGER DEFAULT 0,
+        goal_rounds INTEGER DEFAULT 0,
+        goal_deadline TEXT DEFAULT '',
+        cover_url TEXT DEFAULT '',
+        author TEXT DEFAULT '',
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      INSERT INTO play_records (bvid, title, created_at, updated_at) VALUES ('BV1old', '旧课', 1, 1);
+    `)
+    raw.close()
+    const rec = getPlayRecord('BV1old')
+    expect(rec?.title).toBe('旧课')
+    expect(rec?.resourceKey).toBe('bili:BV1old')
+    expect(rec?.resourceType).toBe('bili')
+    expect(rec?.sourceUri).toBe('')
+    expect(getPlaySourceUri('BV1old')).toBe('')
   })
 })

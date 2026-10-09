@@ -2,7 +2,14 @@ import OpenAI from 'openai'
 import type { AiConfig, AiQuestion, AiReply, AiScenario, AiSource } from '../../shared/ai'
 import type { AiAskRequest } from '../../shared/bili'
 import { buildBiliMessages, buildMessages, SCENARIO_TEMPLATES, SYSTEM_PROMPT } from './prompts'
-import { toFriendlyAiError } from './errors'
+import {
+  AiAbortedError,
+  aiRetryDelayMs,
+  isAiAborted,
+  isRetryableAiError,
+  toFriendlyAiError,
+  waitForAiRetry
+} from './errors'
 
 /**
  * 英语 5 大场景超参数矩阵：
@@ -44,7 +51,13 @@ export interface ChatOptions {
   profile?: AiProfile
   /** 视频学习档位时用于组装学习上下文与多轮历史 */
   biliRequest?: AiAskRequest
+  /** 窗口关闭或用户发起新问题时取消；取消不重试 */
+  signal?: AbortSignal
+  /** 已生成的助手文本，从中断处续写，只推送新增片段 */
+  continueFrom?: string
 }
+
+const CONTINUE_HINT = '从中断处继续，不要重复。'
 
 interface MockEntry {
   scenario: AiQuestion['scenario']
@@ -177,7 +190,8 @@ export class EnglishGateway {
     if (!this.client || this.client.baseURL !== cfg.baseURL || this.client.apiKey !== cfg.apiKey) {
       this.client = new OpenAI({
         apiKey: cfg.apiKey,
-        baseURL: cfg.baseURL || undefined
+        baseURL: cfg.baseURL || undefined,
+        maxRetries: 0
       })
     }
     return this.client
@@ -201,37 +215,65 @@ export class EnglishGateway {
 
     const cfg = this.getConfig()
     const profile: AiProfile = options.profile ?? 'english'
-    const messages =
+    const baseMessages =
       profile === 'bili' && options.biliRequest
         ? buildBiliMessages(options.biliRequest)
         : buildMessages(question, sources)
+    const seed = options.continueFrom?.trim() ?? ''
+    const scenarioParams =
+      profile === 'bili'
+        ? { temperature: 0.5 }
+        : SCENARIO_HYPERPARAMS[question.scenario] ?? { temperature: 0.7 }
 
-    // 根因 C 修复：create / 流式迭代 任一环节失败（401 鉴权、网络、限流等）
-    // 都翻译为中文、可操作、指向「设置 → AI 设置」的错误，不再裸抛 SDK 原文。
-    try {
-      const scenarioParams =
-        profile === 'bili'
-          ? { temperature: 0.5 }
-          : SCENARIO_HYPERPARAMS[question.scenario] ?? { temperature: 0.7 }
+    let content = seed
+    let preFailures = 0
+    let resumes = 0
 
-      const stream = await client.chat.completions.create({
-        model: cfg.model,
-        messages,
-        stream: true,
-        ...scenarioParams
-      })
+    const messagesFor = (): typeof baseMessages => {
+      if (!content) return baseMessages
+      return [
+        ...baseMessages,
+        { role: 'assistant', content },
+        { role: 'user', content: CONTINUE_HINT }
+      ]
+    }
 
-      let content = ''
-      for await (const chunk of stream) {
-        const delta = chunk.choices[0]?.delta?.content ?? ''
-        if (delta) {
+    while (true) {
+      if (options.signal?.aborted) throw new AiAbortedError()
+      const before = content.length
+      try {
+        const stream = await client.chat.completions.create(
+          {
+            model: cfg.model,
+            messages: messagesFor(),
+            stream: true,
+            ...scenarioParams
+          },
+          { signal: options.signal }
+        )
+        for await (const chunk of stream) {
+          if (options.signal?.aborted) throw new AiAbortedError()
+          const delta = chunk.choices[0]?.delta?.content ?? ''
+          if (!delta) continue
           content += delta
           onDelta(delta)
         }
+        return { content, sources }
+      } catch (err) {
+        if (isAiAborted(err) || options.signal?.aborted) throw new AiAbortedError()
+        if (!isRetryableAiError(err)) throw toFriendlyAiError(err)
+        const grew = content.length > before
+        if (!grew) {
+          // 流开始前一共 3 次（当前这次失败后，preFailures 已有 2 次就不再重试）
+          if (preFailures >= 2) throw toFriendlyAiError(err)
+          await waitForAiRetry(aiRetryDelayMs(err, preFailures))
+          preFailures += 1
+          continue
+        }
+        if (resumes >= 2) throw toFriendlyAiError(err)
+        await waitForAiRetry(aiRetryDelayMs(err, resumes))
+        resumes += 1
       }
-      return { content, sources }
-    } catch (err) {
-      throw toFriendlyAiError(err)
     }
   }
 

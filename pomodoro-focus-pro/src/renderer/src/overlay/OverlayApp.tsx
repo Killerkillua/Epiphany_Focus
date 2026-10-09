@@ -73,7 +73,7 @@ function OverlayApp(): JSX.Element {
   const getContext = useCallback(() => contextRef.current, [])
 
   // H-07：AI 问答与笔记逻辑复用共享 hook（悬浮面板 source='overlay'）
-  const { aiLog, aiInput, asking, setAiInput, setWelcome, askAi, logRef } = useAiChat({
+  const { aiLog, aiInput, asking, setAiInput, setWelcome, askAi, continueAi, logRef } = useAiChat({
     requestIdPrefix: 'bili',
     getContext
   })
@@ -317,6 +317,7 @@ function OverlayApp(): JSX.Element {
             logRef={logRef}
             onInput={setAiInput}
             onSend={() => void askAi()}
+            onContinue={(id) => void continueAi(id)}
             onSaveToNotes={saveReplyToNotes}
           />
         )}

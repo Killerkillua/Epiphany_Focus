@@ -10,6 +10,11 @@ export interface ChatMsg {
   role: 'user' | 'assistant'
   content: string
   streaming?: boolean
+  /** 流中断后的半成品 */
+  incomplete?: boolean
+  error?: string
+  /** 本轮用户提问，续写时带回 */
+  prompt?: string
   /** 欢迎语等系统消息：不显示"记入笔记"按钮 */
   welcome?: boolean
 }
@@ -21,6 +26,7 @@ interface ChatPaneProps {
   logRef: RefObject<ScrollAreaHandle>
   onInput(value: string): void
   onSend(): void
+  onContinue?(messageId: string): void
   /** I-4 问答↔笔记联动：把 AI 回答一键沉淀为笔记 */
   onSaveToNotes(msg: ChatMsg): void
   /** 非视频模式（学习助手抽屉）：无视频上下文时的空态提示 */
@@ -38,6 +44,7 @@ function ChatPane({
   logRef,
   onInput,
   onSend,
+  onContinue,
   onSaveToNotes,
   noVideoContext = false
 }: ChatPaneProps): JSX.Element {
@@ -60,7 +67,15 @@ function ChatPane({
             ) : (
               <div className="overlay-msg-plain">{msg.content}</div>
             )}
-            {msg.role === 'assistant' && !msg.streaming && !msg.welcome && (
+            {msg.role === 'assistant' && msg.incomplete && !msg.streaming && (
+              <div className="overlay-msg-actions">
+                <Button type="link" size="small" onClick={() => onContinue?.(msg.id)}>
+                  继续生成
+                </Button>
+                {msg.error && <span className="overlay-ai-hint">{msg.error}</span>}
+              </div>
+            )}
+            {msg.role === 'assistant' && !msg.streaming && !msg.welcome && !msg.incomplete && (
               <div className="overlay-msg-actions">
                 <Button
                   type="text"

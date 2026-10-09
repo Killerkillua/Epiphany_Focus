@@ -1,13 +1,52 @@
-import { useState } from 'react'
-import { Button, Card, Col, Modal, Row, Select, Space, Typography, message } from 'antd'
+import { useEffect, useState } from 'react'
+import { Button, Card, Col, Modal, Row, Select, Space, Switch, Typography, message } from 'antd'
+import { useSetting } from './useSetting'
+import type { LocalForm, UpdateFn } from './types'
 
-/** ⚙️ 通用与关于：语言 / 主题 / 字体大小 / 版本 / 协议与政策 */
-export default function GeneralAboutCard(): JSX.Element {
+interface GeneralAboutCardProps {
+  form: LocalForm
+  saving: boolean
+  update: UpdateFn
+}
+
+/** ⚙️ 通用与关于：语言 / 主题 / 字体大小 / 版本 / 协议与政策 / 开机自启 */
+export default function GeneralAboutCard({
+  form,
+  saving,
+  update
+}: GeneralAboutCardProps): JSX.Element {
   const [language, setLanguage] = useState<'zh-CN' | 'en-US'>('zh-CN')
   const [themeMode, setThemeMode] = useState<'system' | 'dark' | 'light'>('system')
   const [fontSize, setFontSize] = useState<'normal' | 'medium' | 'large'>('normal')
   const [modalType, setModalType] = useState<null | 'agreement' | 'privacy'>(null)
   const [checkingUpdate, setCheckingUpdate] = useState(false)
+  const [packaged, setPackaged] = useState(false)
+  const [packagedReady, setPackagedReady] = useState(false)
+  const [launchAtLogin, setLaunchAtLogin] = useSetting<boolean>(
+    form,
+    update,
+    'launchAtLogin',
+    'launchAtLogin',
+    (v) => (v ? '已开启开机自启' : '已关闭开机自启')
+  )
+
+  useEffect(() => {
+    let cancelled = false
+    void window.api.app
+      .isPackaged()
+      .then((value) => {
+        if (!cancelled) setPackaged(value)
+      })
+      .catch(() => {
+        if (!cancelled) setPackaged(false)
+      })
+      .finally(() => {
+        if (!cancelled) setPackagedReady(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const handleCheckUpdate = (): void => {
     setCheckingUpdate(true)
@@ -19,7 +58,20 @@ export default function GeneralAboutCard(): JSX.Element {
 
   return (
     <Card size="small" title="⚙️ 通用与关于" className="settings-card">
-      <Row gutter={[24, 12]}>
+      <div className="settings-row">
+        <span className="settings-label">开机自启</span>
+        <Switch
+          checked={launchAtLogin}
+          disabled={saving || !packagedReady || !packaged}
+          onChange={(v) => setLaunchAtLogin(v)}
+        />
+      </div>
+      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        {packaged
+          ? '开机后静默启动到系统托盘，不占用任务栏。'
+          : '开发模式不会写入系统登录项。请使用安装包后再开启。'}
+      </Typography.Text>
+      <Row gutter={[24, 12]} style={{ marginTop: 12 }}>
         <Col xs={24} sm={12}>
           <div className="settings-row">
             <span className="settings-label">语言</span>
@@ -83,7 +135,13 @@ export default function GeneralAboutCard(): JSX.Element {
         </Col>
       </Row>
 
-      <div style={{ marginTop: 14, paddingTop: 10, borderTop: '1px solid var(--rule, rgba(255,255,255,0.08))' }}>
+      <div
+        style={{
+          marginTop: 14,
+          paddingTop: 10,
+          borderTop: '1px solid var(--rule, rgba(255,255,255,0.08))'
+        }}
+      >
         <Space direction="horizontal" size="middle" wrap>
           <Button size="small" onClick={() => setModalType('agreement')}>
             用户协议
@@ -101,7 +159,9 @@ export default function GeneralAboutCard(): JSX.Element {
                 await window.api.settings.openLogDir()
                 message.success('已在文件管理器中打开日志目录')
               } catch (err) {
-                message.error(`打开日志目录失败: ${err instanceof Error ? err.message : String(err)}`)
+                message.error(
+                  `打开日志目录失败: ${err instanceof Error ? err.message : String(err)}`
+                )
               }
             }}
           >
@@ -124,21 +184,50 @@ export default function GeneralAboutCard(): JSX.Element {
       >
         {modalType === 'agreement' ? (
           <div style={{ maxHeight: 320, overflowY: 'auto', fontSize: 13, lineHeight: 1.8 }}>
-            <p><strong>1. 导言与服务条款</strong></p>
-            <p>欢迎使用「静界专注」（Epiphany Focus）。本应用旨在帮助用户进行自主高效专注与学习管理。使用本软件即表示您同意本协议。</p>
-            <p><strong>2. 账户与数据</strong></p>
-            <p>本软件采用纯本地存储架构，您的全部学习记录、番茄统计、本地笔记均存储在您本机的 SQLite 数据库与用户配置中。</p>
-            <p><strong>3. 强制控制免责说明</strong></p>
-            <p>强制专注模式提供全屏锁定与按键拦截功能。请在设定前确保无紧急待办事项。如需紧急解锁，可通过连续按 5 次 Esc 键并输入紧急恢复码解除。</p>
+            <p>
+              <strong>1. 导言与服务条款</strong>
+            </p>
+            <p>
+              欢迎使用「静界专注」（Epiphany
+              Focus）。本应用旨在帮助用户进行自主高效专注与学习管理。使用本软件即表示您同意本协议。
+            </p>
+            <p>
+              <strong>2. 账户与数据</strong>
+            </p>
+            <p>
+              本软件采用纯本地存储架构，您的全部学习记录、番茄统计、本地笔记均存储在您本机的 SQLite
+              数据库与用户配置中。
+            </p>
+            <p>
+              <strong>3. 强制控制免责说明</strong>
+            </p>
+            <p>
+              强制专注模式提供全屏锁定与按键拦截功能。请在设定前确保无紧急待办事项。如需紧急解锁，可通过连续按
+              5 次 Esc 键并输入紧急恢复码解除。
+            </p>
           </div>
         ) : (
           <div style={{ maxHeight: 320, overflowY: 'auto', fontSize: 13, lineHeight: 1.8 }}>
-            <p><strong>1. 隐私承诺</strong></p>
-            <p>「静界专注」高度尊重并保护用户隐私。除您自备 API Key（BYOK）向大语言模型服务提供商发起请求外，本应用不会将您的学习数据、视频记录、笔记、恢复码哈希上传至任何未经授权的第三方服务器。</p>
-            <p><strong>2. 匿名统计</strong></p>
-            <p>匿名使用统计默认保持关闭。仅当您主动开启时，本地将记录使用频次等非敏感指标，不收集个人身份信息。</p>
-            <p><strong>3. 数据安全与导出</strong></p>
-            <p>您随时可以通过「数据管理」模块将全部数据导出为 JSON 文件进行备份或迁移，数据主权完全属于您。</p>
+            <p>
+              <strong>1. 隐私承诺</strong>
+            </p>
+            <p>
+              「静界专注」高度尊重并保护用户隐私。除您自备 API
+              Key（BYOK）向大语言模型服务提供商发起请求外，本应用不会将您的学习数据、视频记录、笔记、恢复码哈希上传至任何未经授权的第三方服务器。
+            </p>
+            <p>
+              <strong>2. 匿名统计</strong>
+            </p>
+            <p>
+              匿名使用统计默认保持关闭。仅当您主动开启时，本地将记录使用频次等非敏感指标，不收集个人身份信息。
+            </p>
+            <p>
+              <strong>3. 数据安全与导出</strong>
+            </p>
+            <p>
+              您随时可以通过「数据管理」模块将全部数据导出为 JSON
+              文件进行备份或迁移，数据主权完全属于您。
+            </p>
           </div>
         )}
       </Modal>

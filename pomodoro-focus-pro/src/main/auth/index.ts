@@ -113,24 +113,56 @@ function sha256(s: string): string {
   return createHash('sha256').update(s).digest('hex')
 }
 
+const TOKEN_ENC = 'enc:'
+const TOKEN_PLAIN = 'plain:'
+
 function writeToken(token: string): void {
   try {
-    const enc = safeStorage?.isEncryptionAvailable?.()
-    writeFileSync(tokenFilePath(), enc ? safeStorage.encryptString(token) : Buffer.from(token))
+    let body: Buffer
+    try {
+      if (safeStorage?.isEncryptionAvailable?.()) {
+        body = Buffer.concat([Buffer.from(TOKEN_ENC), safeStorage.encryptString(token)])
+      } else {
+        body = Buffer.from(TOKEN_PLAIN + token, 'utf8')
+      }
+    } catch {
+      body = Buffer.from(TOKEN_PLAIN + token, 'utf8')
+    }
+    writeFileSync(tokenFilePath(), body)
   } catch {
     /* 写入失败只影响自动登录 */
   }
 }
 
-function readToken(): string | null {
+type TokenRead = { kind: 'token'; token: string } | { kind: 'none' } | { kind: 'unavailable' }
+
+function readToken(): TokenRead {
   try {
     const p = tokenFilePath()
-    if (!existsSync(p)) return null
+    if (!existsSync(p)) return { kind: 'none' }
     const buf = readFileSync(p)
-    const enc = safeStorage?.isEncryptionAvailable?.()
-    return enc ? safeStorage.decryptString(buf) : buf.toString('utf8')
+    if (buf.subarray(0, TOKEN_PLAIN.length).toString('utf8') === TOKEN_PLAIN) {
+      return { kind: 'token', token: buf.subarray(TOKEN_PLAIN.length).toString('utf8') }
+    }
+    if (buf.subarray(0, TOKEN_ENC.length).toString('utf8') === TOKEN_ENC) {
+      try {
+        if (!safeStorage?.isEncryptionAvailable?.()) return { kind: 'unavailable' }
+        return { kind: 'token', token: safeStorage.decryptString(buf.subarray(TOKEN_ENC.length)) }
+      } catch {
+        return { kind: 'unavailable' }
+      }
+    }
+    // 旧文件没有前缀
+    try {
+      if (safeStorage?.isEncryptionAvailable?.()) {
+        return { kind: 'token', token: safeStorage.decryptString(buf) }
+      }
+    } catch {
+      return { kind: 'unavailable' }
+    }
+    return { kind: 'token', token: buf.toString('utf8') }
   } catch {
-    return null
+    return { kind: 'none' }
   }
 }
 
@@ -244,13 +276,14 @@ export function getAuthState(): AuthState {
 export function initAuth(): AuthState {
   setActiveDbFile(GUEST_DB_FILE)
   const token = readToken()
-  if (token) {
+  if (token.kind === 'unavailable') return state
+  if (token.kind === 'token') {
     const row = getAuthDb()
       .prepare(
         `SELECT u.* FROM login_sessions s JOIN users u ON u.id = s.user_id
          WHERE s.token_hash = ? AND s.expires_at > ?`
       )
-      .get(sha256(token), now()) as UserRow | undefined
+      .get(sha256(token.token), now()) as UserRow | undefined
     if (row) {
       getAuthDb().prepare('UPDATE users SET last_login_at = ? WHERE id = ?').run(now(), row.id)
       applyState({ status: 'user', user: toUser(row) }, row.db_file)

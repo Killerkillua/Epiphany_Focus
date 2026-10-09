@@ -26,6 +26,7 @@ export interface LocalForm {
   backupTime: string
   backupKeepCount: number
   backupDirectory: string
+  launchAtLogin: boolean
 }
 
 export const EMPTY: LocalForm = {
@@ -51,7 +52,8 @@ export const EMPTY: LocalForm = {
   backupFrequency: 'daily',
   backupTime: '03:00',
   backupKeepCount: 7,
-  backupDirectory: ''
+  backupDirectory: '',
+  launchAtLogin: false
 }
 
 export const NOISE_OPTIONS = [

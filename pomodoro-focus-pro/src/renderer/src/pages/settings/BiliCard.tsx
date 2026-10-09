@@ -46,6 +46,10 @@ export default function BiliCard({ form, saving, update }: BiliCardProps): JSX.E
         <span className="settings-label">点击视频自动全屏</span>
         <Switch checked={autoFullscreen} disabled={saving} onChange={setAutoFullscreen} />
       </div>
+      <p className="page-sub">
+        本地视频稳定支持 H.264/AAC MP4。MKV 和 FLV 可以打开，无法播放时请先转成 MP4。B
+        站相关度只作用于 B 站，不影响本地视频和学习网站。
+      </p>
     </Card>
   )
 }

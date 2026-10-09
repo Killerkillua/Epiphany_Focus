@@ -104,6 +104,9 @@ export interface VideoState {
 
 export interface BiliContext {
   bvid?: string
+  /** 稳定资源键。本地与网站笔记按它归档，不包含文件系统路径 */
+  resourceKey?: string
+  resourceKind?: 'bili' | 'local' | 'web'
   topic?: string
   /** 当前视频标题（搜索结果页快照，导航守卫提取到更精确标题时更新） */
   videoTitle?: string
@@ -182,11 +185,14 @@ export interface AiAskRequest {
     /** 学习主题（来自搜索关键词） */
     topic?: string
     videoTitle?: string
-    /** 当前视频 BV 号 */
+    /** 当前视频 BV 号。本地文件与网站不传，避免把路径或完整 URL 送进模型 */
     bvid?: string
+    resourceKind?: 'bili' | 'local' | 'web'
   }
   /** 最近多轮历史（按时间升序，仅 user/assistant 参与组装） */
   history?: AiMessage[]
+  /** 流中断后续写：已生成的助手文本 */
+  continueFrom?: string
 }
 
 /** 视频学习助手完整回复（与英语模式 shared/ai.ts 的 AiReply 命名区分，避免同名异构冲突） */
@@ -206,8 +212,10 @@ export interface NoteEntry {
   id: string
   createdAt: number
   content: string
-  /** 关联视频 BV 号（按视频归档 / 回看定位） */
+  /** 关联视频 BV 号或通用记录 id（按视频归档 / 回看定位） */
   bvid?: string
+  /** 稳定资源键。旧笔记可只存在 bvid，读取时再补齐 */
+  resourceKey?: string
   /** 视频标题快照（笔记页展示所属视频） */
   videoTitle?: string
   /** 视频内进度秒（时间点标记，点击可跳转播放器到该位置） */

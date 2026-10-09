@@ -3,6 +3,10 @@ import { join } from 'node:path'
 import { IPC_CHANNELS, IPC_EVENTS } from '../../shared/ipc'
 import { attachNavigationGuard, buildBlockPageHtml, isAllowedBiliUrl } from './guard'
 import { attachFullscreenLock } from './fullscreenLock'
+import { attachLocalPlayerGuard, attachSiteNavigationGuard } from '../study/siteGuard'
+import { getLearningWebSession } from '../study/learningSession'
+import { revokeMediaToken } from '../study/localMediaStore'
+import { biliResourceKey, type StudyResourceKind } from '../../shared/study'
 import { getAppIcon } from '../icon'
 import { getSettings } from '../storage/settings'
 import { recordStudySessionEnd, recordStudySessionStart } from '../storage/db'
@@ -34,7 +38,41 @@ interface ActiveVideo {
   video: BrowserWindow
   overlay: BrowserWindow
   bvid: string
+  resourceKey: string
+  kind: StudyResourceKind
   autoFullscreen: boolean
+  mediaToken?: string
+}
+
+export interface PlaybackMeta {
+  resourceKey: string
+  resourceType: StudyResourceKind
+  /** 仅主进程使用。本地为绝对路径，网站为规范化 URL，B 站为空 */
+  sourceUri: string
+}
+
+export interface LearningContentLaunch {
+  kind: 'local' | 'web'
+  resourceKey: string
+  recordId: string
+  title: string
+  topic?: string
+  autoFullscreen: boolean
+  plannedMs?: number
+  seekSeconds?: number
+  source?: OpenVideoPayload['source']
+  author?: string
+  coverUrl?: string
+  url?: string
+  mediaToken?: string
+  sourceUri: string
+}
+
+let pendingLaunch: LearningContentLaunch | null = null
+let playbackMeta: PlaybackMeta = { resourceKey: '', resourceType: 'bili', sourceUri: '' }
+
+export function getPlaybackMeta(): PlaybackMeta {
+  return playbackMeta
 }
 
 interface VideoEventCallbacks {
@@ -144,6 +182,18 @@ function scheduleDock(): void {
 }
 
 /** 把悬浮面板停靠在视频窗口右缘垂直居中（含全屏状态）；用户已自定义位置时保持原位 */
+function debugWinSnap(win: BrowserWindow | null): Record<string, unknown> | null {
+  if (!win || win.isDestroyed()) return null
+  return {
+    id: win.id,
+    full: win.isFullScreen(),
+    focused: win.isFocused(),
+    visible: win.isVisible(),
+    top: win.isAlwaysOnTop(),
+    minimized: win.isMinimized()
+  }
+}
+
 function dockOverlay(): void {
   if (!active) return
   const { video, overlay } = active
@@ -175,7 +225,10 @@ function createOverlay(video: BrowserWindow, opts: OverlayOptions): BrowserWindo
     movable: true, // 始终允许：展开态 header 原生拖拽移动
     minimizable: opts.allowMinimize,
     maximizable: false,
-    alwaysOnTop: true,
+    // Windows 上任意置顶都是 HWND_TOPMOST，会和任务栏抢 z-order，前台全屏窗口因此藏不住任务栏。
+    // 改成学习窗口的拥有窗口：仍浮在网页之上，但不再把任务栏顶出来。
+    alwaysOnTop: process.platform !== 'win32',
+    parent: process.platform === 'win32' ? video : undefined,
     skipTaskbar: !opts.showInTaskbar,
     show: false,
     hasShadow: false,
@@ -191,7 +244,7 @@ function createOverlay(video: BrowserWindow, opts: OverlayOptions): BrowserWindo
   // 悬浮面板不应开新窗口
   overlay.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
   overlay.setMinimumSize(OVERLAY_EXPANDED_SIZE.width, OVERLAY_EXPANDED_SIZE.height)
-  overlay.setAlwaysOnTop(true, 'screen-saver')
+  if (process.platform !== 'win32') overlay.setAlwaysOnTop(true, 'screen-saver')
   overlay.setMenuBarVisibility(false)
   loadOverlay(overlay)
 
@@ -208,7 +261,13 @@ function createOverlay(video: BrowserWindow, opts: OverlayOptions): BrowserWindo
 
   overlay.once('ready-to-show', () => {
     dockOverlay()
+    // #region agent log
+    fetch('http://127.0.0.1:7545/ingest/e2f82ed8-e164-46c1-bb02-7e41a5591a63',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'359fe5'},body:JSON.stringify({sessionId:'359fe5',runId:'pre-fix',hypothesisId:'H1',location:'biliWindow.ts:ready-to-show',message:'overlay about to showInactive',data:{video:debugWinSnap(video),overlay:debugWinSnap(overlay),focusedId:BrowserWindow.getFocusedWindow()?.id??null},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     overlay.showInactive()
+    // #region agent log
+    fetch('http://127.0.0.1:7545/ingest/e2f82ed8-e164-46c1-bb02-7e41a5591a63',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'359fe5'},body:JSON.stringify({sessionId:'359fe5',runId:'pre-fix',hypothesisId:'H1',location:'biliWindow.ts:after-showInactive',message:'overlay shown inactive',data:{video:debugWinSnap(video),overlay:debugWinSnap(overlay),focusedId:BrowserWindow.getFocusedWindow()?.id??null},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
   })
 
   // 任务栏恢复（L0）时回到展开态
@@ -244,7 +303,49 @@ function buildGuardContext(topic: string, currentBvs: string[]): BiliGuardContex
  * - 挂载四层导航守卫（L1–L4），命中拦截时加载提示页并通知主窗口渲染层
  * - 触发 onOpen 回调（启动强制会话）
  */
+export function openLearningContent(launch: LearningContentLaunch): void {
+  pendingLaunch = launch
+  try {
+    openVideo({
+      bvid: launch.recordId,
+      autoFullscreen: launch.autoFullscreen,
+      title: launch.title,
+      topic: launch.topic,
+      plannedMs: launch.plannedMs,
+      seekSeconds: launch.seekSeconds,
+      source: launch.source,
+      author: launch.author,
+      coverUrl: launch.coverUrl
+    })
+  } catch (err) {
+    pendingLaunch = null
+    throw err
+  }
+}
+
+function loadLocalPlayer(
+  video: BrowserWindow,
+  token: string,
+  extension: string,
+  seekSeconds?: number
+): void {
+  const start = seekSeconds && seekSeconds > 0 ? `&t=${Math.round(seekSeconds)}` : ''
+  const hash = `local-player?token=${encodeURIComponent(token)}&ext=${encodeURIComponent(extension)}${start}`
+  const devUrl = process.env['ELECTRON_RENDERER_URL']
+  if (devUrl) {
+    video.loadURL(`${devUrl}#${hash}`).catch(() => {
+      /* 忽略 */
+    })
+    return
+  }
+  video.loadFile(join(__dirname, '../renderer/index.html'), { hash }).catch(() => {
+    /* 忽略 */
+  })
+}
+
 export function openVideo(payload: OpenVideoPayload): void {
+  const launch = pendingLaunch
+  pendingLaunch = null
   const {
     bvid,
     autoFullscreen,
@@ -256,9 +357,16 @@ export function openVideo(payload: OpenVideoPayload): void {
     author
   } = payload
   if (!bvid) throw new Error('缺少视频 BV 号')
+  const kind: StudyResourceKind = launch?.kind ?? 'bili'
+  const resourceKey = launch?.resourceKey ?? biliResourceKey(bvid)
+  playbackMeta = {
+    resourceKey,
+    resourceType: kind,
+    sourceUri: launch?.sourceUri ?? ''
+  }
   currentTopic = topic ?? ''
   currentVideoTitle = (title ?? '').trim()
-  allowedBvs = [bvid]
+  allowedBvs = kind === 'bili' ? [bvid] : []
   currentCtx = buildGuardContext(currentTopic, allowedBvs)
 
   // 幂等：先关闭旧窗口再开新窗口
@@ -283,14 +391,23 @@ export function openVideo(payload: OpenVideoPayload): void {
     show: false, // P-2：先创建后显示（创建后立即 show()，再 setFullScreen），规避 Windows "先全屏后显示" 显示异常
     autoHideMenuBar: true,
     backgroundColor: '#0f1115',
-    title: `视频学习 · ${bvid}`,
+    title: title?.trim() || `视频学习 · ${bvid}`,
     ...(appIcon ? { icon: appIcon } : {}),
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-      // 加载第三方站点且无 preload，必须沙箱化
-      sandbox: true
-    }
+    webPreferences:
+      kind === 'local'
+        ? {
+            preload: join(__dirname, '../preload/index.js'),
+            contextIsolation: true,
+            nodeIntegration: false,
+            sandbox: true
+          }
+        : {
+            contextIsolation: true,
+            nodeIntegration: false,
+            // 第三方页面无 preload，必须沙箱化；网站使用独立登录分区
+            sandbox: true,
+            ...(kind === 'web' ? { session: getLearningWebSession() } : {})
+          }
   })
   video.setMenuBarVisibility(false)
 
@@ -311,16 +428,27 @@ export function openVideo(payload: OpenVideoPayload): void {
     sendToMainWindow(IPC_EVENTS.bili.navBlocked, verdict)
   }
 
-  attachNavigationGuard(video.webContents, currentCtx, {
-    onBlocked: handleBlocked,
-    onIrrelevant: handleIrrelevant,
-    // L4 提取到更精确的视频标题 → 回填当前上下文（I-2：AI 可基于"正在看的这个视频"作答）
-    onTitleExtracted: (extractedTitle) => {
-      if (extractedTitle && extractedTitle.trim()) {
-        currentVideoTitle = extractedTitle.trim()
+  if (kind === 'bili') {
+    attachNavigationGuard(video.webContents, currentCtx, {
+      onBlocked: handleBlocked,
+      onIrrelevant: handleIrrelevant,
+      // L4 提取到更精确的视频标题 → 回填当前上下文（I-2：AI 可基于"正在看的这个视频"作答）
+      onTitleExtracted: (extractedTitle) => {
+        if (extractedTitle && extractedTitle.trim()) {
+          currentVideoTitle = extractedTitle.trim()
+        }
       }
-    }
-  })
+    })
+  } else if (kind === 'web') {
+    attachSiteNavigationGuard(video.webContents, () => getSettings().learning.sites, {
+      onBlocked: handleBlocked,
+      onTitle: (extractedTitle) => {
+        if (extractedTitle.trim()) currentVideoTitle = extractedTitle.trim()
+      }
+    })
+  } else {
+    attachLocalPlayerGuard(video.webContents)
+  }
 
   // 全屏锁定（Esc/F11/缩小 均拉回）。已删除"进入全屏自动折叠为悬浮球"的协同：
   // 学习助手重构后始终以展开态呈现，进出全屏由 dockOverlay 跟随停靠。
@@ -334,31 +462,57 @@ export function openVideo(payload: OpenVideoPayload): void {
   // P-2：创建后立即显示（不等 ready-to-show：页面加载失败 / 需登录时窗口也不至于"永不显示"）
   video.show()
 
-  // M2 续学：seekSeconds > 0 时用 视频学习原生 ?t= 参数加载，播放器就绪即定位到上次位置
-  const videoUrl =
-    seekSeconds && seekSeconds > 0
-      ? `https://www.bilibili.com/video/${bvid}?t=${Math.max(0, Math.round(seekSeconds))}`
-      : `https://www.bilibili.com/video/${bvid}`
-  video.loadURL(videoUrl).catch((err) => {
-    sendToMainWindow(IPC_EVENTS.bili.navBlocked, {
-      allowed: false,
-      level: 'L1',
-      category: '外部',
-      reason: `视频页加载失败: ${err instanceof Error ? err.message : String(err)}`,
-      url: videoUrl,
-      host: 'www.bilibili.com',
-      path: `/video/${bvid}`
-    } satisfies NavVerdict)
-  })
+  if (kind === 'local' && launch?.mediaToken) {
+    const extension = launch.sourceUri ? launch.sourceUri.slice(launch.sourceUri.lastIndexOf('.')) : ''
+    loadLocalPlayer(video, launch.mediaToken, extension, seekSeconds)
+  } else if (kind === 'web' && launch?.url) {
+    video.loadURL(launch.url).catch((err) => {
+      sendToMainWindow(IPC_EVENTS.bili.navBlocked, {
+        allowed: false,
+        level: 'L1',
+        category: '外部',
+        reason: `学习网站加载失败: ${err instanceof Error ? err.message : String(err)}`,
+        url: launch.url ?? '',
+        host: '',
+        path: ''
+      } satisfies NavVerdict)
+    })
+  } else {
+    // M2 续学：seekSeconds > 0 时用视频学习原生 ?t= 参数加载，播放器就绪即定位到上次位置
+    const videoUrl =
+      seekSeconds && seekSeconds > 0
+        ? `https://www.bilibili.com/video/${bvid}?t=${Math.max(0, Math.round(seekSeconds))}`
+        : `https://www.bilibili.com/video/${bvid}`
+    video.loadURL(videoUrl).catch((err) => {
+      sendToMainWindow(IPC_EVENTS.bili.navBlocked, {
+        allowed: false,
+        level: 'L1',
+        category: '外部',
+        reason: `视频页加载失败: ${err instanceof Error ? err.message : String(err)}`,
+        url: videoUrl,
+        host: 'www.bilibili.com',
+        path: `/video/${bvid}`
+      } satisfies NavVerdict)
+    })
+  }
 
   const overlay = createOverlay(video, overlayOptions)
-  active = { video, overlay, bvid, autoFullscreen }
+  active = {
+    video,
+    overlay,
+    bvid,
+    resourceKey,
+    kind,
+    autoFullscreen,
+    mediaToken: launch?.mediaToken
+  }
 
   // 全局呼出热键（会话期间生效）
   registerOverlayHotkey()
 
   video.on('closed', () => {
     unregisterOverlayHotkey()
+    if (active?.mediaToken) revokeMediaToken(active.mediaToken)
     if (!overlay.isDestroyed()) overlay.destroy()
     active = null
     currentVideoTitle = ''
@@ -405,6 +559,8 @@ export function getContext(): BiliContext | null {
   if (!active || active.video.isDestroyed()) return null
   return {
     bvid: active.bvid,
+    resourceKey: active.resourceKey,
+    resourceKind: active.kind,
     topic: currentTopic || undefined,
     videoTitle: currentVideoTitle || undefined,
     fullscreen: active.video.isFullScreen()
@@ -435,6 +591,7 @@ export async function seekTo(bvid: string, seconds: number): Promise<boolean> {
   } catch {
     /* 注入失败 → 走降级 */
   }
+  if (active.kind !== 'bili') return false
   const url = `https://www.bilibili.com/video/${bvid}?t=${sec}`
   active.video.loadURL(url).catch(() => {
     /* 忽略 */
@@ -488,6 +645,8 @@ export function getOverlayWindow(): BrowserWindow | null {
 export function ensureOverlayOnTop(): void {
   const overlay = getOverlayWindow()
   if (!overlay) return
+  // Windows 靠 parent 保持在学习窗口之上；再 setAlwaysOnTop 会把任务栏顶出来
+  if (process.platform === 'win32') return
   overlay.setAlwaysOnTop(true, 'screen-saver')
 }
 
@@ -531,6 +690,9 @@ function applyOverlayState(next: OverlayState): void {
       if (prev === 'hidden' || !overlay.isVisible()) overlay.showInactive()
       if (panelPosition) setOverlayPosition(overlay, panelPosition.x, panelPosition.y)
       else dockOverlay()
+      // #region agent log
+      fetch('http://127.0.0.1:7545/ingest/e2f82ed8-e164-46c1-bb02-7e41a5591a63',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'359fe5'},body:JSON.stringify({sessionId:'359fe5',runId:'pre-fix',hypothesisId:'H4',location:'biliWindow.ts:applyOverlayState',message:'overlay expanded',data:{prev,next,video:debugWinSnap(active?.video??null),overlay:debugWinSnap(overlay),focusedId:BrowserWindow.getFocusedWindow()?.id??null},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       break
     }
     case 'minimized': {
