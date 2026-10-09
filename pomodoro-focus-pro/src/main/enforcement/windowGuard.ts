@@ -107,41 +107,24 @@ export class WindowGuard {
     if (caps.pullBackForeground) {
       if (this.blurHandler && this.blurTarget !== win) this.unbindBlur()
       if (!this.blurHandler) {
-      this.blurTarget = win
-      this.blurHandler = (): void => {
-        const focusedAtBlur = BrowserWindow.getFocusedWindow()
-        // #region agent log
-        fetch('http://127.0.0.1:7545/ingest/e2f82ed8-e164-46c1-bb02-7e41a5591a63',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'359fe5'},body:JSON.stringify({sessionId:'359fe5',runId:'pre-fix',hypothesisId:'H2',location:'windowGuard.ts:blur',message:'study window blurred',data:{videoId:win.id,videoFull:win.isFullScreen(),focusedId:focusedAtBlur?.id??null,exempt:opts?.exemptFromPullBack?.(focusedAtBlur)??false,paused:this.paused},timestamp:Date.now()})}).catch(()=>{});
-        // #endregion
-        // 失焦 400ms 后拉回（紧急退出弹窗期间由渲染层暂停，避免抢焦点）
-        setTimeout(() => {
-          const w = this.win
-          if (w && !w.isDestroyed() && !w.isFocused()) {
-            if (this.paused) return
-            // P2-1：全屏切换过渡期（applyLevelWindow 进入/退出全屏）暂停拉回，
-            // 避免 show()+focus() 干扰系统全屏状态正确应用（如任务栏覆盖）
-            if (isLevelWindowTransitioning(w)) return
-            // 聚焦窗口命中豁免（如悬浮面板）→ 不拉回，避免抢走面板交互
-            const focused = BrowserWindow.getFocusedWindow()
-            const exempt = opts?.exemptFromPullBack?.(focused) ?? false
-            // #region agent log
-            fetch('http://127.0.0.1:7545/ingest/e2f82ed8-e164-46c1-bb02-7e41a5591a63',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'359fe5'},body:JSON.stringify({sessionId:'359fe5',runId:'pre-fix',hypothesisId:'H2',location:'windowGuard.ts:blur-timeout',message:'pull-back decision',data:{videoId:w.id,videoFull:w.isFullScreen(),focusedId:focused?.id??null,exempt,willPull:!exempt},timestamp:Date.now()})}).catch(()=>{});
-            // #endregion
-            if (exempt) return
-            w.show()
-            w.focus()
-          }
-        }, 400)
-        setTimeout(() => {
-          const w = this.win
-          if (!w || w.isDestroyed()) return
-          const focused = BrowserWindow.getFocusedWindow()
-          // #region agent log
-          fetch('http://127.0.0.1:7545/ingest/e2f82ed8-e164-46c1-bb02-7e41a5591a63',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'359fe5'},body:JSON.stringify({sessionId:'359fe5',runId:'pre-fix',hypothesisId:'H2',location:'windowGuard.ts:blur-followup',message:'focus 1.2s after blur',data:{videoId:w.id,videoFull:w.isFullScreen(),videoFocused:w.isFocused(),focusedId:focused?.id??null,outsideApp:focused===null},timestamp:Date.now()})}).catch(()=>{});
-          // #endregion
-        }, 1200)
-      }
-      win.on('blur', this.blurHandler)
+        this.blurTarget = win
+        this.blurHandler = (): void => {
+          // 失焦 400ms 后拉回（紧急退出弹窗期间由渲染层暂停，避免抢焦点）
+          setTimeout(() => {
+            const w = this.win
+            if (w && !w.isDestroyed() && !w.isFocused()) {
+              if (this.paused) return
+              // P2-1：全屏切换过渡期（applyLevelWindow 进入/退出全屏）暂停拉回，
+              // 避免 show()+focus() 干扰系统全屏状态正确应用（如任务栏覆盖）
+              if (isLevelWindowTransitioning(w)) return
+              // 聚焦窗口命中豁免（如悬浮面板）→ 不拉回，避免抢走面板交互
+              if (opts?.exemptFromPullBack?.(BrowserWindow.getFocusedWindow())) return
+              w.show()
+              w.focus()
+            }
+          }, 400)
+        }
+        win.on('blur', this.blurHandler)
       }
     }
   }

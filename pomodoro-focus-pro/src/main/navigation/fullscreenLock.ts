@@ -51,9 +51,6 @@ export function attachFullscreenLock(win: BrowserWindow, opts: FullscreenLockOpt
     opts.onEnterFullscreen?.()
   })
   win.on('leave-full-screen', () => {
-    // #region agent log
-    fetch('http://127.0.0.1:7545/ingest/e2f82ed8-e164-46c1-bb02-7e41a5591a63',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'359fe5'},body:JSON.stringify({sessionId:'359fe5',runId:'pre-fix',hypothesisId:'H3',location:'fullscreenLock.ts:leave-full-screen',message:'study window left fullscreen',data:{id:win.id,full:win.isFullScreen(),focused:win.isFocused(),visible:win.isVisible(),active:opts.active()},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     opts.onLeaveFullscreen?.()
     assertFullscreen()
   })

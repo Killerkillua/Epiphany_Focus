@@ -8,6 +8,7 @@ import { getLearningWebSession } from '../study/learningSession'
 import { revokeMediaToken } from '../study/localMediaStore'
 import { biliResourceKey, type StudyResourceKind } from '../../shared/study'
 import { getAppIcon } from '../icon'
+import { reinforceTaskbarCover } from '../enforcement/taskbarWin'
 import { getSettings } from '../storage/settings'
 import { recordStudySessionEnd, recordStudySessionStart } from '../storage/db'
 import { recordTelemetry } from '../telemetry'
@@ -182,18 +183,6 @@ function scheduleDock(): void {
 }
 
 /** 把悬浮面板停靠在视频窗口右缘垂直居中（含全屏状态）；用户已自定义位置时保持原位 */
-function debugWinSnap(win: BrowserWindow | null): Record<string, unknown> | null {
-  if (!win || win.isDestroyed()) return null
-  return {
-    id: win.id,
-    full: win.isFullScreen(),
-    focused: win.isFocused(),
-    visible: win.isVisible(),
-    top: win.isAlwaysOnTop(),
-    minimized: win.isMinimized()
-  }
-}
-
 function dockOverlay(): void {
   if (!active) return
   const { video, overlay } = active
@@ -261,13 +250,8 @@ function createOverlay(video: BrowserWindow, opts: OverlayOptions): BrowserWindo
 
   overlay.once('ready-to-show', () => {
     dockOverlay()
-    // #region agent log
-    fetch('http://127.0.0.1:7545/ingest/e2f82ed8-e164-46c1-bb02-7e41a5591a63',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'359fe5'},body:JSON.stringify({sessionId:'359fe5',runId:'pre-fix',hypothesisId:'H1',location:'biliWindow.ts:ready-to-show',message:'overlay about to showInactive',data:{video:debugWinSnap(video),overlay:debugWinSnap(overlay),focusedId:BrowserWindow.getFocusedWindow()?.id??null},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     overlay.showInactive()
-    // #region agent log
-    fetch('http://127.0.0.1:7545/ingest/e2f82ed8-e164-46c1-bb02-7e41a5591a63',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'359fe5'},body:JSON.stringify({sessionId:'359fe5',runId:'pre-fix',hypothesisId:'H1',location:'biliWindow.ts:after-showInactive',message:'overlay shown inactive',data:{video:debugWinSnap(video),overlay:debugWinSnap(overlay),focusedId:BrowserWindow.getFocusedWindow()?.id??null},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
+    reinforceTaskbarCover()
   })
 
   // 任务栏恢复（L0）时回到展开态
@@ -688,11 +672,9 @@ function applyOverlayState(next: OverlayState): void {
       overlay.setMovable(true)
       if (prev === 'minimized' && overlay.isMinimized()) overlay.restore()
       if (prev === 'hidden' || !overlay.isVisible()) overlay.showInactive()
+      reinforceTaskbarCover()
       if (panelPosition) setOverlayPosition(overlay, panelPosition.x, panelPosition.y)
       else dockOverlay()
-      // #region agent log
-      fetch('http://127.0.0.1:7545/ingest/e2f82ed8-e164-46c1-bb02-7e41a5591a63',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'359fe5'},body:JSON.stringify({sessionId:'359fe5',runId:'pre-fix',hypothesisId:'H4',location:'biliWindow.ts:applyOverlayState',message:'overlay expanded',data:{prev,next,video:debugWinSnap(active?.video??null),overlay:debugWinSnap(overlay),focusedId:BrowserWindow.getFocusedWindow()?.id??null},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       break
     }
     case 'minimized': {

@@ -1,5 +1,6 @@
 import { BrowserWindow } from 'electron'
 import { spawn } from 'child_process'
+import { acquireTaskbarCover, releaseTaskbarCover } from './taskbarWin'
 
 /**
  * 锁定窗口形态（方案 2.5 L1/L2）：
@@ -46,6 +47,8 @@ interface OverlayState {
   usingAlwaysOnTop: boolean
   /** 学习视频窗口（跳过置顶）标记：兜底拉回复用同一进入序列时保持一致 */
   skipAlwaysOnTop: boolean
+  /** 本窗口是否已计入 Windows 任务栏隐藏（销毁与释放都要成对归还） */
+  taskbarHeld: boolean
 }
 
 /** 各窗口的遮罩引用计数（key：BrowserWindow 实例） */
@@ -89,9 +92,6 @@ function scheduleSimpleFullscreenFallback(win: BrowserWindow, state: OverlayStat
 function enterOverlayFullscreen(win: BrowserWindow, state: OverlayState): void {
   if (win.isDestroyed()) return
   const wasFullscreen = win.isFullScreen()
-  // #region agent log
-  fetch('http://127.0.0.1:7545/ingest/e2f82ed8-e164-46c1-bb02-7e41a5591a63',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'359fe5'},body:JSON.stringify({sessionId:'359fe5',runId:'pre-fix',hypothesisId:'H5',location:'lockScreen.ts:enterOverlayFullscreen',message:'enter fullscreen sequence',data:{id:win.id,wasFullscreen,focused:win.isFocused(),visible:win.isVisible(),top:win.isAlwaysOnTop(),skipAlwaysOnTop:state.skipAlwaysOnTop,count:state.count},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
   markTransitioning(win)
   if (!wasFullscreen) {
     win.setResizable(true) // #8166：解除可能存在的缩放钳制后再进全屏
@@ -122,12 +122,17 @@ export function applyLevelWindow(win: BrowserWindow, opts?: { skipAlwaysOnTop?: 
     fullscreenFallbackTimer: null,
     usingSimpleFullscreen: false,
     usingAlwaysOnTop: false,
-    skipAlwaysOnTop: opts?.skipAlwaysOnTop === true
+    skipAlwaysOnTop: opts?.skipAlwaysOnTop === true,
+    taskbarHeld: false
   }
   state.count += 1
   if (state.count === 1) {
     // 任务栏按钮先于全屏隐藏（Windows；macOS 无任务栏按钮概念，无害）
     win.setSkipTaskbar(true)
+    if (!state.taskbarHeld) {
+      state.taskbarHeld = true
+      acquireTaskbarCover()
+    }
 
     // P0-1：先显示再全屏（未显示窗口直接全屏 → Windows 显示异常 / 任务栏不覆盖）。
     // 最小化窗口 restore() 不触发 'show'，故同时监听 'show' 与 'restore'（先触发者生效，重复触发无害）
@@ -163,6 +168,10 @@ export function applyLevelWindow(win: BrowserWindow, opts?: { skipAlwaysOnTop?: 
     win.once('closed', () => {
       overlayStates.delete(win)
       transitioningWindows.delete(win)
+      if (state.taskbarHeld) {
+        state.taskbarHeld = false
+        releaseTaskbarCover()
+      }
       if (state.fullscreenFallbackTimer) {
         clearTimeout(state.fullscreenFallbackTimer)
         state.fullscreenFallbackTimer = null
@@ -194,6 +203,10 @@ export function releaseLevelWindow(win: BrowserWindow): void {
   if (state.fullscreenFallbackTimer) {
     clearTimeout(state.fullscreenFallbackTimer)
     state.fullscreenFallbackTimer = null
+  }
+  if (state.taskbarHeld) {
+    state.taskbarHeld = false
+    releaseTaskbarCover()
   }
 
   // P2-1：标记过渡期，退出全屏瞬间的失焦不会触发 WindowGuard 拉回干扰还原

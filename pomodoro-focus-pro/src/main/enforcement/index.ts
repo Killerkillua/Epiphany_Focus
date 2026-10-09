@@ -174,9 +174,6 @@ export function registerEnforcementModule(
     const win = target ?? getWindow()
     if (!win) return
     if (enforcedWindow && enforcedWindow !== win && !enforcedWindow.isDestroyed()) {
-      // #region agent log
-      fetch('http://127.0.0.1:7545/ingest/e2f82ed8-e164-46c1-bb02-7e41a5591a63',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'359fe5'},body:JSON.stringify({sessionId:'359fe5',runId:'post-fix',hypothesisId:'H2',location:'enforcement/index.ts:beginEnforcement',message:'release previous fullscreen window',data:{previousId:enforcedWindow.id,nextId:win.id,previousFull:enforcedWindow.isFullScreen()},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       if (escSpamHandler) {
         enforcedWindow.webContents.removeListener('before-input-event', escSpamHandler)
         escSpamHandler = null
