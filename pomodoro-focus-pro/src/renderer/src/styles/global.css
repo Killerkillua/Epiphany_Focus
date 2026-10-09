@@ -511,6 +511,80 @@ body {
   margin-bottom: 12px;
 }
 
+.focus-task-picker,
+.task-select {
+  width: min(440px, 100%);
+}
+
+.task-select-hint,
+.focus-task-live,
+.focus-interruption-count {
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
+}
+
+.focus-task-live {
+  font-size: 16px;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+
+.focus-interruptions {
+  width: min(440px, 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.task-create {
+  margin-bottom: 14px;
+}
+
+.task-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 14px 0;
+  flex-wrap: wrap;
+}
+
+.task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.task-card-main {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.task-title {
+  margin-left: 8px;
+  font-weight: 600;
+}
+
+.task-pomo {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.task-review-top {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .focus-timer {
   font-family: var(--font-mono);
   font-size: clamp(72px, 12vw, 120px);
@@ -2978,4 +3052,90 @@ body,
 
 .settings-danger-card .ant-card-head {
   border-bottom-color: rgba(239, 68, 68, 0.18) !important;
+}
+
+/* ===== 渲染错误边界兜底（主窗口 / #overlay 共用） ===== */
+.app-crash {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.app-crash-card {
+  width: min(420px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 24px 28px;
+  background: var(--bg2);
+  border: 1px solid var(--rule);
+  border-radius: 12px;
+}
+
+.app-crash-card h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.app-crash-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.app-crash-detail {
+  font-family: var(--font-mono);
+  color: var(--ink);
+  word-break: break-word;
+}
+
+.app-crash-card input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--rule);
+  background: var(--bg3);
+  color: var(--ink);
+  font: inherit;
+}
+
+.app-crash-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.app-crash-card button {
+  padding: 8px 14px;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.app-crash-card button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.app-crash-primary {
+  border: none;
+  background: var(--accent);
+  color: #fff;
+}
+
+.app-crash-secondary {
+  border: 1px solid var(--rule);
+  background: transparent;
+  color: var(--ink);
+}
+
+.app-crash-hint {
+  color: #ff8b7a;
 }

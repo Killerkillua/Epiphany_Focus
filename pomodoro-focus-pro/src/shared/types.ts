@@ -14,6 +14,8 @@ export interface TimerOptions {
   mode: TimerMode
   /** 逆序计时的目标时长（毫秒）；正序计时忽略 */
   durationMs: number
+  /** 本轮专注关联的未完成任务；空表示无任务专注 */
+  taskId?: string | null
 }
 
 /** 计时器快照（主进程权威状态，经 IPC 下发给渲染层） */
@@ -30,6 +32,13 @@ export interface TimerSnapshot {
   completedPomodoros: number
   /** 本轮完成后是否触发长休息建议（仅 complete 事件携带） */
   longRestSuggestion: boolean
+  /** 当前强制会话 id（空闲时为空） */
+  sessionId?: number | null
+  /** 当前关联任务 */
+  taskId?: string | null
+  taskTitle?: string | null
+  internalInterruptions?: number
+  externalInterruptions?: number
 }
 
 /** 分心应用拦截策略 */

@@ -50,6 +50,11 @@ export interface EnforcedState {
   startedAt: number
   plannedMs: number
   sessionId: number
+  /** 专注会话关联任务；学习会话为空 */
+  taskId?: string | null
+  taskTitle?: string | null
+  /** 重启恢复时区分倒计时结算与正序不计番茄 */
+  timerMode?: 'countdown' | 'countup'
 }
 
 /** 学习目标设置（M3：全局粒度；课程级目标 = 精读遍数 + 截止日期，存 play_records） */

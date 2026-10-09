@@ -10,6 +10,7 @@ import { registerAudioModule } from './audio'
 import { loadEnvFile } from './env'
 import { registerSettingsIpc } from './storage/settings'
 import { registerStatsIpc } from './storage/stats'
+import { registerTaskIpc } from './storage/tasks'
 import { registerAuthIpc } from './auth'
 import { startAutoBackup } from './storage/backup'
 import { getDb } from './storage/db'
@@ -68,9 +69,26 @@ process.on('uncaughtException', (error) => {
   logger.error('main', '未捕获的异常:', error)
 })
 
-/** 当前主窗口（惰性获取：macOS activate 重建窗口后仍能取到最新实例） */
+/**
+ * 主窗口引用。视频窗和悬浮面板也是 BrowserWindow，
+ * getAllWindows()[0] 在它们位于列表首位时会拿到错误窗口。
+ * macOS activate 重建时由 createMainWindow 更新此引用。
+ */
+let mainWindowRef: BrowserWindow | null = null
+
 function getMainWindow(): BrowserWindow | null {
-  return BrowserWindow.getAllWindows()[0] ?? null
+  if (!mainWindowRef || mainWindowRef.isDestroyed()) return null
+  return mainWindowRef
+}
+
+/** 已有实例被再次启动时，把主窗口拉到前台 */
+function focusMainWindow(): void {
+  const win = getMainWindow()
+  if (!win) return
+  if (win.isMinimized()) win.restore()
+  win.show()
+  win.moveTop()
+  win.focus()
 }
 
 /** 外链协议白名单：仅 http/https，杜绝 file:/smb:/自定义协议处理器被诱导调用 */
@@ -117,6 +135,11 @@ function createMainWindow(): BrowserWindow {
       // 防绕过矩阵：devTools 关闭（开发模式可在启动参数开启）
       devTools: false
     }
+  })
+
+  mainWindowRef = mainWindow
+  mainWindow.on('closed', () => {
+    if (mainWindowRef === mainWindow) mainWindowRef = null
   })
 
   mainWindow.on('ready-to-show', () => {
@@ -188,7 +211,21 @@ function registerWindowControlIpc(): void {
   })
 }
 
+const hasSingleInstanceLock = app.requestSingleInstanceLock()
+if (!hasSingleInstanceLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    focusMainWindow()
+  })
+}
+
 app.whenReady().then(() => {
+  if (!hasSingleInstanceLock) {
+    app.quit()
+    return
+  }
+
   logger.info('main', `静界专注主进程已启动，系统日志写入: ${getLogFilePath()}`)
   // .env 加载必须在任何模块读取配置之前（根因 B 修复）：
   // 把应用根目录 .env 中的 POMODORO_AI_API_KEY 注入 process.env，
@@ -201,9 +238,6 @@ app.whenReady().then(() => {
   // 视频学习封面图代理（bili-image:// 协议 + Referer 注入 + 磁盘缓存），修复 CDN 防盗链 403
   installBiliImageProxy()
 
-  // B 站封面图代理（bili-image:// 协议 + Referer 注入 + 磁盘缓存），修复 CDN 防盗链 403
-  installBiliImageProxy()
-
   // 预打开中央 SQLite（创建规约 6 张表，方案 3.4）
   getDb()
 
@@ -212,6 +246,7 @@ app.whenReady().then(() => {
   registerAuthIpc()
   registerSettingsIpc()
   registerStatsIpc()
+  registerTaskIpc()
 
   // M5 自动备份调度（读 settings.backup；启动时若已过备份时刻则补备）
   startAutoBackup()
@@ -228,9 +263,6 @@ app.whenReady().then(() => {
 
   // AI 网关（英语模式）
   registerAiIpc()
-
-  // 学习会话计时（B 站 / 英语模式，与强制引擎解耦）
-  registerSessionModule(getMainWindow)
 
   // 白噪音（全局热键 + 采样素材解析）
   registerAudioModule(getMainWindow)

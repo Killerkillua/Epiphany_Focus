@@ -64,6 +64,7 @@ import type {
   TimerOptions,
   TimerSnapshot
 } from '../shared/types'
+import type { Task, TaskDraft, TaskFilter, TaskPatch, TaskReview, TaskStatus } from '../shared/task'
 
 /**
  * preload：通过 contextBridge 向渲染层暴露受限 API。
@@ -269,12 +270,20 @@ const api: RendererApi = {
     importData: (
       filePath: string,
       mode: 'merge' | 'replace'
-    ): Promise<{ ok: boolean; records: number; notes: number; sessions: number; error?: string }> =>
+    ): Promise<{
+      ok: boolean
+      records: number
+      notes: number
+      sessions: number
+      tasks?: number
+      error?: string
+    }> =>
       ipcRenderer.invoke(IPC_CHANNELS.playRecords.importData, filePath, mode) as Promise<{
         ok: boolean
         records: number
         notes: number
         sessions: number
+        tasks?: number
         error?: string
       }>,
     /** 备份元数据列表（M5） */
@@ -320,6 +329,34 @@ const api: RendererApi = {
     /** 获取系统日志文件路径 */
     getLogPath: (): Promise<string> =>
       ipcRenderer.invoke(IPC_CHANNELS.settings.getLogPath) as Promise<string>
+  },
+
+  /* ===== 任务清单 ===== */
+  tasks: {
+    list: (filter?: TaskFilter): Promise<Task[]> =>
+      ipcRenderer.invoke(IPC_CHANNELS.tasks.list, filter ?? {}) as Promise<Task[]>,
+    create: (draft: TaskDraft): Promise<Task> =>
+      ipcRenderer.invoke(IPC_CHANNELS.tasks.create, draft) as Promise<Task>,
+    update: (id: string, patch: TaskPatch): Promise<Task> =>
+      ipcRenderer.invoke(IPC_CHANNELS.tasks.update, id, patch) as Promise<Task>,
+    setStatus: (id: string, status: TaskStatus): Promise<Task> =>
+      ipcRenderer.invoke(IPC_CHANNELS.tasks.setStatus, id, status) as Promise<Task>,
+    review: (): Promise<TaskReview> =>
+      ipcRenderer.invoke(IPC_CHANNELS.tasks.review) as Promise<TaskReview>
+  },
+
+  /* ===== 专注打扰 ===== */
+  interruptions: {
+    add: (payload: { type: 'internal' | 'external'; note?: string }): Promise<{
+      eventId: string
+      snapshot: TimerSnapshot
+    }> =>
+      ipcRenderer.invoke(IPC_CHANNELS.interruptions.add, payload) as Promise<{
+        eventId: string
+        snapshot: TimerSnapshot
+      }>,
+    updateNote: (id: string, note: string): Promise<boolean> =>
+      ipcRenderer.invoke(IPC_CHANNELS.interruptions.updateNote, id, note) as Promise<boolean>
   },
 
   /* ===== 学习统计 ===== */

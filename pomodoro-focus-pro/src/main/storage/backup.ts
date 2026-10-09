@@ -9,7 +9,13 @@ import {
   statSync,
   writeFileSync
 } from 'fs'
-import { BACKUP_VERSION, type BackupFile, type BackupMeta } from '../../shared/backup'
+import {
+  BACKUP_VERSION,
+  BACKUP_VERSIONS,
+  type BackupFile,
+  type BackupMeta
+} from '../../shared/backup'
+import { exportTaskBackup } from './taskRepository'
 import { exportBackupData, recordBackupMeta } from './db'
 import { getSettings } from './settings'
 
@@ -34,6 +40,7 @@ export function buildBackupFile(): BackupFile {
     exportedAt: Date.now(),
     data: {
       ...exportBackupData(),
+      ...exportTaskBackup(),
       settings: {
         dailyMinutes: Number(goals.dailyMinutes) || 0,
         weeklyDays: Number(goals.weeklyDays) || 0
@@ -54,13 +61,15 @@ export function parseBackupFile(text: string): BackupFile {
   if (
     !file ||
     typeof file !== 'object' ||
-    file.version !== BACKUP_VERSION ||
+    !(BACKUP_VERSIONS as readonly string[]).includes(file.version) ||
     !file.data ||
     !Array.isArray(file.data.playRecords) ||
     !Array.isArray(file.data.notes) ||
     !Array.isArray(file.data.studySessions)
   ) {
-    throw new Error('备份文件格式不正确或版本不受支持（需要 version ' + BACKUP_VERSION + '）')
+    throw new Error(
+      '备份文件格式不正确或版本不受支持（需要 version ' + BACKUP_VERSIONS.join(' / ') + '）'
+    )
   }
   return { ...file, data: sanitizeBackupData(file.data) }
 }
@@ -72,6 +81,7 @@ export const MAX_BACKUP_BYTES = 50 * 1024 * 1024
 const MAX_RECORDS = 50_000
 const MAX_NOTES = 100_000
 const MAX_SESSIONS = 200_000
+const MAX_TASKS = 20_000
 
 const asStr = (v: unknown, max: number): string => (typeof v === 'string' ? v.slice(0, max) : '')
 const asNum = (v: unknown): number => {
@@ -86,10 +96,16 @@ const asObj = (v: unknown, label: string, i: number): Record<string, unknown> =>
 }
 
 function sanitizeBackupData(data: BackupFile['data']): BackupFile['data'] {
+  const tasksIn = Array.isArray(data.tasks) ? data.tasks : []
+  const focusIn = Array.isArray(data.focusSessions) ? data.focusSessions : []
+  const eventsIn = Array.isArray(data.interruptionEvents) ? data.interruptionEvents : []
   if (
     data.playRecords.length > MAX_RECORDS ||
     data.notes.length > MAX_NOTES ||
-    data.studySessions.length > MAX_SESSIONS
+    data.studySessions.length > MAX_SESSIONS ||
+    tasksIn.length > MAX_TASKS ||
+    focusIn.length > MAX_SESSIONS ||
+    eventsIn.length > MAX_SESSIONS
   ) {
     throw new Error('备份文件条目数量超出上限')
   }
@@ -158,7 +174,64 @@ function sanitizeBackupData(data: BackupFile['data']): BackupFile['data'] {
     settings: {
       dailyMinutes: asNum(data.settings?.dailyMinutes),
       weeklyDays: asNum(data.settings?.weeklyDays)
-    }
+    },
+    tasks: tasksIn.map((raw, i) => {
+      const t = asObj(raw, 'tasks', i)
+      const id = asStr(t.id, 80)
+      if (!id) throw new Error(`备份文件损坏：tasks[${i}] 缺少 id`)
+      const priority = asStr(t.priority, 20)
+      const status = asStr(t.status, 20)
+      return {
+        id,
+        title: asStr(t.title, 200) || '未命名任务',
+        priority: (priority === 'high' || priority === 'low' ? priority : 'medium') as
+          | 'high'
+          | 'medium'
+          | 'low',
+        estimatedPomodoros: asNum(t.estimatedPomodoros),
+        actualPomodoros: asNum(t.actualPomodoros),
+        status: (status === 'done' || status === 'archived' ? status : 'todo') as
+          | 'todo'
+          | 'done'
+          | 'archived',
+        sortOrder: asNum(t.sortOrder),
+        createdAt: asNum(t.createdAt),
+        updatedAt: asNum(t.updatedAt),
+        completedAt: t.completedAt == null ? null : asNum(t.completedAt)
+      }
+    }),
+    focusSessions: focusIn.map((raw, i) => {
+      const s = asObj(raw, 'focusSessions', i)
+      return {
+        id: asNum(s.id),
+        taskId: asStr(s.taskId, 80) || null,
+        level: asStr(s.level, 8) || 'L0',
+        startedAt: asNum(s.startedAt),
+        endedAt: s.endedAt == null ? null : asNum(s.endedAt),
+        durationPlanned: asNum(s.durationPlanned),
+        durationActual: asNum(s.durationActual),
+        pomosCompleted: asNum(s.pomosCompleted),
+        interruptions: asNum(s.interruptions),
+        internalInterruptions: asNum(s.internalInterruptions),
+        externalInterruptions: asNum(s.externalInterruptions),
+        status: asStr(s.status, 32) || 'done',
+        pomoCredited: s.pomoCredited === true
+      }
+    }),
+    interruptionEvents: eventsIn.map((raw, i) => {
+      const e = asObj(raw, 'interruptionEvents', i)
+      return {
+        id: asStr(e.id, 80),
+        sessionId: asNum(e.sessionId),
+        taskId: asStr(e.taskId, 80) || null,
+        type: (asStr(e.type, 20) === 'external' ? 'external' : 'internal') as
+          | 'internal'
+          | 'external',
+        note: asStr(e.note, 120),
+        elapsedMs: asNum(e.elapsedMs),
+        createdAt: asNum(e.createdAt)
+      }
+    })
   }
 }
 

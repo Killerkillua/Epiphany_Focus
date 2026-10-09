@@ -37,7 +37,9 @@ interface FocusStore {
   init: () => Promise<void>
   /** 取消全部 IPC 事件订阅（HMR 热替换 / 窗口销毁时清理） */
   destroy: () => void
-  start: (mode: TimerMode, durationMs: number) => Promise<void>
+  start: (mode: TimerMode, durationMs: number, taskId?: string | null) => Promise<void>
+  markInterruption: (type: 'internal' | 'external') => Promise<string>
+  saveInterruptionNote: (id: string, note: string) => Promise<void>
   pause: () => Promise<void>
   resume: () => Promise<void>
   stop: () => Promise<void>
@@ -91,9 +93,23 @@ export const useFocusStore = create<FocusStore>((set, get) => ({
 
   destroy: unsubscribeAll,
 
-  start: async (mode, durationMs) => {
-    const snap = await window.api.timer.start({ mode, durationMs })
+  start: async (mode, durationMs, taskId) => {
+    const snap = await window.api.timer.start({
+      mode,
+      durationMs,
+      taskId: taskId || null
+    })
     set({ snapshot: snap, justCompleted: false, alwaysOnTop: true })
+  },
+
+  markInterruption: async (type) => {
+    const res = await window.api.interruptions.add({ type })
+    set({ snapshot: res.snapshot })
+    return res.eventId
+  },
+
+  saveInterruptionNote: async (id, note) => {
+    await window.api.interruptions.updateNote(id, note)
   },
 
   pause: async () => {

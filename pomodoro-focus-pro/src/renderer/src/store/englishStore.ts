@@ -135,13 +135,6 @@ export const useEnglishStore = create<EnglishStore>((set, get) => ({
         })
       )
     }
-    // 设置变更广播：设置页（或主进程任何 ai 配置写入）保存后实时刷新，无需重进页面
-    if (!settingsSubscribed) {
-      settingsSubscribed = true
-      window.api.on(window.api.events.settings.changed, () => {
-        void get().refreshConfig()
-      })
-    }
     const [config, usage, vocab, grammar] = await Promise.all([
       window.api.ai.getConfig(),
       window.api.ai.usage(),

@@ -181,6 +181,19 @@ export const IPC_CHANNELS = {
     deleteAccount: 'auth:delete-account',
     resetPassword: 'auth:reset-password'
   },
+  /** 任务清单（待办 / 优先级 / 预估番茄） */
+  tasks: {
+    list: 'tasks:list',
+    create: 'tasks:create',
+    update: 'tasks:update',
+    setStatus: 'tasks:set-status',
+    review: 'tasks:review'
+  },
+  /** 专注进行中的内外部打扰 */
+  interruptions: {
+    add: 'interruptions:add',
+    updateNote: 'interruptions:update-note'
+  },
   /** 学习统计（study_stats / sessions 聚合） */
   stats: {
     /** 日趋势（近 N 天） */

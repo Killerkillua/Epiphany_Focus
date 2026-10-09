@@ -7,6 +7,13 @@ import { IPC_CHANNELS, IPC_EVENTS } from '../../shared/ipc'
 import { TimerService } from '../timer'
 import { getSettings, setSettings } from '../storage/settings'
 import { recordSessionEnd, recordSessionStart, recordStudyStats, todayLocal } from '../storage/db'
+import {
+  addInterruption,
+  creditFocusPomodoro,
+  getFocusSessionContext,
+  getTask,
+  updateInterruptionNote
+} from '../storage/taskRepository'
 import { isEnforcedLevel, LEVEL_CAPS } from './level'
 import { verifyCurrentPassword } from '../auth'
 import * as emergency from './emergencyExit'
@@ -15,7 +22,7 @@ import { WindowGuard } from './windowGuard'
 import { startTaskmgrKill, stopTaskmgrKill } from './processGuard'
 import { applyLevelWindow, releaseLevelWindow, lockWorkstation } from './lockScreen'
 import { ValidationError, str, num, bool, arr, oneOf } from '../validate'
-import type { DistractionPolicy, TimerOptions, TimerSnapshot } from '../../shared/types'
+import type { DistractionPolicy, TimerMode, TimerOptions, TimerSnapshot } from '../../shared/types'
 import type { EmergencyExitResult, LockLevel } from '../../shared/settings'
 
 /**
@@ -31,6 +38,11 @@ interface ActiveSession {
   mode: string
   startedAt: number
   sessionId: number
+  taskId: string | null
+  taskTitle: string | null
+  timerMode: TimerMode
+  internalInterruptions: number
+  externalInterruptions: number
 }
 
 const DEFAULT_POLICY: DistractionPolicy = { enabled: false, blacklist: [], whitelist: [] }
@@ -69,13 +81,31 @@ export function registerEnforcementModule(
 ): EnforcementHandle {
   const timer = new TimerService(
     (snap) => {
-      getWindow()?.webContents.send(IPC_EVENTS.timer.tick, snap)
+      getWindow()?.webContents.send(IPC_EVENTS.timer.tick, enrich(snap))
     },
     (snap) => {
-      getWindow()?.webContents.send(IPC_EVENTS.timer.complete, snap)
-      onTimerComplete(snap)
+      const next = enrich(snap)
+      getWindow()?.webContents.send(IPC_EVENTS.timer.complete, next)
+      onTimerComplete(next)
     }
   )
+
+  function enrich(snap: TimerSnapshot): TimerSnapshot {
+    return {
+      ...snap,
+      sessionId: active?.sessionId ?? null,
+      taskId: active?.taskId ?? null,
+      taskTitle: active?.taskTitle ?? null,
+      internalInterruptions: active?.internalInterruptions ?? 0,
+      externalInterruptions: active?.externalInterruptions ?? 0
+    }
+  }
+
+  function publish(snap: TimerSnapshot): TimerSnapshot {
+    const next = enrich(snap)
+    getWindow()?.webContents.send(IPC_EVENTS.timer.tick, next)
+    return next
+  }
 
   const windowGuard = new WindowGuard()
   let active: ActiveSession | null = null
@@ -93,7 +123,12 @@ export function registerEnforcementModule(
 
   // ================= 强制会话生命周期 =================
 
-  function beginEnforcement(mode: string, plannedMs: number, target?: BrowserWindow): void {
+  function beginEnforcement(
+    mode: string,
+    plannedMs: number,
+    target?: BrowserWindow,
+    link?: { taskId: string | null; taskTitle: string | null; timerMode: TimerMode }
+  ): void {
     const level = getSettings().lockLevel
     // L1/L2 前置：必须已设置恢复码（安全兜底，方案 2.10）
     emergency.assertExitSafety(level)
@@ -101,7 +136,13 @@ export function registerEnforcementModule(
     const win = target ?? getWindow()
     if (!win) return
     const sessionId =
-      recordSessionStart({ mode, level, startedAt: Date.now(), durationPlanned: plannedMs }) ?? 0
+      recordSessionStart({
+        mode,
+        level,
+        startedAt: Date.now(),
+        durationPlanned: plannedMs,
+        taskId: link?.taskId ?? null
+      }) ?? 0
 
     // 按锁定级别能力施加强制：L0 仅置顶，L1/L2 才施加全屏遮罩（LEVEL_CAPS[level].fullscreenOverlay）
     if (LEVEL_CAPS[level].fullscreenOverlay) {
@@ -137,10 +178,30 @@ export function registerEnforcementModule(
     if (LEVEL_CAPS[level].killTaskmgr) startTaskmgrKill()
     if (LEVEL_CAPS[level].guardian) spawnGuardian()
 
-    active = { level, mode, startedAt: Date.now(), sessionId }
+    active = {
+      level,
+      mode,
+      startedAt: Date.now(),
+      sessionId,
+      taskId: link?.taskId ?? null,
+      taskTitle: link?.taskTitle ?? null,
+      timerMode: link?.timerMode ?? (mode === 'focus' ? 'countdown' : 'countup'),
+      internalInterruptions: 0,
+      externalInterruptions: 0
+    }
     lastPomos = timer.getSnapshot().completedPomodoros
     setSettings({
-      enforced: { active: true, level, mode, startedAt: active.startedAt, plannedMs, sessionId }
+      enforced: {
+        active: true,
+        level,
+        mode,
+        startedAt: active.startedAt,
+        plannedMs,
+        sessionId,
+        taskId: active.taskId,
+        taskTitle: active.taskTitle,
+        timerMode: active.timerMode
+      }
     })
   }
 
@@ -196,6 +257,10 @@ export function registerEnforcementModule(
 
   /** 到点：记录统计 + 按"到点动作"执行（方案 4.2） */
   function onTimerComplete(snap: TimerSnapshot): void {
+    // 仅倒计时自然到点计入任务番茄；正序手动结束不走这条路径。
+    if (active?.mode === 'focus' && active.timerMode === 'countdown' && active.sessionId) {
+      creditFocusPomodoro(active.sessionId, snap.elapsedMs)
+    }
     // 分钟换算统一在 recordStudyStats 内完成（毫秒入参）
     recordStudyStats(todayLocal(), active?.mode ?? 'focus', snap.elapsedMs, 1)
     lastPomos = snap.completedPomodoros
@@ -281,6 +346,14 @@ export function registerEnforcementModule(
     const remainingMs = enforced.plannedMs - elapsedMs
 
     if (remainingMs <= 0) {
+      // 离线期间已到期：倒计时专注才结算任务番茄（幂等，重复启动不会再加）
+      if (
+        enforced.mode === 'focus' &&
+        (enforced.timerMode ?? 'countdown') === 'countdown' &&
+        enforced.sessionId
+      ) {
+        creditFocusPomodoro(enforced.sessionId, enforced.plannedMs)
+      }
       // 离线期间已到期：记为完成并解除
       recordStudyStats(todayLocal(), enforced.mode, enforced.plannedMs, 1)
       if (enforced.sessionId) {
@@ -330,12 +403,19 @@ export function registerEnforcementModule(
     if (LEVEL_CAPS[enforced.level].killTaskmgr) startTaskmgrKill()
     if (LEVEL_CAPS[enforced.level].guardian) spawnGuardian()
 
-    timer.restore({ mode: 'countdown', durationMs: enforced.plannedMs, elapsedMs })
+    const timerMode = enforced.timerMode ?? 'countdown'
+    timer.restore({ mode: timerMode, durationMs: enforced.plannedMs, elapsedMs })
+    const ctx = getFocusSessionContext(enforced.sessionId)
     active = {
       level: enforced.level,
       mode: enforced.mode,
       startedAt: enforced.startedAt,
-      sessionId: enforced.sessionId
+      sessionId: enforced.sessionId,
+      taskId: enforced.taskId ?? ctx?.taskId ?? null,
+      taskTitle: enforced.taskTitle ?? ctx?.taskTitle ?? null,
+      timerMode,
+      internalInterruptions: ctx?.internalInterruptions ?? 0,
+      externalInterruptions: ctx?.externalInterruptions ?? 0
     }
     lastPomos = timer.getSnapshot().completedPomodoros
     new Notification({
@@ -357,8 +437,18 @@ export function registerEnforcementModule(
     if (durationMs < 0 || durationMs > 24 * 60 * 60 * 1000) {
       throw new ValidationError('timer.durationMs 超出允许范围')
     }
-    beginEnforcement('focus', durationMs)
-    return timer.start({ mode, durationMs })
+    let taskId: string | null = null
+    let taskTitle: string | null = null
+    if (opts.taskId != null && opts.taskId !== '') {
+      taskId = str(opts.taskId, 'timer.taskId', { max: 80 })
+      const task = getTask(taskId)
+      if (!task || task.status !== 'todo') {
+        throw new ValidationError('只能关联未完成的任务')
+      }
+      taskTitle = task.title
+    }
+    beginEnforcement('focus', durationMs, undefined, { taskId, taskTitle, timerMode: mode })
+    return enrich(timer.start({ mode, durationMs }))
   })
 
   ipcMain.handle(IPC_CHANNELS.timer.stop, () => {
@@ -375,12 +465,52 @@ export function registerEnforcementModule(
       recordStudyStats(todayLocal(), 'focus', result.elapsedMs, 1)
     }
     endEnforcement('manual')
-    return result
+    return enrich(result)
   })
 
-  ipcMain.handle(IPC_CHANNELS.timer.pause, () => timer.pause())
-  ipcMain.handle(IPC_CHANNELS.timer.resume, () => timer.resume())
-  ipcMain.handle(IPC_CHANNELS.timer.getState, () => timer.getSnapshot())
+  ipcMain.handle(IPC_CHANNELS.timer.pause, () => enrich(timer.pause()))
+  ipcMain.handle(IPC_CHANNELS.timer.resume, () => enrich(timer.resume()))
+  ipcMain.handle(IPC_CHANNELS.timer.getState, () => enrich(timer.getSnapshot()))
+
+  ipcMain.handle(
+    IPC_CHANNELS.interruptions.add,
+    (_event, payload: { type?: string; note?: string }) => {
+      if (!active || active.mode !== 'focus' || !active.sessionId) {
+        throw new ValidationError('当前没有进行中的专注会话')
+      }
+      const status = timer.getSnapshot().status
+      if (status !== 'running' && status !== 'paused') {
+        throw new ValidationError('当前不能记录打扰')
+      }
+      const type = oneOf(payload?.type, 'interruption.type', ['internal', 'external'] as const)
+      if (!type) throw new ValidationError('interruption.type 必须是 internal / external')
+      const note =
+        payload?.note == null || payload.note === ''
+          ? ''
+          : str(payload.note, 'interruption.note', { max: 120, allowEmpty: true })
+      const event = addInterruption({
+        sessionId: active.sessionId,
+        taskId: active.taskId,
+        type,
+        note,
+        elapsedMs: timer.getSnapshot().elapsedMs
+      })
+      if (!event) throw new Error('记录打扰失败')
+      if (type === 'internal') active.internalInterruptions += 1
+      else active.externalInterruptions += 1
+      return { eventId: event.id, snapshot: publish(timer.getSnapshot()) }
+    }
+  )
+
+  ipcMain.handle(IPC_CHANNELS.interruptions.updateNote, (_event, id: string, note: string) => {
+    if (!active?.sessionId) throw new ValidationError('当前没有进行中的专注会话')
+    const eventId = str(id ?? '', 'interruption.id', { max: 80 })
+    const text = str(note ?? '', 'interruption.note', { max: 120, allowEmpty: true })
+    if (!updateInterruptionNote(eventId, active.sessionId, text)) {
+      throw new ValidationError('打扰记录不存在')
+    }
+    return true
+  })
 
   // ---- 强制通道 ----
   ipcMain.handle(IPC_CHANNELS.enforce.setAlwaysOnTop, (_event, on: boolean) => {

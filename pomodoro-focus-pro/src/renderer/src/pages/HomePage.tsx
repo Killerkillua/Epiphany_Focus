@@ -17,12 +17,12 @@ function HomePage({ onNavigate }: Props): JSX.Element {
   const sessionStart = useSessionStore((s) => s.start)
   // 番茄/学习会话完成后的统计刷新由 statsStore 统一订阅（StatsBar 挂载即激活）
 
-  const handleConfirm = async (minutes: number): Promise<void> => {
+  const handleConfirm = async (minutes: number, taskId?: string | null): Promise<void> => {
     const t = target
     setTarget(null)
     if (!t) return
     if (t === 'focus') {
-      await focusStart('countdown', minutes * 60_000)
+      await focusStart('countdown', minutes * 60_000, taskId)
       noiseEngine.restore()
       if (noiseEngine.getSettings().autoPlayOnStart) {
         void noiseEngine.playPreset(getNoisePreset(noiseEngine.getSettings().preset))

@@ -11,6 +11,7 @@ import {
   YAxis
 } from 'recharts'
 import type { FeedbackStats, HeatmapCell, PlayRecord } from '../../../shared/stats'
+import type { TaskReview } from '../../../shared/task'
 import type { NoteEntry } from '../../../shared/bili'
 import { modeColor, modeLabel } from '../../../shared/constants'
 import { useStatsStore } from '../store/statsStore'
@@ -79,6 +80,7 @@ function StatsPage(): JSX.Element {
   const error = useStatsStore((s) => s.error)
 
   /* ===== R-4 视频学习复盘卡（play_records + notes + feedback 聚合） ===== */
+  const [taskReview, setTaskReview] = useState<TaskReview | null>(null)
   const [biliReview, setBiliReview] = useState<{
     records: PlayRecord[]
     feedback: FeedbackStats
@@ -90,10 +92,13 @@ function StatsPage(): JSX.Element {
     void Promise.all([
       window.api.playRecords.list(),
       window.api.feedback.stats(),
-      window.api.notes.load()
+      window.api.notes.load(),
+      window.api.tasks.review().catch(() => null)
     ])
-      .then(([records, feedback, notes]) => {
-        if (alive) setBiliReview({ records, feedback, notes })
+      .then(([records, feedback, notes, reviewStats]) => {
+        if (!alive) return
+        setBiliReview({ records, feedback, notes })
+        setTaskReview(reviewStats)
       })
       .catch(() => {
         /* 数据不可用时不阻塞统计页 */
@@ -313,6 +318,48 @@ function StatsPage(): JSX.Element {
             <Typography.Text type="secondary" style={{ fontSize: 11 }}>
               颜色越深 = 该时段专注分钟越多。
             </Typography.Text>
+          </Card>
+
+          <Card size="small" title="✅ 任务与专注质量" className="stats-card">
+            {taskReview && (taskReview.todoCount > 0 || taskReview.creditedPomodoros > 0) ? (
+              <div className="bili-review-grid">
+                <div className="bili-review-item">
+                  <div className="bili-review-value">{taskReview.todayDone}</div>
+                  <div className="bili-review-label">今日完成任务</div>
+                </div>
+                <div className="bili-review-item">
+                  <div className="bili-review-value">
+                    {taskReview.actualOpen}/{taskReview.estimatedOpen}
+                  </div>
+                  <div className="bili-review-label">待办实际/预估</div>
+                </div>
+                <div className="bili-review-item">
+                  <div className="bili-review-value">{taskReview.internalInterruptions}</div>
+                  <div className="bili-review-label">内部打扰</div>
+                </div>
+                <div className="bili-review-item">
+                  <div className="bili-review-value">{taskReview.externalInterruptions}</div>
+                  <div className="bili-review-label">外部打扰</div>
+                </div>
+                <div className="bili-review-item">
+                  <div className="bili-review-value">
+                    {taskReview.avgInterruptionsPerPomo ?? '—'}
+                  </div>
+                  <div className="bili-review-label">每番茄打扰</div>
+                </div>
+              </div>
+            ) : (
+              <Empty description="完成关联任务的番茄后，这里会显示预估差异和打扰" />
+            )}
+            {taskReview && taskReview.topInterrupted.length > 0 && (
+              <div className="task-review-top">
+                {taskReview.topInterrupted.map((item) => (
+                  <div key={item.taskId}>
+                    {item.title} · {item.interruptions} 次打扰 / {item.pomos} 番茄
+                  </div>
+                ))}
+              </div>
+            )}
           </Card>
 
           <Card size="small" title="📺 视频学习复盘（R-4）" className="stats-card">

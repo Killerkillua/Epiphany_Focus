@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Button, Card, message, Segmented, Select, Space, Switch, Typography } from 'antd'
+import { Button, Card, Input, message, Segmented, Select, Space, Switch, Typography } from 'antd'
 import { useFocusStore } from '../store/focusStore'
 import { useShallow } from 'zustand/react/shallow'
 import NoiseControl from '../components/NoiseControl'
@@ -7,6 +7,7 @@ import { noiseEngine } from '../audio'
 import { playChime } from '../audio/chime'
 import { getNoisePreset } from '../../../shared/audio'
 import type { TimerMode } from '../../../shared/types'
+import TaskSelect from '../components/TaskSelect'
 
 const MINUTE = 60 * 1000
 const DURATION_OPTIONS = [25, 45, 60]
@@ -29,25 +30,40 @@ function FocusPage(): JSX.Element {
   const distraction = useFocusStore((s) => s.distraction)
   const justCompleted = useFocusStore((s) => s.justCompleted)
   // 动作引用稳定（Zustand 不随 tick 重建），用 useShallow 合并取整组动作，避免对象字面量触发重渲染
-  const { init, start, pause, resume, stop, setAlwaysOnTop, setDistraction, clearCompleted } =
-    useFocusStore(
-      useShallow((s) => ({
-        init: s.init,
-        start: s.start,
-        pause: s.pause,
-        resume: s.resume,
-        stop: s.stop,
-        setAlwaysOnTop: s.setAlwaysOnTop,
-        setDistraction: s.setDistraction,
-        clearCompleted: s.clearCompleted
-      }))
-    )
+  const {
+    init,
+    start,
+    pause,
+    resume,
+    stop,
+    setAlwaysOnTop,
+    setDistraction,
+    clearCompleted,
+    markInterruption,
+    saveInterruptionNote
+  } = useFocusStore(
+    useShallow((s) => ({
+      init: s.init,
+      start: s.start,
+      pause: s.pause,
+      resume: s.resume,
+      stop: s.stop,
+      setAlwaysOnTop: s.setAlwaysOnTop,
+      setDistraction: s.setDistraction,
+      clearCompleted: s.clearCompleted,
+      markInterruption: s.markInterruption,
+      saveInterruptionNote: s.saveInterruptionNote
+    }))
+  )
 
   // 开始前的本地配置（会话进行中锁定）；默认专注时长从全局设置读取（方案 4.2）
   const [mode, setMode] = useState<TimerMode>('countdown')
   const [durationMin, setDurationMin] = useState(25)
   const [lockLevel, setLockLevel] = useState('L1')
   const [endAction, setEndAction] = useState('overlay')
+  const [taskId, setTaskId] = useState<string | null>(null)
+  const [noteEventId, setNoteEventId] = useState<string | null>(null)
+  const [noteDraft, setNoteDraft] = useState('')
 
   const inSession = snapshot.status !== 'idle'
   const running = snapshot.status === 'running'
@@ -78,14 +94,15 @@ function FocusPage(): JSX.Element {
       } else if (restAction === 'duck') {
         noiseEngine.duck()
       }
+      const taskHint = snapshot.taskTitle ? `已计入「${snapshot.taskTitle}」。` : ''
       void message.success(
         snapshot.longRestSuggestion
-          ? '🍅 一组完成！建议长休息 15 分钟'
-          : '🍅 专注完成，休息一下吧！'
+          ? `🍅 一组完成！${taskHint}建议长休息 15 分钟`
+          : `🍅 专注完成。${taskHint}休息一下吧！`
       )
       clearCompleted()
     }
-  }, [justCompleted, snapshot.longRestSuggestion, clearCompleted])
+  }, [justCompleted, snapshot.longRestSuggestion, snapshot.taskTitle, clearCompleted])
 
   // 大号计时显示：进行中用主进程快照；未开始按本地配置预览
   const displayMs = inSession
@@ -109,7 +126,7 @@ function FocusPage(): JSX.Element {
           : '正序计时 · 自由累加'
 
   const handleStart = (): void => {
-    void start(mode, durationMin * MINUTE)
+    void start(mode, durationMin * MINUTE, taskId)
       .then(() => {
         // 白噪音联动：专注开始自动播放（可配）+ 恢复音量（解除休息降音量）
         noiseEngine.restore()
@@ -142,6 +159,19 @@ function FocusPage(): JSX.Element {
       <div className="focus-layout">
         {/* ===== 主计时卡片 ===== */}
         <div className="focus-card">
+          {!inSession && (
+            <div className="focus-task-picker">
+              <TaskSelect
+                value={taskId}
+                countsPomodoro={mode === 'countdown'}
+                onChange={setTaskId}
+              />
+            </div>
+          )}
+          {inSession && (
+            <div className="focus-task-live">{snapshot.taskTitle || '无任务专注'}</div>
+          )}
+
           <div className="focus-config">
             <Segmented
               options={[
@@ -180,6 +210,63 @@ function FocusPage(): JSX.Element {
             ))}
           </div>
           <div className="pomo-label">番茄 {snapshot.completedPomodoros}/4</div>
+
+          {(running || paused) && (
+            <div className="focus-interruptions">
+              <Space>
+                <Button
+                  onClick={() =>
+                    void markInterruption('internal')
+                      .then((id) => {
+                        setNoteEventId(id)
+                        setNoteDraft('')
+                      })
+                      .catch((err: unknown) => {
+                        void message.error(err instanceof Error ? err.message : '记录失败')
+                      })
+                  }
+                >
+                  内部打扰 +1
+                </Button>
+                <Button
+                  onClick={() =>
+                    void markInterruption('external')
+                      .then((id) => {
+                        setNoteEventId(id)
+                        setNoteDraft('')
+                      })
+                      .catch((err: unknown) => {
+                        void message.error(err instanceof Error ? err.message : '记录失败')
+                      })
+                  }
+                >
+                  外部打扰 +1
+                </Button>
+              </Space>
+              <div className="focus-interruption-count">
+                内部 {snapshot.internalInterruptions ?? 0} · 外部 {snapshot.externalInterruptions ?? 0}
+              </div>
+              {noteEventId && (
+                <Input
+                  autoFocus
+                  value={noteDraft}
+                  maxLength={120}
+                  placeholder="可选备注，回车保存"
+                  onChange={(e) => setNoteDraft(e.target.value)}
+                  onPressEnter={() => {
+                    void saveInterruptionNote(noteEventId, noteDraft).finally(() => setNoteEventId(null))
+                  }}
+                  onBlur={() => {
+                    if (!noteDraft.trim()) {
+                      setNoteEventId(null)
+                      return
+                    }
+                    void saveInterruptionNote(noteEventId, noteDraft).finally(() => setNoteEventId(null))
+                  }}
+                />
+              )}
+            </div>
+          )}
 
           <div className="focus-controls">
             {!inSession && (

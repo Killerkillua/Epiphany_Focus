@@ -7,6 +7,7 @@ import {
   FileTextOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  CheckSquareOutlined,
   ClockCircleOutlined,
   PlayCircleOutlined,
   ReadOutlined
@@ -17,6 +18,7 @@ import EnglishModePageWithNoise from './pages/EnglishModePageWithNoise'
 import BiliModePage from './pages/BiliModePage'
 import StatsPage from './pages/StatsPage'
 import NotesPage from './pages/NotesPage'
+import TasksPage from './pages/TasksPage'
 import SettingsPage from './pages/SettingsPage'
 import OverlayApp from './overlay/OverlayApp'
 import LoginPage from './pages/LoginPage'
@@ -28,10 +30,11 @@ import CustomTitlebar from './components/CustomTitlebar'
 
 const { Sider, Content } = Layout
 
-type PageKey = 'home' | 'focus' | 'english' | 'bili' | 'stats' | 'notes' | 'settings'
+type PageKey = 'home' | 'tasks' | 'focus' | 'english' | 'bili' | 'stats' | 'notes' | 'settings'
 
 const NAV_ITEMS: MenuProps['items'] = [
   { key: 'home', icon: <HomeOutlined />, label: '首页' },
+  { key: 'tasks', icon: <CheckSquareOutlined />, label: '任务清单' },
   { key: 'focus', icon: <ClockCircleOutlined />, label: '专注模式' },
   { key: 'english', icon: <ReadOutlined />, label: '英语学习' },
   { key: 'bili', icon: <PlayCircleOutlined />, label: '视频学习' },
@@ -180,6 +183,8 @@ function App(): JSX.Element {
     switch (page) {
       case 'home':
         return <HomePage onNavigate={(p) => setPage(p)} />
+      case 'tasks':
+        return <TasksPage />
       case 'focus':
         return <FocusPage />
       case 'english':

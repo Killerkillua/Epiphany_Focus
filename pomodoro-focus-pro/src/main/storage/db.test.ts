@@ -852,8 +852,15 @@ describe('exportBackupData / importBackupData（M5 备份恢复）', () => {
 describe('backup.ts 文件层（parseBackupFile / pruneBackups / writeBackupFile）', () => {
   it('parseBackupFile 校验版本与结构；非法文件抛错', () => {
     const valid = buildBackupFile()
-    expect(parseBackupFile(JSON.stringify(valid)).version).toBe('1.0')
+    expect(parseBackupFile(JSON.stringify(valid)).version).toBe('1.1')
+    expect(parseBackupFile(JSON.stringify(valid)).data.tasks).toEqual([])
     expect(parseBackupFile(JSON.stringify(valid)).data.playRecords).toEqual([])
+    const legacy = {
+      version: '1.0',
+      exportedAt: 1,
+      data: { playRecords: [], notes: [], studySessions: [], tags: [], settings: { dailyMinutes: 0, weeklyDays: 0 } }
+    }
+    expect(parseBackupFile(JSON.stringify(legacy)).data.tasks).toEqual([])
     expect(() => parseBackupFile('not json')).toThrow('不是有效的 JSON')
     expect(() => parseBackupFile(JSON.stringify({ version: '9.9', data: {} }))).toThrow(
       '格式不正确'

@@ -98,34 +98,6 @@ function buildOverlayOptions(): OverlayOptions {
   }
 }
 
-/* ===== 悬浮面板状态机（4 态：expanded / collapsed / minimized / hidden） ===== */
-let overlayState: OverlayState = 'expanded'
-/** 窗口能力（按锁定档解耦：L0 可拖动+任务栏 / L1 可最小化 / L2 安全档全禁用） */
-let overlayOptions: OverlayOptions = { allowMinimize: false, allowMove: false, showInTaskbar: false }
-/** 进入 hidden / minimized 前的可见态（呼出时恢复） */
-let previousVisibleState: OverlayState = 'expanded'
-/** 进入全屏时是否由我们自动折叠（离开全屏时恢复展开） */
-let autoCollapsedOnFullscreen = false
-
-interface OverlayOptions {
-  allowMinimize: boolean
-  allowMove: boolean
-  showInTaskbar: boolean
-}
-
-/** 悬浮面板全局呼出快捷键（主键 Ctrl+Shift+O；Ctrl+` 尽力注册，部分输入法环境不可用） */
-const OVERLAY_HOTKEYS = ['CommandOrControl+Shift+O', 'CommandOrControl+`'] as const
-
-/** 按锁定档解耦悬浮面板窗口能力 */
-function buildOverlayOptions(): OverlayOptions {
-  const level = getSettings().lockLevel
-  return {
-    allowMinimize: level !== 'L2',
-    allowMove: level === 'L0',
-    showInTaskbar: level === 'L0'
-  }
-}
-
 export function registerVideoEvents(opts: VideoEventCallbacks): void {
   getMainWindow = opts.getMainWindow
   onBeforeOpenCallback = opts.onBeforeOpen

@@ -61,6 +61,7 @@ import type {
   TimerOptions,
   TimerSnapshot
 } from '../shared/types'
+import type { Task, TaskDraft, TaskFilter, TaskPatch, TaskReview, TaskStatus } from '../shared/task'
 
 /** preload 暴露给渲染层的受限 API 类型定义 */
 export interface RendererApi {
@@ -180,7 +181,14 @@ export interface RendererApi {
     importData(
       filePath: string,
       mode: 'merge' | 'replace'
-    ): Promise<{ ok: boolean; records: number; notes: number; sessions: number; error?: string }>
+    ): Promise<{
+      ok: boolean
+      records: number
+      notes: number
+      sessions: number
+      tasks?: number
+      error?: string
+    }>
     /** 备份元数据列表（M5） */
     listBackups(): Promise<BackupMeta[]>
   }
@@ -222,6 +230,24 @@ export interface RendererApi {
     openLogDir(): Promise<string>
     /** 获取系统日志文件绝对路径 */
     getLogPath(): Promise<string>
+  }
+
+  /** 任务清单 */
+  tasks: {
+    list(filter?: TaskFilter): Promise<Task[]>
+    create(draft: TaskDraft): Promise<Task>
+    update(id: string, patch: TaskPatch): Promise<Task>
+    setStatus(id: string, status: TaskStatus): Promise<Task>
+    review(): Promise<TaskReview>
+  }
+
+  /** 专注进行中的内外部打扰 */
+  interruptions: {
+    add(payload: {
+      type: 'internal' | 'external'
+      note?: string
+    }): Promise<{ eventId: string; snapshot: TimerSnapshot }>
+    updateNote(id: string, note: string): Promise<boolean>
   }
 
   /** 学习统计 */

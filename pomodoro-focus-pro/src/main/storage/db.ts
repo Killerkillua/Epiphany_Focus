@@ -64,7 +64,11 @@ CREATE TABLE IF NOT EXISTS sessions (
   pomos_completed INTEGER NOT NULL DEFAULT 0,
   interruptions INTEGER NOT NULL DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'active',
-  ended_at INTEGER
+  ended_at INTEGER,
+  task_id TEXT,
+  internal_interruptions INTEGER NOT NULL DEFAULT 0,
+  external_interruptions INTEGER NOT NULL DEFAULT 0,
+  pomo_credited INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS study_stats (
   date TEXT NOT NULL,
@@ -182,6 +186,29 @@ CREATE TABLE IF NOT EXISTS dict_entries (
   updated_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_dict_entries_word ON dict_entries(word);
+CREATE TABLE IF NOT EXISTS tasks (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  priority TEXT NOT NULL DEFAULT 'medium',
+  estimated_pomodoros INTEGER NOT NULL DEFAULT 1,
+  actual_pomodoros INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'todo',
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  completed_at INTEGER
+);
+CREATE TABLE IF NOT EXISTS interruption_events (
+  id TEXT PRIMARY KEY,
+  session_id INTEGER NOT NULL,
+  task_id TEXT,
+  type TEXT NOT NULL,
+  note TEXT NOT NULL DEFAULT '',
+  elapsed_ms INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_interruptions_session ON interruption_events(session_id);
+CREATE INDEX IF NOT EXISTS idx_interruptions_task ON interruption_events(task_id);
 `
 
 /** notes 新表结构（TEXT 主键 + 分视频/重点字段） */
@@ -331,6 +358,7 @@ export function getDb(): SqliteLike | null {
     opened.exec(SCHEMA)
     migrateNotesTable(opened)
     migratePlayRecordsColumns(opened)
+    migrateSessionTaskColumns(opened)
     db = opened
     return db
   } catch (err) {
@@ -366,20 +394,65 @@ export function todayLocal(): string {
 
 // ================= sessions =================
 
+/**
+ * sessions 任务关联列（老库幂等补列）。
+ * task_id 可空；打扰计数与 pomo_credited 默认 0，避免把历史会话误结算成已计入任务。
+ */
+export function migrateSessionTaskColumns(d: SqliteLike): void {
+  const cols = d.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>
+  const names = new Set(cols.map((c) => c.name))
+  const alters: string[] = []
+  if (!names.has('task_id')) alters.push('ALTER TABLE sessions ADD COLUMN task_id TEXT')
+  if (!names.has('internal_interruptions')) {
+    alters.push(
+      'ALTER TABLE sessions ADD COLUMN internal_interruptions INTEGER NOT NULL DEFAULT 0'
+    )
+  }
+  if (!names.has('external_interruptions')) {
+    alters.push(
+      'ALTER TABLE sessions ADD COLUMN external_interruptions INTEGER NOT NULL DEFAULT 0'
+    )
+  }
+  if (!names.has('pomo_credited')) {
+    alters.push('ALTER TABLE sessions ADD COLUMN pomo_credited INTEGER NOT NULL DEFAULT 0')
+  }
+  if (alters.length === 0) return
+  try {
+    d.prepare('BEGIN').run()
+    try {
+      for (const sql of alters) d.exec(sql)
+      d.prepare('COMMIT').run()
+    } catch (inner) {
+      try {
+        d.prepare('ROLLBACK').run()
+      } catch {
+        // 忽略回滚失败
+      }
+      throw inner
+    }
+  } catch (err) {
+    console.warn(
+      '[storage] sessions 任务列迁移失败:',
+      err instanceof Error ? err.message : err
+    )
+  }
+}
+
 export function recordSessionStart(opts: {
   mode: string
   level: string
   startedAt: number
   durationPlanned: number
+  taskId?: string | null
 }): number | null {
   const d = getDb()
   if (!d) return null
   const info = d
     .prepare(
-      `INSERT INTO sessions (mode, level, started_at, duration_planned, status)
-       VALUES (?, ?, ?, ?, 'active')`
+      `INSERT INTO sessions (mode, level, started_at, duration_planned, status, task_id)
+       VALUES (?, ?, ?, ?, 'active', ?)`
     )
-    .run(opts.mode, opts.level, opts.startedAt, opts.durationPlanned)
+    .run(opts.mode, opts.level, opts.startedAt, opts.durationPlanned, opts.taskId ?? null)
   return Number(info.lastInsertRowid ?? 0) || null
 }
 
@@ -389,8 +462,19 @@ export function recordSessionEnd(
 ): void {
   const d = getDb()
   if (!d || !sessionId) return
+  // 已自然结算的专注会话保持 done / 时长 / 番茄数，避免结束后的收尾把状态降成 abandoned。
+  // 进行中已写入的内外部打扰优先于调用方传入的合计。
   d.prepare(
-    `UPDATE sessions SET duration_actual = ?, pomos_completed = ?, interruptions = ?, status = ?, ended_at = ? WHERE id = ?`
+    `UPDATE sessions SET
+       duration_actual = CASE WHEN pomo_credited = 1 THEN duration_actual ELSE ? END,
+       pomos_completed = CASE WHEN pomo_credited = 1 THEN pomos_completed ELSE ? END,
+       interruptions = CASE
+         WHEN internal_interruptions + external_interruptions > 0
+         THEN internal_interruptions + external_interruptions
+         ELSE ? END,
+       status = CASE WHEN pomo_credited = 1 THEN status ELSE ? END,
+       ended_at = COALESCE(ended_at, ?)
+     WHERE id = ?`
   ).run(
     opts.durationActual,
     opts.pomosCompleted,

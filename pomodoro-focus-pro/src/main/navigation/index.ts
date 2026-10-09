@@ -7,6 +7,7 @@ import { warmupFingerprint } from './biliFingerprint'
 import { isAllowedBiliUrl } from './guard'
 import { getSettings } from '../storage/settings'
 import { buildBackupFile, readBackupFile, writeBackupFile } from '../storage/backup'
+import { importTaskBackup } from '../storage/taskRepository'
 import { assertExitSafety } from '../enforcement/emergencyExit'
 import { recordTelemetry } from '../telemetry'
 import {
@@ -519,7 +520,8 @@ export function registerNavigationModule(
             exportedAt: backup.exportedAt,
             recordCount: backup.data.playRecords.length,
             noteCount: backup.data.notes.length,
-            sessionCount: backup.data.studySessions.length
+            sessionCount: backup.data.studySessions.length,
+            taskCount: backup.data.tasks?.length ?? 0
           }
         }
       } catch (err) {
@@ -539,6 +541,7 @@ export function registerNavigationModule(
       records: number
       notes: number
       sessions: number
+      tasks?: number
       error?: string
     }> => {
       try {
@@ -553,8 +556,16 @@ export function registerNavigationModule(
         }
         const backup = readBackupFile(fp)
         const result = importBackupData(backup.data, m)
+        const taskResult = importTaskBackup(
+          {
+            tasks: backup.data.tasks ?? [],
+            focusSessions: backup.data.focusSessions ?? [],
+            interruptionEvents: backup.data.interruptionEvents ?? []
+          },
+          m
+        )
         pendingImport = null // 令牌一次性有效
-        return { ok: true, ...result }
+        return { ok: true, ...result, tasks: taskResult.tasks }
       } catch (err) {
         return {
           ok: false,
