@@ -1754,7 +1754,8 @@ export function exportBackupData(): BackupFileData {
       settings,
       tasks: [],
       focusSessions: [],
-      interruptionEvents: []
+      interruptionEvents: [],
+      vocab: []
     }
   }
   return collectBackupData(d, settings)
@@ -1762,13 +1763,14 @@ export function exportBackupData(): BackupFileData {
 
 /**
  * 恢复备份数据（M5）：事务原子。
- * - replace：清空 play_records / play_record_tags / study_sessions / notes 后整体写入
+ * - replace：清空 play_records / play_record_tags / study_sessions / notes / vocab 后整体写入
  * - merge ：play_records 同 bvid 取 updated_at 较新者；notes 按 id 保留现有（INSERT OR IGNORE）；
- *           sessions 追加（id 重建）；标签按记录聚合补入
+ *           sessions 追加（id 重建）；标签按记录聚合补入；
+ *           vocab 按 word 字段级合并（空不盖非空，都有则备份优先；added_at 取较早）
  */
 export function importBackupData(data: BackupFileData, mode: 'merge' | 'replace'): ImportResult {
   const d = getDb()
-  if (!d) return { records: 0, notes: 0, sessions: 0 }
+  if (!d) return { records: 0, notes: 0, sessions: 0, vocab: 0 }
   return applyContentBackup(d, data, mode)
 }
 

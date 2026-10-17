@@ -315,6 +315,7 @@ const api: RendererApi = {
       notes: number
       sessions: number
       tasks?: number
+      vocab?: number
       error?: string
     }> =>
       ipcRenderer.invoke(IPC_CHANNELS.playRecords.importData, filePath, mode) as Promise<{
@@ -323,6 +324,7 @@ const api: RendererApi = {
         notes: number
         sessions: number
         tasks?: number
+        vocab?: number
         error?: string
       }>,
     /** 备份元数据列表（M5） */

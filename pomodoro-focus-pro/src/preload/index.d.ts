@@ -219,6 +219,7 @@ export interface RendererApi {
       notes: number
       sessions: number
       tasks?: number
+      vocab?: number
       error?: string
     }>
     /** 备份元数据列表（M5） */

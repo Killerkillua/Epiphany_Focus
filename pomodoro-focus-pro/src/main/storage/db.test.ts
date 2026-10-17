@@ -20,11 +20,13 @@ vi.mock('electron', () => ({
 
 import {
   addFeedback,
+  addVocab,
   batchDeletePlayRecords,
   batchUpdatePlayRecords,
   closeDb,
   deleteNote,
   deletePlayRecord,
+  deleteVocab,
   exportBackupData,
   getAllPlayRecordTags,
   getDailyStudyMinutes,
@@ -42,6 +44,7 @@ import {
   listBackupMeta,
   listFeedback,
   listPlayRecords,
+  listVocab,
   loadNotesAll,
   loadNotesByVideo,
   markPlayRecordDone,
@@ -57,6 +60,7 @@ import {
   tickPlayRecord,
   todayLocal,
   updatePlayRecord,
+  updateVocabDefinition,
   upsertNote,
   upsertPlayRecord
 } from './db'
@@ -886,6 +890,152 @@ describe('exportBackupData / importBackupData（M5 备份恢复）', () => {
     // 现有标签不被重复写入
     expect(getAllPlayRecordTags()).toContain('前端')
   })
+
+  it('vocab replace：写释义 → 导出 → 清库 → 导入 → listVocab 一致', () => {
+    const { entry } = addVocab({
+      word: 'serendipity',
+      phonetic: '/ˌserənˈdɪpəti/',
+      definition: '',
+      example: 'a happy accident'
+    })
+    updateVocabDefinition(entry.id, '意外发现珍宝的能力')
+    const data = exportBackupData()
+    expect(data.vocab).toHaveLength(1)
+    expect(data.vocab?.[0]).toMatchObject({
+      word: 'serendipity',
+      phonetic: '/ˌserənˈdɪpəti/',
+      definition: '意外发现珍宝的能力',
+      example: 'a happy accident'
+    })
+
+    deleteVocab(entry.id)
+    expect(listVocab()).toHaveLength(0)
+
+    const result = importBackupData(data, 'replace')
+    expect(result.vocab).toBe(1)
+    const restored = listVocab()
+    expect(restored).toHaveLength(1)
+    expect(restored[0]).toMatchObject({
+      word: 'serendipity',
+      phonetic: '/ˌserənˈdɪpəti/',
+      definition: '意外发现珍宝的能力',
+      example: 'a happy accident',
+      createdAt: data.vocab![0].createdAt
+    })
+  })
+
+  it('vocab merge：字段级空不盖非空；双方都有则备份优先；仅本地保留', () => {
+    addVocab({ word: 'local-only', definition: '仅本地' })
+    addVocab({ word: 'keep-local', definition: '本地释义' })
+    addVocab({ word: 'fill-from-backup', definition: '' })
+    addVocab({
+      word: 'prefer-backup',
+      phonetic: 'local-ph',
+      definition: '本地释义',
+      example: 'local-ex'
+    })
+    addVocab({ word: 'mixed', phonetic: '', definition: '本地释义', example: 'local-ex' })
+
+    const data = exportBackupData()
+    data.vocab = [
+      {
+        id: 0,
+        word: 'backup-only',
+        phonetic: 'b',
+        definition: '仅备份',
+        example: '',
+        createdAt: 100
+      },
+      {
+        id: 0,
+        word: 'keep-local',
+        phonetic: '',
+        definition: '',
+        example: '',
+        createdAt: 999
+      },
+      {
+        id: 0,
+        word: 'fill-from-backup',
+        phonetic: 'f',
+        definition: '备份释义',
+        example: 'backup-ex',
+        createdAt: 50
+      },
+      {
+        id: 0,
+        word: 'prefer-backup',
+        phonetic: 'backup-ph',
+        definition: '备份释义',
+        example: 'backup-ex',
+        createdAt: 200
+      },
+      {
+        id: 0,
+        word: 'mixed',
+        phonetic: 'backup-ph',
+        definition: '备份释义',
+        example: '',
+        createdAt: 80
+      }
+    ]
+
+    const result = importBackupData(data, 'merge')
+    expect(result.vocab).toBe(5)
+    const byWord = Object.fromEntries(listVocab().map((v) => [v.word, v]))
+
+    expect(byWord['backup-only']).toMatchObject({
+      definition: '仅备份',
+      phonetic: 'b',
+      createdAt: 100
+    })
+    expect(byWord['local-only']).toMatchObject({ definition: '仅本地' })
+    expect(byWord['keep-local']).toMatchObject({ definition: '本地释义' })
+    expect(byWord['fill-from-backup']).toMatchObject({
+      definition: '备份释义',
+      phonetic: 'f',
+      example: 'backup-ex'
+    })
+    expect(byWord['prefer-backup']).toMatchObject({
+      phonetic: 'backup-ph',
+      definition: '备份释义',
+      example: 'backup-ex'
+    })
+    expect(byWord['mixed']).toMatchObject({
+      phonetic: 'backup-ph',
+      definition: '备份释义',
+      example: 'local-ex'
+    })
+  })
+
+  it('vocab replace：本地多出的词被清掉；1.1 无 vocab 字段 merge 保留 / replace 清空', () => {
+    addVocab({ word: 'stay', definition: '应被清掉' })
+    addVocab({ word: 'also', definition: '也应清掉' })
+    const snapshot = exportBackupData()
+    snapshot.vocab = [
+      { id: 0, word: 'from-backup', phonetic: '', definition: '备份词', example: '', createdAt: 1 }
+    ]
+    const replaced = importBackupData(snapshot, 'replace')
+    expect(replaced.vocab).toBe(1)
+    expect(listVocab().map((v) => v.word)).toEqual(['from-backup'])
+
+    addVocab({ word: 'local-keep', definition: 'merge 应保留' })
+    const legacyNoVocab = {
+      playRecords: [],
+      notes: [],
+      studySessions: [],
+      tags: [],
+      settings: { dailyMinutes: 0, weeklyDays: 0 }
+      // 无 vocab 字段（模拟 1.1）
+    }
+    const merged = importBackupData(legacyNoVocab, 'merge')
+    expect(merged.vocab).toBe(0)
+    expect(listVocab().some((v) => v.word === 'local-keep')).toBe(true)
+
+    const cleared = importBackupData(legacyNoVocab, 'replace')
+    expect(cleared.vocab).toBe(0)
+    expect(listVocab()).toHaveLength(0)
+  })
 })
 
 /* ================= M5 备份文件层（backup.ts） ================= */
@@ -893,8 +1043,9 @@ describe('exportBackupData / importBackupData（M5 备份恢复）', () => {
 describe('backup.ts 文件层（parseBackupFile / pruneBackups / writeBackupFile）', () => {
   it('parseBackupFile 校验版本与结构；非法文件抛错', () => {
     const valid = buildBackupFile()
-    expect(parseBackupFile(JSON.stringify(valid)).version).toBe('1.1')
+    expect(parseBackupFile(JSON.stringify(valid)).version).toBe('1.2')
     expect(parseBackupFile(JSON.stringify(valid)).data.tasks).toEqual([])
+    expect(parseBackupFile(JSON.stringify(valid)).data.vocab).toEqual([])
     expect(parseBackupFile(JSON.stringify(valid)).data.playRecords).toEqual([])
     const legacy = {
       version: '1.0',
@@ -908,6 +1059,20 @@ describe('backup.ts 文件层（parseBackupFile / pruneBackups / writeBackupFile
       }
     }
     expect(parseBackupFile(JSON.stringify(legacy)).data.tasks).toEqual([])
+    expect(parseBackupFile(JSON.stringify(legacy)).data.vocab).toEqual([])
+    const legacy11 = {
+      version: '1.1',
+      exportedAt: 1,
+      data: {
+        playRecords: [],
+        notes: [],
+        studySessions: [],
+        tags: [],
+        settings: { dailyMinutes: 0, weeklyDays: 0 },
+        tasks: []
+      }
+    }
+    expect(parseBackupFile(JSON.stringify(legacy11)).data.vocab).toEqual([])
     expect(() => parseBackupFile('not json')).toThrow('不是有效的 JSON')
     expect(() => parseBackupFile(JSON.stringify({ version: '9.9', data: {} }))).toThrow(
       '格式不正确'

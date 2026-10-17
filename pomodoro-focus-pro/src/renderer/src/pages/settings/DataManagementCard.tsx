@@ -149,7 +149,8 @@ export default function DataManagementCard({
         </div>
       )}
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-        JSON 用于在本应用里恢复。CSV、Excel、Markdown、Anki 用于把数据带走。
+        JSON 备份含学习记录、笔记、会话、任务与生词本；Anki 仍是带走用。CSV、Excel、Markdown
+        用于把其它数据带走。
       </Typography.Text>
       <div className="settings-row">
         <span className="settings-label">会话与番茄</span>

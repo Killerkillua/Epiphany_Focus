@@ -34,6 +34,7 @@ const MAX_RECORDS = 50_000
 const MAX_NOTES = 100_000
 const MAX_SESSIONS = 200_000
 const MAX_TASKS = 20_000
+const MAX_VOCAB = 50_000
 
 const asStr = (v: unknown, max: number): string => (typeof v === 'string' ? v.slice(0, max) : '')
 const asNum = (v: unknown): number => {
@@ -51,13 +52,15 @@ function sanitizeBackupData(data: BackupFile['data']): BackupFile['data'] {
   const tasksIn = Array.isArray(data.tasks) ? data.tasks : []
   const focusIn = Array.isArray(data.focusSessions) ? data.focusSessions : []
   const eventsIn = Array.isArray(data.interruptionEvents) ? data.interruptionEvents : []
+  const vocabIn = Array.isArray(data.vocab) ? data.vocab : []
   if (
     data.playRecords.length > MAX_RECORDS ||
     data.notes.length > MAX_NOTES ||
     data.studySessions.length > MAX_SESSIONS ||
     tasksIn.length > MAX_TASKS ||
     focusIn.length > MAX_SESSIONS ||
-    eventsIn.length > MAX_SESSIONS
+    eventsIn.length > MAX_SESSIONS ||
+    vocabIn.length > MAX_VOCAB
   ) {
     throw new Error('备份文件条目数量超出上限')
   }
@@ -182,6 +185,19 @@ function sanitizeBackupData(data: BackupFile['data']): BackupFile['data'] {
         note: asStr(e.note, 120),
         elapsedMs: asNum(e.elapsedMs),
         createdAt: asNum(e.createdAt)
+      }
+    }),
+    vocab: vocabIn.map((raw, i) => {
+      const v = asObj(raw, 'vocab', i)
+      const word = asStr(v.word, 200).trim()
+      if (!word) throw new Error(`备份文件损坏：vocab[${i}] 缺少 word`)
+      return {
+        id: asNum(v.id),
+        word,
+        phonetic: asStr(v.phonetic, 200),
+        definition: asStr(v.definition, 2000),
+        example: asStr(v.example, 2000),
+        createdAt: asNum(v.createdAt)
       }
     })
   }
