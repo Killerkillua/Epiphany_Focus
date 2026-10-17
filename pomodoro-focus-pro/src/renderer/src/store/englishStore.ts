@@ -66,7 +66,9 @@ interface EnglishStore {
   continue: (messageId: string) => Promise<void>
   refreshConfig: () => Promise<void>
   refreshLists: () => Promise<void>
-  addVocab: (payload: AddVocabPayload) => Promise<void>
+  /** 返回该词加入前是否已在生词本 */
+  addVocab: (payload: AddVocabPayload) => Promise<boolean>
+  updateVocab: (id: number, definition: string) => Promise<void>
   deleteVocab: (id: number) => Promise<void>
   addGrammar: (payload: AddGrammarPayload) => Promise<void>
   deleteGrammar: (id: number) => Promise<void>
@@ -320,7 +322,14 @@ export const useEnglishStore = create<EnglishStore>((set, get) => ({
   },
 
   addVocab: async (payload) => {
-    await window.api.ai.addVocab(payload)
+    const result = await window.api.ai.addVocab(payload)
+    const vocab = await window.api.ai.listVocab()
+    set({ vocab })
+    return result.existed
+  },
+
+  updateVocab: async (id, definition) => {
+    await window.api.ai.updateVocab({ id, definition })
     const vocab = await window.api.ai.listVocab()
     set({ vocab })
   },

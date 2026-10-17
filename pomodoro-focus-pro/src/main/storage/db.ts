@@ -1,6 +1,6 @@
 import { app } from 'electron'
 import { join } from 'path'
-import type { GrammarPoint, VocabEntry } from '../../shared/ai'
+import type { AddVocabResult, GrammarPoint, VocabEntry } from '../../shared/ai'
 import type { NoteEntry, NoteSource } from '../../shared/bili'
 import { resourceKeyFromRecordId, resourceKindOf, type StudyResourceKind } from '../../shared/study'
 import type { BackupFileData, BackupMeta, ImportResult } from '../../shared/backup'
@@ -1929,51 +1929,54 @@ export function recordEvent(
 
 // ================= vocab（added_at） =================
 
+const VOCAB_SELECT =
+  'SELECT id, word, phonetic, definition, example, added_at AS createdAt FROM vocab'
+
 export function addVocab(payload: {
   word: string
   phonetic?: string
   definition?: string
   example?: string
-}): VocabEntry {
+}): AddVocabResult {
   const now = Date.now()
+  const word = payload.word.trim()
   const d = getDb()
   if (d) {
+    const existed = Boolean(d.prepare('SELECT id FROM vocab WHERE word = ?').get(word))
+    // 冲突时不更新，避免再次加入把记事本里写好的释义清掉。
     d.prepare(
       `INSERT INTO vocab (word, phonetic, definition, example, added_at) VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(word) DO UPDATE SET
-         phonetic = excluded.phonetic,
-         definition = excluded.definition,
-         example = excluded.example`
-    ).run(
-      payload.word.trim(),
-      payload.phonetic ?? '',
-      payload.definition ?? '',
-      payload.example ?? '',
-      now
-    )
-    const row = d
-      .prepare('SELECT * FROM vocab WHERE word = ?')
-      .get(payload.word.trim()) as VocabEntry
-    return row
+       ON CONFLICT(word) DO NOTHING`
+    ).run(word, payload.phonetic ?? '', payload.definition ?? '', payload.example ?? '', now)
+    const entry = d.prepare(`${VOCAB_SELECT} WHERE word = ?`).get(word) as VocabEntry
+    return { entry, existed }
   }
   return {
-    id: Date.now(),
-    word: payload.word.trim(),
-    phonetic: payload.phonetic ?? '',
-    definition: payload.definition ?? '',
-    example: payload.example ?? '',
-    createdAt: now
+    entry: {
+      id: Date.now(),
+      word,
+      phonetic: payload.phonetic ?? '',
+      definition: payload.definition ?? '',
+      example: payload.example ?? '',
+      createdAt: now
+    },
+    existed: false
   }
+}
+
+export function updateVocabDefinition(id: number, definition: string): VocabEntry | null {
+  const d = getDb()
+  if (!d) return null
+  const existing = d.prepare(`${VOCAB_SELECT} WHERE id = ?`).get(id) as VocabEntry | undefined
+  if (!existing) return null
+  d.prepare('UPDATE vocab SET definition = ? WHERE id = ?').run(definition, id)
+  return { ...existing, definition }
 }
 
 export function listVocab(): VocabEntry[] {
   const d = getDb()
   if (!d) return []
-  return d
-    .prepare(
-      `SELECT id, word, phonetic, definition, example, added_at AS createdAt FROM vocab ORDER BY id DESC`
-    )
-    .all() as VocabEntry[]
+  return d.prepare(`${VOCAB_SELECT} ORDER BY id DESC`).all() as VocabEntry[]
 }
 
 export function deleteVocab(id: number): void {

@@ -987,6 +987,74 @@ body {
   font-size: var(--text-xs);
 }
 
+.vocab-side-hint {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.vocab-select-pop {
+  position: fixed;
+  z-index: 30;
+  transform: translateY(-100%);
+}
+
+.vocab-notebook-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.vocab-notebook-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.vocab-notebook-item {
+  padding: 10px 12px;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--bg2);
+}
+
+.vocab-notebook-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.vocab-notebook-word {
+  font-weight: 600;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.vocab-notebook-def {
+  margin: 8px 0 0;
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.vocab-notebook-mask {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg3);
+  color: var(--muted);
+  font-size: 12px;
+  user-select: none;
+}
+
 .grammar-summary {
   color: var(--muted);
   font-size: var(--text-xs);

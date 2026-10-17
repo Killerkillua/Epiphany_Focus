@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { Button, Card, Empty, Input, Space, Typography, message } from 'antd'
+import { Button, Card, Empty, Input, Segmented, Space, Typography, message } from 'antd'
 import {
   DeleteOutlined,
   DownloadOutlined,
@@ -8,6 +8,7 @@ import {
   ScanOutlined
 } from '@ant-design/icons'
 import type { NoteEntry } from '../../../shared/bili'
+import VocabNotebook from './VocabNotebook'
 
 const { TextArea } = Input
 
@@ -21,6 +22,7 @@ function NotesPage(): JSX.Element {
   const [currentId, setCurrentId] = useState<string>('main')
   const [draft, setDraft] = useState('')
   const [ocrBusy, setOcrBusy] = useState(false)
+  const [tab, setTab] = useState<'notes' | 'vocab'>('notes')
   const fileRef = useRef<HTMLInputElement>(null)
 
   const load = async (): Promise<void> => {
@@ -151,6 +153,7 @@ function NotesPage(): JSX.Element {
 
   /** 监听剪贴板粘贴：图片直接 OCR，文本照常 */
   useEffect(() => {
+    if (tab !== 'notes') return
     const onPaste = (e: ClipboardEvent): void => {
       const item = Array.from(e.clipboardData?.items ?? []).find((i) => i.type.startsWith('image/'))
       const file = item?.getAsFile()
@@ -162,13 +165,26 @@ function NotesPage(): JSX.Element {
     window.addEventListener('paste', onPaste)
     return () => window.removeEventListener('paste', onPaste)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ocrBusy])
+  }, [ocrBusy, tab])
 
   return (
     <div>
       <h1 className="page-title">记事本</h1>
-      <p className="page-sub">学习笔记 · 自动保存 · 图片 OCR 识别 · Markdown 导出</p>
+      <p className="page-sub">学习笔记 · 生词本 · 自动保存 · 图片 OCR 识别 · Markdown 导出</p>
 
+      <Segmented
+        style={{ marginBottom: 12 }}
+        value={tab}
+        onChange={(value) => setTab(value as 'notes' | 'vocab')}
+        options={[
+          { label: '笔记', value: 'notes' },
+          { label: '生词本', value: 'vocab' }
+        ]}
+      />
+
+      {tab === 'vocab' ? (
+        <VocabNotebook />
+      ) : (
       <Card size="small" className="notes-card">
         {/* 工具栏 */}
         <Space wrap style={{ marginBottom: 12 }}>
@@ -238,6 +254,7 @@ function NotesPage(): JSX.Element {
           className="notes-editor"
         />
       </Card>
+      )}
 
       {/* 隐藏的文件选择 */}
       <input

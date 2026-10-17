@@ -18,6 +18,8 @@ import type {
 import type {
   AddGrammarPayload,
   AddVocabPayload,
+  AddVocabResult,
+  UpdateVocabPayload,
   AiConfig,
   AiQuestion,
   AiReply,
@@ -331,8 +333,9 @@ export interface RendererApi {
     /** 图片文字识别（OCR 模型） */
     ocr(req: OcrRequest): Promise<OcrResult>
     /** 生词本 */
-    addVocab(payload: AddVocabPayload): Promise<VocabEntry>
+    addVocab(payload: AddVocabPayload): Promise<AddVocabResult>
     listVocab(): Promise<VocabEntry[]>
+    updateVocab(payload: UpdateVocabPayload): Promise<VocabEntry>
     deleteVocab(id: number): Promise<boolean>
     /** 语法要点 */
     addGrammar(payload: AddGrammarPayload): Promise<GrammarPoint>

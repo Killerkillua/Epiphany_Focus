@@ -21,6 +21,8 @@ import type {
 import type {
   AddGrammarPayload,
   AddVocabPayload,
+  AddVocabResult,
+  UpdateVocabPayload,
   AiConfig,
   AiQuestion,
   AiReply,
@@ -488,10 +490,12 @@ const api: RendererApi = {
       ipcRenderer.invoke(IPC_CHANNELS.ai.ocr, req) as Promise<OcrResult>,
 
     /* 生词本 */
-    addVocab: (payload: AddVocabPayload): Promise<VocabEntry> =>
-      ipcRenderer.invoke(IPC_CHANNELS.ai.addVocab, payload) as Promise<VocabEntry>,
+    addVocab: (payload: AddVocabPayload): Promise<AddVocabResult> =>
+      ipcRenderer.invoke(IPC_CHANNELS.ai.addVocab, payload) as Promise<AddVocabResult>,
     listVocab: (): Promise<VocabEntry[]> =>
       ipcRenderer.invoke(IPC_CHANNELS.ai.listVocab) as Promise<VocabEntry[]>,
+    updateVocab: (payload: UpdateVocabPayload): Promise<VocabEntry> =>
+      ipcRenderer.invoke(IPC_CHANNELS.ai.updateVocab, payload) as Promise<VocabEntry>,
     deleteVocab: (id: number): Promise<boolean> =>
       ipcRenderer.invoke(IPC_CHANNELS.ai.deleteVocab, id) as Promise<boolean>,
 

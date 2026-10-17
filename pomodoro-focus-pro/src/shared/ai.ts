@@ -121,6 +121,18 @@ export interface AddVocabPayload {
   example?: string
 }
 
+/** 加入生词本的结果。已存在的词不会覆盖音标、释义、例句。 */
+export interface AddVocabResult {
+  entry: VocabEntry
+  existed: boolean
+}
+
+/** 只更新释义 */
+export interface UpdateVocabPayload {
+  id: number
+  definition: string
+}
+
 /** 加入语法要点 */
 export interface AddGrammarPayload {
   title: string

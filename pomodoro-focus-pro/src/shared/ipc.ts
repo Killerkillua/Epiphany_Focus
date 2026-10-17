@@ -88,6 +88,7 @@ export const IPC_CHANNELS = {
     /** 生词本 */
     addVocab: 'ai:add-vocab',
     listVocab: 'ai:list-vocab',
+    updateVocab: 'ai:update-vocab',
     deleteVocab: 'ai:delete-vocab',
     /** 语法要点 */
     addGrammar: 'ai:add-grammar',

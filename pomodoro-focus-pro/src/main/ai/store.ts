@@ -5,11 +5,13 @@ import {
   deleteGrammarPoint,
   deleteVocab as dbDeleteVocab,
   listGrammarPoints,
-  listVocab as dbListVocab
+  listVocab as dbListVocab,
+  updateVocabDefinition
 } from '../storage/db'
 import type {
   AddGrammarPayload,
   AddVocabPayload,
+  AddVocabResult,
   AiConfig,
   AiUsage,
   GrammarPoint,
@@ -45,12 +47,16 @@ export class AiStore {
 
   // ================= 生词本（中央 SQLite，added_at） =================
 
-  addVocab(payload: AddVocabPayload): VocabEntry {
+  addVocab(payload: AddVocabPayload): AddVocabResult {
     return dbAddVocab(payload)
   }
 
   listVocab(): VocabEntry[] {
     return dbListVocab()
+  }
+
+  updateVocab(id: number, definition: string): VocabEntry | null {
+    return updateVocabDefinition(id, definition)
   }
 
   deleteVocab(id: number): void {

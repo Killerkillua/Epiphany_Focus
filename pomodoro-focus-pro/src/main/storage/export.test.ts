@@ -14,9 +14,11 @@ vi.mock('electron', () => ({
 import {
   addVocab,
   closeDb,
+  listVocab,
   openSqlite,
   recordSessionStart,
   recordStudyStats,
+  updateVocabDefinition,
   upsertNote
 } from './db'
 import { renderNotesMarkdown, renderStatsExport, renderVocabExport } from './export'
@@ -129,5 +131,28 @@ describe('标准化导出', () => {
     } finally {
       sqlite.close?.()
     }
+  })
+
+  it('重复加入同一生词时保留已有释义，update 只改释义', () => {
+    const first = addVocab({
+      word: 'apple',
+      phonetic: 'ae',
+      definition: '苹果',
+      example: 'an apple'
+    })
+    const again = addVocab({ word: 'apple', definition: '', phonetic: '', example: '' })
+    expect(first.existed).toBe(false)
+    expect(again.existed).toBe(true)
+    expect(again.entry.definition).toBe('苹果')
+    expect(again.entry.phonetic).toBe('ae')
+    expect(again.entry.example).toBe('an apple')
+
+    const updated = updateVocabDefinition(again.entry.id, '一种水果')
+    expect(updated?.definition).toBe('一种水果')
+    expect(updated?.phonetic).toBe('ae')
+    expect(updated?.example).toBe('an apple')
+    expect(listVocab()).toHaveLength(1)
+    expect(updateVocabDefinition(again.entry.id, '一种水果')?.definition).toBe('一种水果')
+    expect(updateVocabDefinition(again.entry.id + 99, '不存在')).toBeNull()
   })
 })

@@ -5,6 +5,7 @@ import type { AiAskRequest, BiliAiReply } from '../../shared/bili'
 import type {
   AddGrammarPayload,
   AddVocabPayload,
+  UpdateVocabPayload,
   AiConfig,
   AiQuestion,
   AiReply,
@@ -293,7 +294,8 @@ export function registerAiIpc(): void {
   ipcMain.handle(IPC_CHANNELS.ai.addVocab, (_event, payload: AddVocabPayload) => {
     if (!payload || typeof payload !== 'object') throw new ValidationError('生词本写入必须是对象')
     const p = payload as AddVocabPayload
-    const word = str(p.word, 'vocab.word', { max: 200 })
+    const word = str(p.word, 'vocab.word', { max: 200 }).trim()
+    if (!word) throw new ValidationError('vocab.word 不能为空')
     return store.addVocab({
       word,
       phonetic: optStr(p.phonetic, 'vocab.phonetic', { max: 200 }),
@@ -302,6 +304,15 @@ export function registerAiIpc(): void {
     })
   })
   ipcMain.handle(IPC_CHANNELS.ai.listVocab, () => store.listVocab())
+  ipcMain.handle(IPC_CHANNELS.ai.updateVocab, (_event, payload: UpdateVocabPayload) => {
+    if (!payload || typeof payload !== 'object') throw new ValidationError('生词释义更新必须是对象')
+    const p = payload as UpdateVocabPayload
+    const id = num(p.id, 'vocab.id')
+    const definition = str(p.definition, 'vocab.definition', { max: 2000, allowEmpty: true }).trim()
+    const entry = store.updateVocab(id, definition)
+    if (!entry) throw new ValidationError('生词不存在')
+    return entry
+  })
   ipcMain.handle(IPC_CHANNELS.ai.deleteVocab, (_event, id: number) => {
     store.deleteVocab(num(id, 'vocab.id'))
     return true
