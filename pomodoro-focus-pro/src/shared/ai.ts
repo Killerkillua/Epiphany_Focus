@@ -95,6 +95,14 @@ export interface OcrResult {
   error?: string
 }
 
+/**
+ * 生词本词条归一化：trim + NFKC（全半角）+ 小写。
+ * UNIQUE / 去重按归一化后的 word，Apple 与 apple、Ａｐｐｌｅ 视为同一词。
+ */
+export function normalizeVocabWord(raw: string): string {
+  return raw.trim().normalize('NFKC').toLowerCase()
+}
+
 /** 生词本条目 */
 export interface VocabEntry {
   id: number

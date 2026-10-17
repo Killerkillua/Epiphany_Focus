@@ -1,4 +1,5 @@
 import { readFileSync, statSync } from 'fs'
+import { normalizeVocabWord } from '../../shared/ai'
 import { BACKUP_VERSIONS, type BackupFile } from '../../shared/backup'
 
 /** 解析并校验备份文件（version + 必填字段），非法抛错 */
@@ -189,7 +190,7 @@ function sanitizeBackupData(data: BackupFile['data']): BackupFile['data'] {
     }),
     vocab: vocabIn.map((raw, i) => {
       const v = asObj(raw, 'vocab', i)
-      const word = asStr(v.word, 200).trim()
+      const word = normalizeVocabWord(asStr(v.word, 200))
       if (!word) throw new Error(`备份文件损坏：vocab[${i}] 缺少 word`)
       return {
         id: asNum(v.id),

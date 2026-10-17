@@ -158,4 +158,17 @@ describe('标准化导出', () => {
     expect(updateVocabDefinition(again.entry.id, '一种水果')?.definition).toBe('一种水果')
     expect(updateVocabDefinition(again.entry.id + 99, '不存在')).toBeNull()
   })
+
+  it('Apple / apple / 全角视为同一词，条数保持 1', () => {
+    const first = addVocab({ word: 'Apple', definition: '苹果' })
+    const again = addVocab({ word: 'apple', definition: '' })
+    const fullwidth = addVocab({ word: 'Ａｐｐｌｅ', definition: '' })
+    expect(first.existed).toBe(false)
+    expect(again.existed).toBe(true)
+    expect(fullwidth.existed).toBe(true)
+    expect(first.entry.word).toBe('apple')
+    expect(again.entry.id).toBe(first.entry.id)
+    expect(fullwidth.entry.definition).toBe('苹果')
+    expect(listVocab()).toHaveLength(1)
+  })
 })

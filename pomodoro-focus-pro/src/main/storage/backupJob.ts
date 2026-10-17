@@ -1,4 +1,4 @@
-import type { VocabEntry } from '../../shared/ai'
+import { normalizeVocabWord, type VocabEntry } from '../../shared/ai'
 import { BACKUP_VERSION, type BackupFile, type BackupFileData, type ImportResult } from '../../shared/backup'
 import type { NoteEntry } from '../../shared/bili'
 import type { PlayRecord, PlayStatus, SessionSource, StudySession } from '../../shared/stats'
@@ -341,7 +341,8 @@ function writeVocab(
       .all() as Array<Record<string, unknown>>
     for (const row of rows) {
       const entry = vocabRow(row)
-      if (entry.word) localByWord.set(entry.word, entry)
+      const key = normalizeVocabWord(entry.word)
+      if (key) localByWord.set(key, { ...entry, word: key })
     }
   }
   const upsert = d.prepare(
@@ -354,7 +355,7 @@ function writeVocab(
   )
   let written = 0
   for (const raw of entries) {
-    const word = String(raw.word ?? '').trim()
+    const word = normalizeVocabWord(String(raw.word ?? ''))
     if (!word) continue
     const backup: VocabEntry = {
       id: Number(raw.id) || 0,
