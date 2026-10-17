@@ -5,6 +5,7 @@ import type { VocabEntry } from '../../../shared/ai'
 import type { VocabExportFormat } from '../../../shared/export'
 import { useEnglishStore } from '../store/englishStore'
 import { extractErrorMessage } from '../utils/errorMessage'
+import { exportVocabWithBackGuard, vocabBackEmpty } from '../utils/vocabExport'
 
 const { TextArea } = Input
 
@@ -32,16 +33,11 @@ function VocabNotebook(): JSX.Element {
     void load().catch((err) => message.error(extractErrorMessage(err)))
   }, [])
 
-  const exportVocab = async (format: VocabExportFormat): Promise<void> => {
-    try {
-      const res = await window.api.export.vocab({ format })
-      if (res.canceled) return
-      if (res.ok) message.success(format === 'apkg' ? '已导出 Anki 卡包' : '已导出 Anki 文本')
-      else message.error(res.error ?? '导出失败')
-    } catch (err) {
-      message.error(extractErrorMessage(err))
-    }
+  const exportVocab = (format: VocabExportFormat): void => {
+    void exportVocabWithBackGuard(items, format)
   }
+
+  const emptyBackCount = items.filter(vocabBackEmpty).length
 
   const startEdit = (entry: VocabEntry): void => {
     setEditingId(entry.id)
@@ -102,7 +98,8 @@ function VocabNotebook(): JSX.Element {
         </Space>
       </div>
       <Typography.Text type="secondary" className="vocab-side-hint">
-        在英语学习模式里选中对话文字即可加入。释义在这里填写。
+        在英语学习模式里选中对话文字即可加入。释义在这里填写
+        {emptyBackCount > 0 ? `（${emptyBackCount} 条尚无释义/例句，导出 Anki 时背面会空）` : '。'}
       </Typography.Text>
 
       {items.length === 0 ? (
@@ -160,11 +157,16 @@ function VocabNotebook(): JSX.Element {
                     autoSize={{ minRows: 2, maxRows: 6 }}
                   />
                 ) : showDefinitions ? (
-                  <p className="vocab-notebook-def">
-                    {entry.definition || '暂无释义，点编辑添加'}
-                  </p>
+                  <div className="vocab-notebook-def">
+                    <p>{entry.definition || '暂无释义，点编辑添加'}</p>
+                    {entry.example ? (
+                      <p className="vocab-notebook-example">例句：{entry.example}</p>
+                    ) : null}
+                  </div>
                 ) : (
-                  <p className="vocab-notebook-mask">释义已遮蔽</p>
+                  <p className="vocab-notebook-mask">
+                    {vocabBackEmpty(entry) ? '暂无释义（导出 Anki 背面会空）' : '释义已遮蔽'}
+                  </p>
                 )}
               </li>
             )
@@ -180,7 +182,7 @@ function VocabExportButton({
   onExport
 }: {
   disabled: boolean
-  onExport: (format: VocabExportFormat) => Promise<void>
+  onExport: (format: VocabExportFormat) => void
 }): JSX.Element {
   return (
     <Dropdown

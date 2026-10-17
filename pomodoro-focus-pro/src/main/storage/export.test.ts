@@ -111,6 +111,7 @@ describe('标准化导出', () => {
   it('生词本 txt 带 Anki 表头，apkg 可解开且笔记数与 media 正确', async () => {
     addVocab({ word: 'apple', phonetic: 'ae', definition: '苹果', example: 'an apple' })
     addVocab({ word: 'pear', phonetic: '', definition: '梨', example: '' })
+    addVocab({ word: 'context', phonetic: '', definition: '', example: '…around the word…' })
 
     const text = (await renderVocabExport('txt')).toString('utf8')
     expect(text).toContain('#separator:Tab')
@@ -119,6 +120,8 @@ describe('标准化导出', () => {
     expect(text).toContain('#columns:Front\tBack\tTags')
     expect(text).toContain('apple<br>ae\t苹果<br><br>an apple\tpomodoro-vocab')
     expect(text).toContain('pear\t梨\tpomodoro-vocab')
+    // 仅有选区上下文(example)时 Back 不为空，且不带多余 <br>
+    expect(text).toContain('context\t…around the word…\tpomodoro-vocab')
 
     const zip = await JSZip.loadAsync(await renderVocabExport('apkg'))
     expect(await zip.file('media')!.async('string')).toBe('{}')
@@ -127,7 +130,7 @@ describe('标准化导出', () => {
     const sqlite = openSqlite(dbPath)
     try {
       const row = sqlite.prepare('SELECT COUNT(*) AS c FROM notes').get() as { c: number | bigint }
-      expect(Number(row.c)).toBe(2)
+      expect(Number(row.c)).toBe(3)
     } finally {
       sqlite.close?.()
     }

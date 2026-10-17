@@ -8,6 +8,7 @@ import {
   Empty,
   Input,
   List,
+  Modal,
   Segmented,
   Space,
   Tooltip,
@@ -27,6 +28,7 @@ import SourcesPanel from '../components/SourcesPanel'
 import SessionTimerBar from '../components/SessionTimerBar'
 import { useEnglishStore, type ChatMessage } from '../store/englishStore'
 import { extractErrorMessage } from '../utils/errorMessage'
+import { exportVocabWithBackGuard } from '../utils/vocabExport'
 import type { AiScenario } from '../../../shared/ai'
 import type { VocabExportFormat } from '../../../shared/export'
 
@@ -48,13 +50,24 @@ const SCENARIO_PLACEHOLDER: Record<AiScenario, string> = {
   free: '自由提问英语学习问题…'
 }
 
-/** 与主进程 vocab.word 校验一致 */
+/** 与主进程 vocab.word / definition / example 校验一致 */
 const VOCAB_WORD_MAX = 200
+const VOCAB_DEFINITION_MAX = 2000
+const VOCAB_EXAMPLE_MAX = 2000
+const CONTEXT_SLICE_MAX = 240
 
 interface VocabPick {
   text: string
+  /** 气泡内选区附近上下文，写入 example，避免 Anki Back 全空 */
+  context: string
   top: number
   left: number
+}
+
+interface VocabDraft {
+  word: string
+  context: string
+  definition: string
 }
 
 /** 选区两端都落在同一条对话气泡的正文里（不含操作按钮） */
@@ -62,6 +75,22 @@ function bubbleOf(node: Node | null): Element | null {
   const el = node instanceof Element ? node : node?.parentElement
   if (!el || el.closest('.chat-msg-actions')) return null
   return el.closest('.chat-msg-bubble')
+}
+
+/** 从气泡正文截取选区附近上下文，作例句；选区已是整句则不重复写入 */
+function contextAround(bubbleText: string, selected: string): string {
+  const plain = bubbleText.replace(/\s+/g, ' ').trim()
+  const needle = selected.replace(/\s+/g, ' ').trim()
+  if (!plain || !needle || plain === needle) return ''
+  const idx = plain.toLowerCase().indexOf(needle.toLowerCase())
+  if (idx < 0) return plain.slice(0, CONTEXT_SLICE_MAX)
+  const pad = Math.max(24, Math.floor((CONTEXT_SLICE_MAX - needle.length) / 2))
+  const start = Math.max(0, idx - pad)
+  const end = Math.min(plain.length, idx + needle.length + pad)
+  let slice = plain.slice(start, end).trim()
+  if (start > 0) slice = `…${slice}`
+  if (end < plain.length) slice = `${slice}…`
+  return slice.slice(0, VOCAB_EXAMPLE_MAX)
 }
 
 function readChatSelection(viewport: HTMLElement): VocabPick | null {
@@ -76,8 +105,10 @@ function readChatSelection(viewport: HTMLElement): VocabPick | null {
   const rects = range.getClientRects()
   const rect = rects.length > 0 ? rects[0] : range.getBoundingClientRect()
   if (rect.width === 0 && rect.height === 0) return null
+  const bubblePlain = (start.textContent ?? '').replace(/\s+/g, ' ').trim()
   return {
     text,
+    context: contextAround(bubblePlain, text),
     top: Math.max(8, rect.top - 8),
     left: Math.min(Math.max(8, rect.left), window.innerWidth - 132)
   }
@@ -175,6 +206,8 @@ function EnglishModePage(): JSX.Element {
   const [input, setInput] = useState('')
   const [ocrBusy, setOcrBusy] = useState(false)
   const [vocabPick, setVocabPick] = useState<VocabPick | null>(null)
+  const [vocabDraft, setVocabDraft] = useState<VocabDraft | null>(null)
+  const [vocabSaving, setVocabSaving] = useState(false)
   const listRef = useRef<ScrollAreaHandle>(null)
   const ocrFileRef = useRef<HTMLInputElement>(null)
   const vocabPopRef = useRef<HTMLDivElement>(null)
@@ -231,8 +264,8 @@ function EnglishModePage(): JSX.Element {
     }
   }, [])
 
-  const addSelectedVocab = async (text: string): Promise<void> => {
-    const word = text.replace(/\s+/g, ' ').trim()
+  const openVocabDraft = (pick: VocabPick): void => {
+    const word = pick.text.replace(/\s+/g, ' ').trim()
     setVocabPick(null)
     window.getSelection()?.removeAllRanges()
     if (!word) return
@@ -240,25 +273,42 @@ function EnglishModePage(): JSX.Element {
       message.warning(`选中内容超过 ${VOCAB_WORD_MAX} 字，请缩短后再加入`)
       return
     }
+    setVocabDraft({ word, context: pick.context, definition: '' })
+  }
+
+  const saveVocabDraft = async (): Promise<void> => {
+    if (!vocabDraft) return
+    const definition = vocabDraft.definition.trim()
+    if (definition.length > VOCAB_DEFINITION_MAX) {
+      message.warning(`释义超过 ${VOCAB_DEFINITION_MAX} 字`)
+      return
+    }
+    setVocabSaving(true)
     try {
-      const existed = await addVocab({ word })
-      message.success(
-        existed ? '已在生词本，可在记事本查看' : `已加入生词本：${word}，可在记事本查看`
-      )
+      const existed = await addVocab({
+        word: vocabDraft.word,
+        definition,
+        example: vocabDraft.context || undefined
+      })
+      const word = vocabDraft.word
+      const hasBack = Boolean(definition || vocabDraft.context)
+      setVocabDraft(null)
+      if (existed) {
+        message.success('已在生词本，可在记事本查看')
+      } else if (hasBack) {
+        message.success(`已加入生词本：${word}，可在记事本查看`)
+      } else {
+        message.success(`已加入生词本：${word}。请到记事本补释义，否则 Anki 背面会空`)
+      }
     } catch (err) {
       message.error(extractErrorMessage(err))
+    } finally {
+      setVocabSaving(false)
     }
   }
 
-  const exportVocab = async (format: VocabExportFormat): Promise<void> => {
-    try {
-      const res = await window.api.export.vocab({ format })
-      if (res.canceled) return
-      if (res.ok) message.success(format === 'apkg' ? '已导出 Anki 卡包' : '已导出 Anki 文本')
-      else message.error(res.error ?? '导出失败')
-    } catch (err) {
-      message.error(err instanceof Error ? err.message : '导出失败')
-    }
+  const exportVocab = (format: VocabExportFormat): void => {
+    void exportVocabWithBackGuard(vocab, format)
   }
 
   const handleSend = async (): Promise<void> => {
@@ -351,13 +401,55 @@ function EnglishModePage(): JSX.Element {
                       vocabPopHold.current = false
                     }, 0)
                   }}
-                  onClick={() => void addSelectedVocab(vocabPick.text)}
+                  onClick={() => openVocabDraft(vocabPick)}
                 >
                   加入生词本
                 </Button>
               </div>,
               document.body
             )}
+
+          <Modal
+            title={vocabDraft ? `加入生词本：${vocabDraft.word}` : '加入生词本'}
+            open={Boolean(vocabDraft)}
+            okText="加入"
+            cancelText="取消"
+            confirmLoading={vocabSaving}
+            destroyOnClose
+            onCancel={() => {
+              if (!vocabSaving) setVocabDraft(null)
+            }}
+            onOk={() => void saveVocabDraft()}
+          >
+            {vocabDraft && (
+              <Space direction="vertical" size={12} style={{ width: '100%' }}>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  建议填写释义，导出 Anki 时用作卡片背面。也可先加入，稍后在记事本补全。
+                </Typography.Text>
+                <TextArea
+                  value={vocabDraft.definition}
+                  onChange={(e) =>
+                    setVocabDraft((prev) =>
+                      prev ? { ...prev, definition: e.target.value } : prev
+                    )
+                  }
+                  placeholder="填写释义（可选）"
+                  autoSize={{ minRows: 2, maxRows: 6 }}
+                  maxLength={VOCAB_DEFINITION_MAX}
+                  autoFocus
+                />
+                {vocabDraft.context ? (
+                  <Typography.Paragraph
+                    type="secondary"
+                    style={{ marginBottom: 0, fontSize: 12 }}
+                    ellipsis={{ rows: 3, expandable: true, symbol: '展开' }}
+                  >
+                    将附带选区上下文作例句：{vocabDraft.context}
+                  </Typography.Paragraph>
+                ) : null}
+              </Space>
+            )}
+          </Modal>
 
           <div className="chat-input-bar">
             <Segmented
