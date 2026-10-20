@@ -6,6 +6,19 @@ import App from './App'
 import { AppErrorBoundary } from './AppErrorBoundary'
 import './styles/global.css'
 
+// P1-5：渲染层全局异常经 IPC 转发主进程统一脱敏上报
+window.addEventListener('error', (e) => {
+  void window.api?.crash
+    ?.reportRenderer({ kind: 'window-error', message: e.message, stack: e.error instanceof Error ? e.error.stack : undefined, source: 'renderer' })
+    .catch(() => undefined)
+})
+window.addEventListener('unhandledrejection', (e) => {
+  const r = e.reason
+  void window.api?.crash
+    ?.reportRenderer({ kind: 'unhandledrejection', message: r instanceof Error ? r.message : String(r), stack: r instanceof Error ? r.stack : undefined, source: 'renderer' })
+    .catch(() => undefined)
+})
+
 const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement)
 
 root.render(

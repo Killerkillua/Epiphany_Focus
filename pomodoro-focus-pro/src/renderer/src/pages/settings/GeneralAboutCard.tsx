@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Button, Card, Col, Modal, Row, Select, Space, Switch, Typography, message } from 'antd'
+import type { UpdateState } from '../../../../shared/ipc'
 import { useSetting } from './useSetting'
 import type { LocalForm, UpdateFn } from './types'
 
@@ -22,6 +23,7 @@ export default function GeneralAboutCard({
   const [version, setVersion] = useState<string>('-')
   const [packaged, setPackaged] = useState(false)
   const [packagedReady, setPackagedReady] = useState(false)
+  const [updateState, setUpdateState] = useState<UpdateState>({ status: 'idle' })
   const [launchAtLogin, setLaunchAtLogin] = useSetting<boolean>(
     form,
     update,
@@ -63,9 +65,78 @@ export default function GeneralAboutCard({
     }
   }, [])
 
-  const handleCheckUpdate = (): void => {
-    message.info('更新服务未配置，暂无法检查更新')
+  useEffect(() => {
+    let cancelled = false
+    void window.api.update
+      .getStatus()
+      .then((state) => {
+        if (!cancelled) setUpdateState(state)
+      })
+      .catch(() => {
+        /* 忽略 */
+      })
+    const off = window.api.update.onStatusChanged((state) => {
+      setUpdateState(state)
+    })
+    return () => {
+      cancelled = true
+      off()
+    }
+  }, [])
+
+  const handleUpdateAction = useCallback(async (): Promise<void> => {
+    const { status } = updateState
+    try {
+      if (status === 'idle' || status === 'not-available' || status === 'error') {
+        const res = await window.api.update.check()
+        setUpdateState(res.state)
+        if (res.state.status === 'not-available') {
+          message.success('已是最新版本')
+        } else if (!res.ok && res.message) {
+          message.warning(res.message)
+        }
+        return
+      }
+      if (status === 'available') {
+        const res = await window.api.update.download()
+        setUpdateState(res.state)
+        if (!res.ok && res.message) message.warning(res.message)
+        return
+      }
+      if (status === 'downloaded') {
+        const res = await window.api.update.install()
+        setUpdateState(res.state)
+        if (!res.ok) {
+          if (res.blocked && res.message) message.warning(res.message)
+          else if (res.message) message.error(res.message)
+        }
+      }
+    } catch (err) {
+      message.error(`更新操作失败: ${err instanceof Error ? err.message : String(err)}`)
+    }
+  }, [updateState])
+
+  const updateButtonLabel = (): string => {
+    switch (updateState.status) {
+      case 'checking':
+        return '检查中…'
+      case 'available':
+        return updateState.version ? `发现 v${updateState.version} · 立即下载` : '立即下载'
+      case 'downloading':
+        return updateState.percent != null
+          ? `下载中 ${Math.round(updateState.percent)}%`
+          : '下载中…'
+      case 'downloaded':
+        return '重启安装'
+      case 'error':
+        return '重试检查'
+      default:
+        return '检查更新'
+    }
   }
+
+  const updateButtonDisabled =
+    updateState.status === 'checking' || updateState.status === 'downloading'
 
   return (
     <Card size="small" title="⚙️ 通用与关于" className="settings-card">
@@ -160,9 +231,16 @@ export default function GeneralAboutCard({
           <Button size="small" onClick={() => setModalType('privacy')}>
             隐私政策
           </Button>
-          <Button size="small" onClick={handleCheckUpdate}>
-            检查更新
+          <Button size="small" disabled={updateButtonDisabled} onClick={() => void handleUpdateAction()}>
+            {updateButtonLabel()}
           </Button>
+          {(updateState.status === 'available' || updateState.status === 'downloaded') &&
+            updateState.releaseNotes && (
+              <Typography.Text type="secondary" style={{ fontSize: 12, maxWidth: 360 }}>
+                {updateState.releaseNotes.slice(0, 200)}
+                {updateState.releaseNotes.length > 200 ? '…' : ''}
+              </Typography.Text>
+            )}
           <Button
             size="small"
             onClick={async () => {
@@ -177,6 +255,20 @@ export default function GeneralAboutCard({
             }}
           >
             打开系统日志目录
+          </Button>
+          <Button
+            size="small"
+            onClick={async () => {
+              try {
+                const r = await window.api.crash.exportDiagnostics()
+                if (r.ok) message.success(`诊断包已导出${r.filePath ? `: ${r.filePath}` : ''}`)
+                else if (!r.canceled) message.error(r.error ?? '导出诊断包失败')
+              } catch (err) {
+                message.error(`导出诊断包失败: ${err instanceof Error ? err.message : String(err)}`)
+              }
+            }}
+          >
+            导出诊断包
           </Button>
         </Space>
       </div>

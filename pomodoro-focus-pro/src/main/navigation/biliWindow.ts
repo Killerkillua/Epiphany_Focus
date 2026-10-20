@@ -1,4 +1,4 @@
-import { BrowserWindow, globalShortcut, screen } from 'electron'
+import { BrowserWindow, screen } from 'electron'
 import { join } from 'node:path'
 import { IPC_CHANNELS, IPC_EVENTS } from '../../shared/ipc'
 import { attachNavigationGuard, buildBlockPageHtml, isAllowedBiliUrl } from './guard'
@@ -10,6 +10,8 @@ import { biliResourceKey, type StudyResourceKind } from '../../shared/study'
 import { getAppIcon } from '../icon'
 import { reinforceTaskbarCover } from '../enforcement/taskbarWin'
 import { getSettings } from '../storage/settings'
+import { getShortcutStatus, registerShortcut, unregisterShortcut } from '../shortcuts/registry'
+import { HOTKEY_DEFAULTS } from '../../shared/shortcuts'
 import { recordStudySessionEnd, recordStudySessionStart } from '../storage/db'
 import { recordTelemetry } from '../telemetry'
 import type {
@@ -109,9 +111,6 @@ let overlayState: OverlayState = 'expanded'
 let overlayOptions: OverlayOptions = { allowMinimize: false, showInTaskbar: false }
 /** 用户拖拽面板 header 后的自定义位置（null = 未拖拽，跟随 dockOverlay 停靠） */
 let panelPosition: { x: number; y: number } | null = null
-/** 全局呼出 / 关闭视频快捷键注册状态（供 getHotkeyStatus 上报 / 调试） */
-let overlayHotkeyRegistered = false
-let closeVideoHotkeyRegistered = false
 /** 最近一次程序性 setPosition 的时间戳：'move' 事件在此窗口内视为程序移动，不记录为用户位置 */
 let lastProgrammaticMoveAt = 0
 /** 'move' 事件判为程序移动的时间窗口（ms），覆盖 setPosition 异步上报延迟 */
@@ -122,11 +121,8 @@ interface OverlayOptions {
   showInTaskbar: boolean
 }
 
-/** 悬浮面板全局呼出快捷键（主键 Ctrl+Shift+O；Ctrl+` 尽力注册，部分输入法环境不可用） */
-const OVERLAY_HOTKEYS = ['CommandOrControl+Shift+O', 'CommandOrControl+`'] as const
-
-/** 一键关闭视频快捷键（全屏锁定下最直接的退出路径，任何面板状态下可用） */
-const CLOSE_VIDEO_HOTKEY = 'CommandOrControl+Shift+Q'
+/** 悬浮面板次快捷键（Ctrl+` 尽力注册，部分输入法环境不可用）；主键见 settings.hotkeys.overlayToggle */
+const OVERLAY_ALT_HOTKEY = 'CommandOrControl+`'
 
 /** 按锁定档解耦悬浮面板窗口能力（两态均可移动，不随锁定档限制） */
 function buildOverlayOptions(): OverlayOptions {
@@ -737,55 +733,28 @@ export function toggleOverlayHide(): OverlaySnapshot {
 /* ===== 全局呼出热键（会话期间注册，退出注销） ===== */
 
 function registerOverlayHotkey(): void {
-  // 必须检查 globalShortcut.register() 返回值：被占用时返回 false 而不抛异常，
-  // 若不检查会把"注册失败"静默吞掉，导致快捷键按下无任何效果（参照 audio/index.ts）
-  overlayHotkeyRegistered = false
-  for (const acc of OVERLAY_HOTKEYS) {
-    try {
-      const ok = globalShortcut.register(acc, () => {
-        try {
-          toggleOverlayHide()
-        } catch {
-          /* 会话已结束，忽略 */
-        }
-      })
-      if (ok) overlayHotkeyRegistered = true
-      else console.warn(`[bili] 热键注册失败（可能被占用）: ${acc}（面板显隐）`)
-    } catch {
-      // Ctrl+` 在部分输入法 / 系统下不可注册，忽略（Ctrl+Shift+O 为主键）
-    }
+  const hk = { ...HOTKEY_DEFAULTS, ...getSettings().hotkeys }
+  const toggle = (): void => {
+    try { toggleOverlayHide() } catch { /* 会话已结束，忽略 */ }
   }
-  // 关闭视频：全屏学习时的兜底退出路径（Ctrl+Shift+Q，注册失败时仍可走面板按钮退出）
-  closeVideoHotkeyRegistered = false
-  try {
-    const ok = globalShortcut.register(CLOSE_VIDEO_HOTKEY, () => closeVideo())
-    if (ok) closeVideoHotkeyRegistered = true
-    else console.warn(`[bili] 热键注册失败（可能被占用）: ${CLOSE_VIDEO_HOTKEY}（关闭视频）`)
-  } catch {
-    /* 忽略 */
-  }
+  registerShortcut({ id: 'overlayToggle', label: '面板显隐', accelerator: hk.overlayToggle, scope: 'panel', customizable: true, callback: toggle })
+  registerShortcut({ id: 'overlayToggleAlt', label: '面板显隐（备用）', accelerator: OVERLAY_ALT_HOTKEY, scope: 'panel', customizable: false, callback: toggle })
+  registerShortcut({ id: 'closeVideo', label: '关闭视频', accelerator: hk.closeVideo, scope: 'panel', customizable: true, callback: () => closeVideo() })
 }
 
-/** 快捷键注册状态（调试 / 未来 UI 提示用） */
+/** 快捷键注册状态（读统一注册表，P1-6） */
 export function getHotkeyStatus(): { overlay: boolean; closeVideo: boolean } {
-  return { overlay: overlayHotkeyRegistered, closeVideo: closeVideoHotkeyRegistered }
+  const s = getShortcutStatus()
+  return {
+    overlay: s.find((e) => e.id === 'overlayToggle')?.ok ?? false,
+    closeVideo: s.find((e) => e.id === 'closeVideo')?.ok ?? false
+  }
 }
 
 function unregisterOverlayHotkey(): void {
-  overlayHotkeyRegistered = false
-  closeVideoHotkeyRegistered = false
-  for (const acc of OVERLAY_HOTKEYS) {
-    try {
-      globalShortcut.unregister(acc)
-    } catch {
-      /* 忽略 */
-    }
-  }
-  try {
-    globalShortcut.unregister(CLOSE_VIDEO_HOTKEY)
-  } catch {
-    /* 忽略 */
-  }
+  unregisterShortcut('overlayToggle')
+  unregisterShortcut('overlayToggleAlt')
+  unregisterShortcut('closeVideo')
 }
 
 /** 把 BV 加入当前会话放行集合（渲染层"标记为相关"调用） */

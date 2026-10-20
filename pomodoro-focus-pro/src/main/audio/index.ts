@@ -5,6 +5,9 @@ import { join, basename } from 'node:path'
 import { IPC_CHANNELS, IPC_EVENTS } from '../../shared/ipc'
 import { HOTKEY_VOLUME_STEP, SAMPLE_ASSET_SPECS } from '../../shared/audio'
 import type { AssetInfo } from '../../shared/audio'
+import { registerShortcut } from '../shortcuts/registry'
+import { getSettings } from '../storage/settings'
+import { HOTKEY_DEFAULTS } from '../../shared/shortcuts'
 
 /**
  * 白噪音主进程支持（M1 核心版 + 采样素材协议）。
@@ -90,11 +93,13 @@ function extractAudioFileName(urlStr: string): string {
   }
 }
 
-function registerGlobalHotkey(accelerator: string, label: string, callback: () => void): void {
-  const ok = globalShortcut.register(accelerator, callback)
-  if (!ok) {
-    console.warn(`[audio] 热键注册失败（可能被占用）: ${accelerator}（${label}）`)
-  }
+function registerGlobalHotkey(
+  id: 'volumeUp' | 'volumeDown',
+  accelerator: string,
+  label: string,
+  callback: () => void
+): void {
+  registerShortcut({ id, label, accelerator, scope: 'volume', customizable: true, callback })
 }
 
 export function registerAudioModule(getWindow: () => BrowserWindow | null): void {
@@ -133,13 +138,14 @@ export function registerAudioModule(getWindow: () => BrowserWindow | null): void
   console.info(`[audio] 素材目录 ${audioDir()}，就绪 ${readyCount}/${SAMPLE_ASSET_SPECS.length}`)
 
   // ---- 1. 盲操作热键：Ctrl+Shift+↑/↓ 调节主音量 ----
-  registerGlobalHotkey('CommandOrControl+Shift+Up', '音量 +', () => {
+  const hk = { ...HOTKEY_DEFAULTS, ...getSettings().hotkeys }
+  registerGlobalHotkey('volumeUp', hk.volumeUp, '音量 +', () => {
     const win = getWindow()
     if (win && !win.isDestroyed()) {
       win.webContents.send(IPC_EVENTS.audio.volumeChanged, { delta: +HOTKEY_VOLUME_STEP })
     }
   })
-  registerGlobalHotkey('CommandOrControl+Shift+Down', '音量 -', () => {
+  registerGlobalHotkey('volumeDown', hk.volumeDown, '音量 -', () => {
     const win = getWindow()
     if (win && !win.isDestroyed()) {
       win.webContents.send(IPC_EVENTS.audio.volumeChanged, { delta: -HOTKEY_VOLUME_STEP })

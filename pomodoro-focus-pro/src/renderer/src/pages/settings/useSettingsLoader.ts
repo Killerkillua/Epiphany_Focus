@@ -55,6 +55,7 @@ export function useSettingsLoader(): SettingsLoader {
       noisePreset: s.noisePreset,
       hasCode: !!s.recoveryCodeHash,
       telemetryEnabled: !!s.telemetryEnabled,
+      crashReportEnabled: !!s.crashReportEnabled,
       backupEnabled: s.backup?.enabled ?? true,
       backupFrequency: s.backup?.frequency ?? 'daily',
       backupTime: s.backup?.time ?? '03:00',

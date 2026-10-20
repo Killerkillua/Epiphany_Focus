@@ -1,5 +1,6 @@
 import { isAbsolute } from 'node:path'
 import { normalizeSiteRules } from '../../shared/study'
+import { isValidAccelerator } from '../../shared/shortcuts'
 import { ValidationError } from '../validate'
 
 /**
@@ -104,7 +105,12 @@ export const RENDERER_WRITABLE: Record<string, Validator> = {
     return s
   },
   telemetryEnabled: bool,
-  launchAtLogin: bool
+  crashReportEnabled: bool,
+  launchAtLogin: bool,
+  'hotkeys.volumeUp': (v, key) => (isValidAccelerator(v) ? v : fail(key, '快捷键格式不正确')),
+  'hotkeys.volumeDown': (v, key) => (isValidAccelerator(v) ? v : fail(key, '快捷键格式不正确')),
+  'hotkeys.overlayToggle': (v, key) => (isValidAccelerator(v) ? v : fail(key, '快捷键格式不正确')),
+  'hotkeys.closeVideo': (v, key) => (isValidAccelerator(v) ? v : fail(key, '快捷键格式不正确'))
 }
 
 /** 强制会话进行中禁止修改的键（防止"改设置 → 绕过强制"） */

@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { IpcRendererEvent } from 'electron'
 import { IPC_CHANNELS, IPC_EVENTS, isAllowedEvent } from '../shared/ipc'
+import type { UpdateActionResult, UpdateState } from '../shared/ipc'
 import type { RendererApi } from './index.d'
 import type {
   AiAskRequest,
@@ -70,6 +71,8 @@ import type {
 } from '../shared/types'
 import type { Task, TaskDraft, TaskFilter, TaskPatch, TaskReview, TaskStatus } from '../shared/task'
 import type { LocalMediaPickResult, OpenWebStudyPayload, SiteRulePreview } from '../shared/study'
+import type { SetAcceleratorResult, ShortcutEntry } from '../shared/shortcuts'
+import type { CrashReportPayload, DiagnosticExportResult } from '../shared/crash'
 
 /**
  * preload：通过 contextBridge 向渲染层暴露受限 API。
@@ -510,11 +513,46 @@ const api: RendererApi = {
       ipcRenderer.invoke(IPC_CHANNELS.ai.deleteGrammar, id) as Promise<boolean>
   },
 
+  crash: {
+    reportRenderer: (payload: CrashReportPayload): Promise<boolean> =>
+      ipcRenderer.invoke(IPC_CHANNELS.crash.reportRenderer, payload) as Promise<boolean>,
+    exportDiagnostics: (): Promise<DiagnosticExportResult> =>
+      ipcRenderer.invoke(IPC_CHANNELS.crash.exportDiagnostics) as Promise<DiagnosticExportResult>
+  },
+
+  shortcuts: {
+    getStatus: (): Promise<ShortcutEntry[]> =>
+      ipcRenderer.invoke(IPC_CHANNELS.shortcuts.getStatus) as Promise<ShortcutEntry[]>,
+    setAccelerator: (id: string, accelerator: string): Promise<SetAcceleratorResult> =>
+      ipcRenderer.invoke(IPC_CHANNELS.shortcuts.setAccelerator, id, accelerator) as Promise<SetAcceleratorResult>,
+    resetDefaults: (): Promise<SetAcceleratorResult> =>
+      ipcRenderer.invoke(IPC_CHANNELS.shortcuts.resetDefaults) as Promise<SetAcceleratorResult>
+  },
+
   app: {
     isPackaged: (): Promise<boolean> =>
       ipcRenderer.invoke(IPC_CHANNELS.app.isPackaged) as Promise<boolean>,
     getVersion: (): Promise<string> =>
       ipcRenderer.invoke(IPC_CHANNELS.app.getVersion) as Promise<string>
+  },
+
+  update: {
+    check: (): Promise<UpdateActionResult & { state: UpdateState }> =>
+      ipcRenderer.invoke(IPC_CHANNELS.update.check) as Promise<
+        UpdateActionResult & { state: UpdateState }
+      >,
+    download: (): Promise<UpdateActionResult & { state: UpdateState }> =>
+      ipcRenderer.invoke(IPC_CHANNELS.update.download) as Promise<
+        UpdateActionResult & { state: UpdateState }
+      >,
+    install: (): Promise<UpdateActionResult & { state: UpdateState }> =>
+      ipcRenderer.invoke(IPC_CHANNELS.update.install) as Promise<
+        UpdateActionResult & { state: UpdateState }
+      >,
+    getStatus: (): Promise<UpdateState> =>
+      ipcRenderer.invoke(IPC_CHANNELS.update.getStatus) as Promise<UpdateState>,
+    onStatusChanged: (cb: (state: UpdateState) => void): (() => void) =>
+      api.on(IPC_EVENTS.update.statusChanged, cb)
   },
 
   /* 窗口控制（自定义标题栏） */

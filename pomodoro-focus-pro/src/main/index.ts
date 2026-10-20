@@ -11,10 +11,12 @@ import { registerAiIpc } from './ai'
 import { registerAudioModule } from './audio'
 import { loadEnvFile } from './env'
 import { getSettings, registerSettingsIpc } from './storage/settings'
+import { registerShortcutsIpc } from './shortcuts/registry'
 import { registerStatsIpc } from './storage/stats'
 import { registerTaskIpc } from './storage/tasks'
 import { registerAuthIpc } from './auth'
-import { startAutoBackup } from './storage/backup'
+import { runBackupBeforeUpdate, startAutoBackup } from './storage/backup'
+import { registerUpdater } from './updater'
 import { getDb } from './storage/db'
 import { registerSessionModule } from './session'
 import { getAppIcon } from './icon'
@@ -22,6 +24,7 @@ import { logger, getLogFilePath } from './logger'
 import { APP_USER_MODEL_ID } from './notify'
 import { applyLaunchAtLogin, wasOpenedAsHidden } from './launchAtLogin'
 import { installAppTray } from './tray'
+import { registerCrashIpc, reportCrash, startNativeCrashReporter } from './crash'
 
 /**
  * 主进程入口：窗口管理 + 模块装配（方案 3.3 进程模型）。
@@ -70,6 +73,9 @@ protocol.registerSchemesAsPrivileged([
 
 const isDev = !app.isPackaged
 
+// P1-5：Native Crash 必须在 app.whenReady 之前启动（本地 minidump，不上传）
+startNativeCrashReporter()
+
 // Windows 通知要认这个身份，必须和 electron-builder.yml 的 appId 一致，且早于任何 Notification
 app.setAppUserModelId(APP_USER_MODEL_ID)
 
@@ -92,10 +98,17 @@ let isQuitBlocked = (): boolean => false
  */
 process.on('unhandledRejection', (reason) => {
   logger.error('main', '未处理的 Promise rejection:', reason)
+  reportCrash('unhandledRejection', reason)
 })
 
 process.on('uncaughtException', (error) => {
   logger.error('main', '未捕获的异常:', error)
+  reportCrash('uncaughtException', error)
+})
+
+app.on('child-process-gone', (_event, details) => {
+  logger.error('main', `子进程退出 type=${details.type} reason=${details.reason} exit=${details.exitCode}`)
+  reportCrash('child-process-gone', new Error(`${details.type}:${details.reason}:${details.exitCode}`))
 })
 
 /**
@@ -206,6 +219,7 @@ function createMainWindow(): BrowserWindow {
   // React Error Boundary 抓不到渲染进程崩溃。有限次重载，避免 L1/L2 全屏白屏后无法连按 Esc
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
     logger.error('main', `渲染进程退出 reason=${details.reason} exit=${details.exitCode}`)
+    reportCrash('render-process-gone', new Error(`${details.reason}:${details.exitCode}`))
     if (details.reason === 'clean-exit') return
     if (mainWindow.isDestroyed()) return
     if (renderReloads >= MAX_RENDER_RELOADS) {
@@ -315,6 +329,7 @@ app.whenReady().then(() => {
   suppressInitialShow = wasOpenedAsHidden()
   createMainWindow()
   registerWindowControlIpc()
+  registerCrashIpc()
 
   // 视频学习封面图代理（bili-image:// 协议 + Referer 注入 + 磁盘缓存），修复 CDN 防盗链 403
   installBiliImageProxy()
@@ -341,6 +356,12 @@ app.whenReady().then(() => {
   })
   isQuitBlocked = () => enforcement.isQuitBlocked()
 
+  registerUpdater({
+    getWindow: getMainWindow,
+    isQuitBlocked,
+    backupBeforeInstall: runBackupBeforeUpdate
+  })
+
   // 学习会话计时（视频学习 / 英语模式，与强制引擎解耦；返回遮罩联动句柄）
   const session = registerSessionModule(getMainWindow)
 
@@ -351,6 +372,8 @@ app.whenReady().then(() => {
 
   // AI 网关（英语模式）
   registerAiIpc()
+
+  registerShortcutsIpc()
 
   // 白噪音（全局热键 + 采样素材解析）
   registerAudioModule(getMainWindow)

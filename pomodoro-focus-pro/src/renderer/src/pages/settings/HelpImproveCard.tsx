@@ -26,6 +26,13 @@ export default function HelpImproveCard({
     'telemetryEnabled',
     (v) => (v ? '已开启匿名统计' : '已关闭匿名统计')
   )
+  const [crashReportEnabled, setCrashReportEnabled] = useSetting<boolean>(
+    form,
+    update,
+    'crashReportEnabled',
+    'crashReportEnabled',
+    (v) => (v ? '已开启崩溃远程上报' : '已关闭崩溃远程上报')
+  )
 
   return (
     <Card size="small" title="📈 帮助改进（R-2，可选匿名统计）" className="settings-card">
@@ -40,6 +47,15 @@ export default function HelpImproveCard({
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
         默认关闭。开启后仅本地记录计数与时长（打开视频数、会话时长、提问数、导航拦截次数、面板显隐次数），
         绝不上送视频号、关键词、笔记内容或任何输入文本；可随时一键关闭。
+      </Typography.Text>
+      <Divider style={{ margin: '10px 0' }} />
+      <div className="settings-row">
+        <span className="settings-label">崩溃远程上报</span>
+        <Switch checked={crashReportEnabled} disabled={saving} onChange={(v) => setCrashReportEnabled(v)} />
+      </div>
+      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        默认关闭，与匿名统计独立。开启后仅在构建注入 DSN 时发送脱敏崩溃报告（剔除密钥、恢复码、本地路径与视频号）；本地
+        minidump 与诊断包导出始终可用。
       </Typography.Text>
       {/* 问题 3：反馈入口由 视频学习页迁移至此（复用 FeedbackDialog，IPC 通道不变） */}
       <Divider style={{ margin: '10px 0' }} />

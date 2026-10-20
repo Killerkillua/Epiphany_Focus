@@ -1,4 +1,4 @@
-import type { IPC_CHANNELS, IPC_EVENTS } from '../shared/ipc'
+import type { IPC_CHANNELS, IPC_EVENTS, UpdateActionResult, UpdateState } from '../shared/ipc'
 import type {
   AiAskRequest,
   BiliAiReply,
@@ -30,6 +30,7 @@ import type {
   VocabEntry
 } from '../shared/ai'
 import type { AssetInfo } from '../shared/audio'
+import type { CrashReportPayload, DiagnosticExportResult } from '../shared/crash'
 import type { AppSettings, EmergencyExitResult } from '../shared/settings'
 import type {
   DailyStat,
@@ -67,6 +68,7 @@ import type {
 } from '../shared/types'
 import type { Task, TaskDraft, TaskFilter, TaskPatch, TaskReview, TaskStatus } from '../shared/task'
 import type { LocalMediaPickResult, OpenWebStudyPayload, SiteRulePreview } from '../shared/study'
+import type { SetAcceleratorResult, ShortcutEntry } from '../shared/shortcuts'
 
 /** preload 暴露给渲染层的受限 API 类型定义 */
 export interface RendererApi {
@@ -344,11 +346,33 @@ export interface RendererApi {
     deleteGrammar(id: number): Promise<boolean>
   }
 
+  /** 崩溃收集（P1-5） */
+  crash: {
+    reportRenderer(payload: CrashReportPayload): Promise<boolean>
+    exportDiagnostics(): Promise<DiagnosticExportResult>
+  }
+
+  /** 快捷键统一注册表（P1-6） */
+  shortcuts: {
+    getStatus(): Promise<ShortcutEntry[]>
+    setAccelerator(id: string, accelerator: string): Promise<SetAcceleratorResult>
+    resetDefaults(): Promise<SetAcceleratorResult>
+  }
+
   /** 应用运行形态 */
   app: {
     /** 安装包为 true；开发模式为 false，此时开机自启开关不可用 */
     isPackaged(): Promise<boolean>
     getVersion(): Promise<string>
+  }
+
+  /** 应用更新 */
+  update: {
+    check(): Promise<UpdateActionResult & { state: UpdateState }>
+    download(): Promise<UpdateActionResult & { state: UpdateState }>
+    install(): Promise<UpdateActionResult & { state: UpdateState }>
+    getStatus(): Promise<UpdateState>
+    onStatusChanged(cb: (state: UpdateState) => void): () => void
   }
 
   /** 自定义标题栏窗口控制 */

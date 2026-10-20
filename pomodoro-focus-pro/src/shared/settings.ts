@@ -4,6 +4,8 @@
  */
 
 import type { LearningSiteRule } from './study'
+import { HOTKEY_DEFAULTS, type HotkeysSettings } from './shortcuts'
+export type { HotkeysSettings } from './shortcuts'
 
 /** 锁定强度分级（方案 2.5）：L0 置顶提醒 / L1 标准 / L2 强化守护 */
 export type LockLevel = 'L0' | 'L1' | 'L2'
@@ -116,11 +118,15 @@ export interface AppSettings {
    * 不上送任何内容 / URL / 笔记文本，可随时一键关闭。
    */
   telemetryEnabled: boolean
+  /** 崩溃远程上报（P1-5）：默认关，与 telemetryEnabled 独立；开启且构建注入 DSN 时才发送脱敏报告 */
+  crashReportEnabled: boolean
   /**
    * 开机自启并隐藏到托盘。仅安装包会写入系统登录项；
    * 开发模式只保存这个开关，避免把 electron.exe 注册成开机启动。
    */
   launchAtLogin: boolean
+  /** 用户向快捷键（P1-6；拦截键固定不可改，不在此列） */
+  hotkeys: HotkeysSettings
 }
 
 /** 紧急退出防暴力破解状态 */
@@ -166,5 +172,7 @@ export const SETTINGS_DEFAULTS: AppSettings = {
   studyGoals: { dailyMinutes: 60, weeklyDays: 5 },
   backup: { enabled: true, frequency: 'daily', time: '03:00', keepCount: 7, directory: '' },
   launchAtLogin: false,
-  telemetryEnabled: false
+  telemetryEnabled: false,
+  crashReportEnabled: false,
+  hotkeys: { ...HOTKEY_DEFAULTS }
 }

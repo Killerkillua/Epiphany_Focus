@@ -114,6 +114,7 @@ export function getSettings(): AppSettings {
     if (guarded[k] !== undefined) (snapshot as unknown as Record<string, unknown>)[k] = guarded[k]
     else (snapshot as unknown as Record<string, unknown>)[k] = SETTINGS_DEFAULTS[k]
   }
+  snapshot.hotkeys = { ...SETTINGS_DEFAULTS.hotkeys, ...(snapshot.hotkeys ?? {}) }
   snapshot.ai = { ...snapshot.ai, apiKey: decryptApiKey(snapshot.ai.apiKey ?? '') }
   // .env 注入（根因 B 修复）：用户未显式配置 API Key（存储为空）时，
   // 回退到 .env 提供的 Key（主进程启动时经 loadEnvFile 注入 process.env）。

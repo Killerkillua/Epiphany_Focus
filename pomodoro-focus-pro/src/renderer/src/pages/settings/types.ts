@@ -20,6 +20,7 @@ export interface LocalForm {
   noisePreset: string
   hasCode: boolean
   telemetryEnabled: boolean
+  crashReportEnabled: boolean
   // M5 自动备份
   backupEnabled: boolean
   backupFrequency: 'daily' | 'weekly'
@@ -48,6 +49,7 @@ export const EMPTY: LocalForm = {
   noisePreset: 'rain',
   hasCode: false,
   telemetryEnabled: false,
+  crashReportEnabled: false,
   backupEnabled: true,
   backupFrequency: 'daily',
   backupTime: '03:00',

@@ -236,12 +236,30 @@ export const IPC_CHANNELS = {
     /** 获取系统日志文件路径 */
     getLogPath: 'settings:get-log-path'
   },
+  /** 快捷键统一注册表（P1-6） */
+  shortcuts: {
+    getStatus: 'shortcuts:get-status',
+    setAccelerator: 'shortcuts:set-accelerator',
+    resetDefaults: 'shortcuts:reset-defaults'
+  },
+  /** 崩溃收集（P1-5） */
+  crash: {
+    reportRenderer: 'crash:report-renderer',
+    exportDiagnostics: 'crash:export-diagnostics'
+  },
   /** 应用级信息 */
   app: {
     getVersion: 'app:get-version',
     platform: 'app:platform',
     /** 是否为安装包运行（开发模式不写开机登录项） */
     isPackaged: 'app:is-packaged'
+  },
+  /** 应用更新（electron-updater） */
+  update: {
+    check: 'update:check',
+    download: 'update:download',
+    install: 'update:install',
+    getStatus: 'update:get-status'
   },
   /** 自定义标题栏窗口控制 */
   window: {
@@ -294,11 +312,42 @@ export const IPC_EVENTS = {
     /** 设置变更广播（settings:set / ai 配置写入后推送最新快照，渲染层据此实时刷新） */
     changed: 'settings:changed'
   },
+  shortcuts: {
+    statusChanged: 'shortcuts:status-changed'
+  },
   /** 窗口状态事件 */
   window: {
     maximizeChanged: 'window:maximize-changed'
+  },
+  /** 应用更新状态 */
+  update: {
+    statusChanged: 'update:status-changed'
   }
 } as const
+
+/** 更新状态机 */
+export type UpdateStatus =
+  | 'idle'
+  | 'checking'
+  | 'available'
+  | 'downloading'
+  | 'downloaded'
+  | 'error'
+  | 'not-available'
+
+export interface UpdateState {
+  status: UpdateStatus
+  version?: string
+  releaseNotes?: string
+  percent?: number
+  error?: string
+}
+
+export interface UpdateActionResult {
+  ok: boolean
+  blocked?: boolean
+  message?: string
+}
 
 /** 扁平化全部 invoke 通道名（白名单） */
 export const IPC_WHITELIST: readonly string[] = Object.values(IPC_CHANNELS).flatMap((group) =>

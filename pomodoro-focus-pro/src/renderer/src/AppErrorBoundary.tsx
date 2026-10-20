@@ -19,6 +19,14 @@ export class AppErrorBoundary extends Component<{ children: ReactNode }, Boundar
 
   componentDidCatch(error: Error, info: ErrorInfo): void {
     console.error('[renderer] 渲染异常', error, info.componentStack)
+    void window.api?.crash
+      ?.reportRenderer({
+        kind: 'react-error-boundary',
+        message: error.message,
+        stack: `${error.stack ?? ''}\n${info.componentStack ?? ''}`,
+        source: 'renderer'
+      })
+      .catch(() => undefined)
   }
 
   render(): ReactNode {

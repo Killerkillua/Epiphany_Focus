@@ -155,3 +155,20 @@ export function startAutoBackup(): void {
   tick()
   scheduler = setInterval(tick, 60_000)
 }
+
+/** 安装更新前强制备份（不受自动备份开关与当日幂等限制） */
+export async function runBackupBeforeUpdate(now = new Date()): Promise<void> {
+  const cfg = getSettings().backup
+  const dir = cfg?.directory?.trim() || defaultBackupDir()
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true })
+  }
+  const today = localDateStr(now)
+  const stamp = `${today}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}-pre-update`
+  const filePath = join(dir, `pomodoro-backup-${stamp}.json`)
+  const backup = buildBackupFile()
+  writeBackupFile(filePath, backup, 'manual')
+  if (cfg?.enabled) {
+    pruneBackups(dir, cfg.keepCount ?? 7)
+  }
+}

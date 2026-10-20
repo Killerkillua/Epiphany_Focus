@@ -15,6 +15,7 @@ import DataManagementCard from './settings/DataManagementCard'
 import HelpImproveCard from './settings/HelpImproveCard'
 import GeneralAboutCard from './settings/GeneralAboutCard'
 import DangerZoneCard from './settings/DangerZoneCard'
+import HotkeyCard from './settings/HotkeyCard'
 
 /**
  * 设置页（方案 4.2 重构）：单列全宽布局，一个模块占据一行。
@@ -184,6 +185,12 @@ export default function SettingsPage(): JSX.Element {
           'launch'
         ],
         component: <GeneralAboutCard form={form} saving={saving} update={update} />
+      },
+      {
+        id: 'hotkeys',
+        title: '快捷键',
+        keywords: ['快捷键', '热键', 'hotkey', '音量', '面板', '拦截键'],
+        component: <HotkeyCard />
       },
       {
         id: 'danger-zone',
