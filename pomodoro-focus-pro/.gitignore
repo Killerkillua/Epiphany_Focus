@@ -9,6 +9,7 @@ dist/
 .electron-builder-cache/
 .npm-cache/
 .trae-html-share-packages/
+.smoke-update/
 # node-gyp 构建缓存：自动下载的 Node.js 头文件和库文件
 .node-gyp/
 
