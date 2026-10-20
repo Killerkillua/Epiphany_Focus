@@ -348,6 +348,7 @@ export interface RendererApi {
   app: {
     /** 安装包为 true；开发模式为 false，此时开机自启开关不可用 */
     isPackaged(): Promise<boolean>
+    getVersion(): Promise<string>
   }
 
   /** 自定义标题栏窗口控制 */

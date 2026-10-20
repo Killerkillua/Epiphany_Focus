@@ -19,7 +19,7 @@ export default function GeneralAboutCard({
   const [themeMode, setThemeMode] = useState<'system' | 'dark' | 'light'>('system')
   const [fontSize, setFontSize] = useState<'normal' | 'medium' | 'large'>('normal')
   const [modalType, setModalType] = useState<null | 'agreement' | 'privacy'>(null)
-  const [checkingUpdate, setCheckingUpdate] = useState(false)
+  const [version, setVersion] = useState<string>('-')
   const [packaged, setPackaged] = useState(false)
   const [packagedReady, setPackagedReady] = useState(false)
   const [launchAtLogin, setLaunchAtLogin] = useSetting<boolean>(
@@ -48,12 +48,23 @@ export default function GeneralAboutCard({
     }
   }, [])
 
+  useEffect(() => {
+    let cancelled = false
+    void window.api.app
+      .getVersion()
+      .then((value) => {
+        if (!cancelled) setVersion(value)
+      })
+      .catch(() => {
+        if (!cancelled) setVersion('未知')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
   const handleCheckUpdate = (): void => {
-    setCheckingUpdate(true)
-    setTimeout(() => {
-      setCheckingUpdate(false)
-      message.success('当前已是最新版本 (v1.0.0)')
-    }, 600)
+    message.info('更新服务未配置，暂无法检查更新')
   }
 
   return (
@@ -129,7 +140,7 @@ export default function GeneralAboutCard({
           <div className="settings-row">
             <span className="settings-label">版本</span>
             <Typography.Text strong style={{ paddingRight: 12 }}>
-              1.0.0
+              {version}
             </Typography.Text>
           </div>
         </Col>
@@ -149,7 +160,7 @@ export default function GeneralAboutCard({
           <Button size="small" onClick={() => setModalType('privacy')}>
             隐私政策
           </Button>
-          <Button size="small" loading={checkingUpdate} onClick={handleCheckUpdate}>
+          <Button size="small" onClick={handleCheckUpdate}>
             检查更新
           </Button>
           <Button

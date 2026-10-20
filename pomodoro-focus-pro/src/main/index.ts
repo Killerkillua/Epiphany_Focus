@@ -288,6 +288,7 @@ function registerWindowControlIpc(): void {
   })
 
   ipcMain.handle(IPC_CHANNELS.app.isPackaged, () => app.isPackaged)
+  ipcMain.handle(IPC_CHANNELS.app.getVersion, () => app.getVersion())
 }
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock()
