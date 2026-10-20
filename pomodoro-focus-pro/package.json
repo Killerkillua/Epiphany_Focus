@@ -5,7 +5,6 @@
   "main": "./out/main/index.js",
   "author": "pomodoro-focus-pro",
   "license": "MIT",
-  "private": true,
   "scripts": {
     "dev": "electron-vite dev --watch",
     "start": "electron-vite preview",
