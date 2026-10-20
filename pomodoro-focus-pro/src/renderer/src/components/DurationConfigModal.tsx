@@ -44,17 +44,15 @@ function DurationConfigModal({ open, mode, defaultMin, onCancel, onConfirm }: Pr
       okText="开始"
       cancelText="取消"
       destroyOnClose
+      // 全屏（B 站/专注强制会话）下按视口比例流体缩放，窗口模式下保持常规宽度
+      rootClassName="app-fluid-modal"
     >
       <div style={{ marginBottom: 12 }}>
         <span style={{ color: 'var(--muted)', fontSize: 12 }}>{unit}</span>
       </div>
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
         {presets.map((m) => (
-          <Button
-            key={m}
-            type={custom === m ? 'primary' : 'default'}
-            onClick={() => setCustom(m)}
-          >
+          <Button key={m} type={custom === m ? 'primary' : 'default'} onClick={() => setCustom(m)}>
             {m} 分钟
           </Button>
         ))}

@@ -61,7 +61,11 @@ async function loadCacheIndex(): Promise<void> {
 
 async function saveCacheIndex(): Promise<void> {
   try {
-    await fs.writeFile(join(cacheDir, 'index.json'), JSON.stringify({ entries: cacheIndex }), 'utf-8')
+    await fs.writeFile(
+      join(cacheDir, 'index.json'),
+      JSON.stringify({ entries: cacheIndex }),
+      'utf-8'
+    )
   } catch {
     /* 索引写失败不影响展示 */
   }

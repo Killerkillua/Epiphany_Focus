@@ -7,6 +7,11 @@
 # ---- npm 缓存与日志 ----
 # 通过 --cache 参数重定向到本地的 npm 包缓存
 .npm-cache/
+.npm-cache-tmp/
+
+# ---- Node 依赖 ----
+# 根目录偶发产生的 node_modules（子项目自身有 .gitignore 排除）
+node_modules/
 
 # ---- Electron 缓存 ----
 # electron-download 下载的 Electron 二进制包缓存
@@ -16,8 +21,21 @@
 # Trae HTML 共享包缓存
 .trae-html-share-packages/
 
+# ---- AI 工具本地缓存与日志 ----
+# Claude Desktop / CodeRabbit CLI 本地缓存
+.claude/
+.crcli-home/
+.crcli-localappdata/
+# CodeRabbit 生成的代码审查报告输出
+coderabbit-bili-review/
+code-review-report/
+# pomodoro-focus-pro 子目录下的 AI 工具缓存（通配覆盖）
+**/.claude/
+
 # ---- 系统文件 ----
 # macOS 目录元数据
 .DS_Store
+# 安装包产物（超过 Gitee 单文件 100MB 限制）
+*.exe
 # Windows 缩略图缓存
 Thumbs.db

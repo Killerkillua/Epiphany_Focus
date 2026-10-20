@@ -28,6 +28,8 @@ interface SessionStore {
   justCompleted: boolean
   /** 初始化：订阅事件 + 拉取当前状态 */
   init: () => Promise<void>
+  /** 取消全部 IPC 事件订阅（HMR 热替换 / 窗口销毁时清理） */
+  destroy: () => void
   start: (mode: SessionMode, durationMs: number) => Promise<void>
   pause: () => Promise<void>
   resume: () => Promise<void>
@@ -35,7 +37,23 @@ interface SessionStore {
   clearCompleted: () => void
 }
 
-let subscribed = false
+/**
+ * CR-07：订阅生命周期管理（同 focusStore）。
+ * globalThis 持久标志防 HMR 重复订阅；destroy() 统一取消订阅句柄。
+ */
+const g = globalThis as unknown as { __pomodoroSessionEventsSubscribed?: boolean }
+let unsubscribeFns: Array<() => void> = []
+
+function unsubscribeAll(): void {
+  for (const fn of unsubscribeFns) fn()
+  unsubscribeFns = []
+  g.__pomodoroSessionEventsSubscribed = false
+}
+
+// HMR：模块被热替换前先取消订阅 + 复位标志，新模块实例可干净地重新订阅
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => unsubscribeAll())
+}
 
 export const useSessionStore = create<SessionStore>((set) => ({
   mode: 'english',
@@ -43,16 +61,22 @@ export const useSessionStore = create<SessionStore>((set) => ({
   justCompleted: false,
 
   init: async () => {
-    if (!subscribed) {
-      subscribed = true
-      window.api.on<TimerSnapshot>('session:tick', (snap) => set({ snapshot: snap }))
-      window.api.on<TimerSnapshot>('session:complete', (snap) =>
-        set({ snapshot: snap, justCompleted: true })
+    if (!g.__pomodoroSessionEventsSubscribed) {
+      g.__pomodoroSessionEventsSubscribed = true
+      unsubscribeFns.push(
+        window.api.on<TimerSnapshot>(window.api.events.session.tick, (snap) =>
+          set({ snapshot: snap })
+        ),
+        window.api.on<TimerSnapshot>(window.api.events.session.complete, (snap) =>
+          set({ snapshot: snap, justCompleted: true })
+        )
       )
     }
     const state = await window.api.session.getState()
     set({ mode: state.mode, snapshot: state.timer })
   },
+
+  destroy: unsubscribeAll,
 
   start: async (mode, durationMs) => {
     const state = await window.api.session.start({ mode, durationMs })

@@ -2,7 +2,7 @@ import { app, globalShortcut, ipcMain, protocol } from 'electron'
 import type { BrowserWindow } from 'electron'
 import { existsSync, readFileSync } from 'node:fs'
 import { join, basename } from 'node:path'
-import { IPC_CHANNELS, IPC_EVENTS } from '../ipc'
+import { IPC_CHANNELS, IPC_EVENTS } from '../../shared/ipc'
 import { HOTKEY_VOLUME_STEP, SAMPLE_ASSET_SPECS } from '../../shared/audio'
 import type { AssetInfo } from '../../shared/audio'
 
@@ -35,7 +35,7 @@ function resolveAssetInfos(): AssetInfo[] {
     const candidates = [
       join(dir, `${base}.ogg`),
       join(dir, `${base}.mp3`),
-      join(dir, `${base}.wav`),
+      join(dir, `${base}.wav`)
     ]
     const file = candidates.find((f) => existsSync(f)) ?? join(dir, spec.file)
     const exists = existsSync(file)

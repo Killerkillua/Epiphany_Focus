@@ -1,5 +1,6 @@
 import OpenAI from 'openai'
 import type { AiConfig, OcrRequest, OcrResult } from '../../shared/ai'
+import { toFriendlyAiError } from './errors'
 
 /**
  * 图片文字识别（OCR）网关（OpenAI 兼容接口）。
@@ -65,8 +66,8 @@ export class OcrGateway {
       }
       return { ok: true, text }
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      return { ok: false, text: '', error: `OCR 调用失败：${message}` }
+      // 401/网络等异常统一翻译为中文、可操作、指向「设置 → AI 设置」的错误
+      return { ok: false, text: '', error: toFriendlyAiError(err).message }
     }
   }
 }

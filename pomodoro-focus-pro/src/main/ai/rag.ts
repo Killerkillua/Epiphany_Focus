@@ -31,10 +31,13 @@ interface DictEntry {
 /** Merriam-Webster 数据（dictionaryapi.dev） */
 async function fetchMerriamWebster(word: string): Promise<DictEntry | null> {
   try {
-    const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`, {
-      headers: { 'User-Agent': UA },
-      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
-    })
+    const res = await fetch(
+      `https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`,
+      {
+        headers: { 'User-Agent': UA },
+        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS)
+      }
+    )
     if (!res.ok) return null
     const json = (await res.json()) as Array<{
       word?: string

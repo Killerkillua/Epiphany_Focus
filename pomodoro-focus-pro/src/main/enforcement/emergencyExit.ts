@@ -23,12 +23,29 @@ export function hasRecoveryCode(): boolean {
   return !!getSettings().recoveryCodeHash
 }
 
-export function setRecoveryCode(code: string): void {
+/**
+ * bcrypt 的 cost factor。使用异步 API（bcrypt.hash/compare）以避免在 Electron
+ * 主进程事件循环上同步阻塞 50-100ms（H-02：阻塞期间 UI 冻结、IPC 排队）。
+ */
+const BCRYPT_ROUNDS = 10
+
+export async function setRecoveryCode(code: string): Promise<void> {
   if (!code || code.length < MIN_CODE_LENGTH) {
     throw new Error(`恢复码至少 ${MIN_CODE_LENGTH} 位`)
   }
-  const hash = bcrypt.hashSync(code, 10)
+  const hash = await bcrypt.hash(code, BCRYPT_ROUNDS)
   setSettings({ recoveryCodeHash: hash })
+}
+
+/**
+ * 修改恢复码前的旧码校验（CR-02）。
+ * 纯比对，不触发失败计数 / 冷却（区别于 verifyRecoveryCode 的紧急退出路径）。
+ * 未设置过恢复码时返回 true（首次设置无需旧码）。
+ */
+export async function verifyOldCode(code: string): Promise<boolean> {
+  const hash = getSettings().recoveryCodeHash
+  if (!hash) return true
+  return !!code && (await bcrypt.compare(code, hash))
 }
 
 /** L2 额外 30s 冷却（会话开始/结束时由 enforcement 触发） */
@@ -36,13 +53,24 @@ export function startL2CoolDown(): void {
   l2CoolDownUntil = Date.now() + L2_COOLDOWN_MS
 }
 
-export function verifyRecoveryCode(code: string, level: string): EmergencyExitResult {
+export async function verifyRecoveryCode(
+  code: string,
+  level: string
+): Promise<EmergencyExitResult> {
   const now = Date.now()
   if (now < failLockedUntil) {
-    return { ok: false, error: '尝试次数过多，请稍后再试', retryInSec: Math.ceil((failLockedUntil - now) / 1000) }
+    return {
+      ok: false,
+      error: '尝试次数过多，请稍后再试',
+      retryInSec: Math.ceil((failLockedUntil - now) / 1000)
+    }
   }
   if (now < l2CoolDownUntil) {
-    return { ok: false, error: `L2 冷却中，请等待 ${L2_COOLDOWN_MS / 1000} 秒`, retryInSec: Math.ceil((l2CoolDownUntil - now) / 1000) }
+    return {
+      ok: false,
+      error: `L2 冷却中，请等待 ${L2_COOLDOWN_MS / 1000} 秒`,
+      retryInSec: Math.ceil((l2CoolDownUntil - now) / 1000)
+    }
   }
 
   const hash = getSettings().recoveryCodeHash
@@ -50,7 +78,7 @@ export function verifyRecoveryCode(code: string, level: string): EmergencyExitRe
     return { ok: false, error: '尚未设置紧急恢复码，请在设置中先设置' }
   }
 
-  if (bcrypt.compareSync(code ?? '', hash)) {
+  if (await bcrypt.compare(code ?? '', hash)) {
     failCount = 0
     return { ok: true }
   }

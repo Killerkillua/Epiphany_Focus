@@ -1,0 +1,31 @@
+# ADR 0001: 采用流体 + 容器查询的自适应布局方案
+
+Status: Accepted
+Date: 2026-08-18
+
+## Context
+
+番茄专注 Pro 当前的布局完全依赖固定像素（Sider 220px、focus-side 320px、english-side 300px）+ flex/grid 弹性，没有任何 @media 断点和 @container 查询，仅 1 处 clamp() 用法。在窗口模式（940px-1600px）和全屏模式（1920px-2560px+）之间切换时，会出现内容过度拉伸、卡片间距失调、侧栏比例失衡等问题。
+
+上传的设计文档《窗口模式与全屏模式布局自适应设计方案》提出了一套基于 Container Queries + clamp() + 内容驱动断点的完整自适应体系。
+
+## Decision
+
+采用设计文档推荐的「流体 + 容器查询」方案，而非传统的「固定 px + 媒体查询」方案：
+
+1. **页面级**：引入内容驱动的 @media 断点体系（与设计文档 §5 一致的四档：**Compact <768px / Medium 768–1200px / Wide 1200–1600px / Ultrawide >1600px**）。主窗口 minWidth 940px，Compact 档实际不触发（保留供 B 站窗口与未来兼容）；实现中 Wide/Ultrawide 以 `@media (min-width: 1200px / 1600px)` 落地，Medium 行为由 antd Sider `breakpoint="md"`（768px）与容器查询承担
+2. **区域级**：引入 @container 容器查询，让组件根据所在容器宽度自适应
+3. **元素级**：使用 clamp() / min() / max() 实现字号、间距、尺寸的无级缩放
+4. **约束**：内容区域设置 max-width（阅读 1200px / 数据 1600px），全屏下居中；数据型页面（统计 / B 站，`.page-dashboard`）在 Wide（≥1200px）即放宽到 `--dashboard-max`（1600px）
+
+替代方案（被否决）：仅用 @media 媒体查询做断点适配。否决理由：组件无法感知自身容器宽度，同一组件放在窄侧栏和宽主区域时需要重复写不同的样式规则，维护成本高且违反设计文档的核心原则。
+
+## Consequences
+
+- 正面：布局从 940px 到 2560px+ 全程平滑过渡，消除窗口↔全屏切换时的布局跳变
+- 正面：组件可复用——同一组件在不同容器中自动适配，无需重复样式
+- 正面：CSS 逻辑集中、规则简洁，降低长期维护成本
+- 负面：引入新的 CSS 模式（Container Queries、clamp 表达式），团队需熟悉
+- 负面：同时改变全局间距/字号值可能导致视觉回归，需分阶段推进和回归测试
+- 约束：需在 antd ConfigProvider 中对齐内置断点，避免 antd 组件与自定义断点冲突
+- 约束：ScrollArea.tsx 的 JS 像素计算需与流体布局兼容（ResizeObserver 已有基础）

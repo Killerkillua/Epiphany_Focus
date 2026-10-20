@@ -4,6 +4,7 @@
  */
 
 import type { BiliStrictness } from './settings'
+import type { SessionSource } from './stats'
 
 /** 搜索结果排序方式 */
 export type BiliOrder = 'totalrank' | 'click' | 'pubdate'
@@ -75,8 +76,18 @@ export interface OpenVideoPayload {
   autoFullscreen: boolean
   /** 学习主题（搜索关键词），供 AI / 记事本上下文使用 */
   topic?: string
+  /** 视频标题（搜索结果页快照，注入 AI 上下文 / 笔记归档） */
+  title?: string
   /** 会话上限时长（毫秒，来自首页时长浮层） */
   plannedMs?: number
+  /** 打开后跳转到指定进度（秒，续学入口；B 站原生 ?t= 参数，加载即定位） */
+  seekSeconds?: number
+  /** 打开来源：manual / resume（续学）/ search（搜索结果）；写入 study_sessions.source（M3） */
+  source?: SessionSource
+  /** 封面图 URL（bili-image:// 代理地址，搜索结果页快照；写入 play_records.cover_url） */
+  coverUrl?: string
+  /** UP 主名称（搜索结果页快照；写入 play_records.author） */
+  author?: string
 }
 
 /** 标记某 BV 为"与主题相关" */
@@ -94,6 +105,8 @@ export interface VideoState {
 export interface BiliContext {
   bvid?: string
   topic?: string
+  /** 当前视频标题（搜索结果页快照，导航守卫提取到更精确标题时更新） */
+  videoTitle?: string
   fullscreen: boolean
 }
 
@@ -103,18 +116,19 @@ export interface OverlaySize {
   height: number
 }
 
-/** 悬浮面板展开 / 折叠尺寸（主进程 biliWindow 与渲染层 OverlayApp 共用） */
-export const OVERLAY_EXPANDED_SIZE: OverlaySize = { width: 340, height: 560 }
-export const OVERLAY_COLLAPSED_SIZE: OverlaySize = { width: 64, height: 240 }
+/**
+ * 悬浮面板展开尺寸（px，主进程 biliWindow 与渲染层 OverlayApp 共用）。
+ * 学习助手重构后始终以展开态呈现，最小窗口 610×940（可拖拽 header 移动、可系统级缩放）。
+ */
+export const OVERLAY_EXPANDED_SIZE: OverlaySize = { width: 610, height: 940 }
 
 /**
- * 悬浮面板完整状态机（原 collapsed 布尔 → 4 态）：
- * - expanded ：340×560 展开面板
- * - collapsed：64×240 侧边竖条
+ * 悬浮面板完整状态机（3 态，已删除 collapsed 悬浮球态）：
+ * - expanded ：610×940 展开面板（AI 助手 + 记事本 + 进度），可拖拽 header 移动、可缩放（最小 610×940）
  * - minimized：窗口最小化（仅 L0/L1 档允许；L2 档自动降级为 hidden）
- * - hidden   ：完全隐藏，快捷键 Ctrl+Shift+O 呼出
+ * - hidden   ：完全隐藏，Ctrl+Shift+O 呼出或 BiliModePage 按钮切换
  */
-export type OverlayState = 'expanded' | 'collapsed' | 'minimized' | 'hidden'
+export type OverlayState = 'expanded' | 'minimized' | 'hidden'
 
 /** 悬浮面板状态定义（尺寸 + 是否可见） */
 export interface OverlayStateDef {
@@ -124,7 +138,6 @@ export interface OverlayStateDef {
 
 export const OVERLAY_STATES: Record<OverlayState, OverlayStateDef> = {
   expanded: { size: OVERLAY_EXPANDED_SIZE, visible: true },
-  collapsed: { size: OVERLAY_COLLAPSED_SIZE, visible: true },
   minimized: { size: { width: 0, height: 0 }, visible: false },
   hidden: { size: { width: 0, height: 0 }, visible: false }
 }
@@ -162,6 +175,8 @@ export interface AiMessage {
 }
 
 export interface AiAskRequest {
+  /** 渲染层生成的请求关联 ID：流式 ai:chunk 事件用同一 id 关联到消息（缺省主进程生成） */
+  requestId?: string
   message: string
   context?: {
     /** 学习主题（来自搜索关键词） */
@@ -174,7 +189,8 @@ export interface AiAskRequest {
   history?: AiMessage[]
 }
 
-export interface AiReply {
+/** B 站学习助手完整回复（与英语模式 shared/ai.ts 的 AiReply 命名区分，避免同名异构冲突） */
+export interface BiliAiReply {
   role: 'assistant'
   content: string
   /** 引用来源（RAG 接入后填充） */
@@ -183,8 +199,28 @@ export interface AiReply {
 
 /* ===== 记事本 ===== */
 
+/** 笔记来源：主窗口记事本 / 悬浮面板 / AI 一键入笔记 / 时间点标记 */
+export type NoteSource = 'main' | 'overlay' | 'ai' | 'time-mark'
+
 export interface NoteEntry {
   id: string
   createdAt: number
   content: string
+  /** 关联视频 BV 号（按视频归档 / 回看定位） */
+  bvid?: string
+  /** 视频标题快照（笔记页展示所属视频） */
+  videoTitle?: string
+  /** 视频内进度秒（时间点标记，点击可跳转播放器到该位置） */
+  timestampS?: number
+  /** 重点标记（★ 只看重点过滤） */
+  isKey?: boolean
+  /** 来源（用于过滤 AI 沉淀 / 时间点标记） */
+  source?: NoteSource
+}
+
+/** 时间点标记跳转（F-2）：让视频窗口 seek 到指定进度 */
+export interface SeekToPayload {
+  bvid: string
+  /** 目标进度（秒） */
+  seconds: number
 }

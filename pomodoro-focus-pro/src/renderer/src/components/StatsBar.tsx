@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { useHomeStore } from '../store/homeStore'
+import { useStatsStore } from '../store/statsStore'
 
 function formatMinutes(m: number): string {
   if (!m) return '0m'
@@ -9,34 +9,54 @@ function formatMinutes(m: number): string {
 }
 
 function StatsBar(): JSX.Element {
-  const { summary, loading, load } = useHomeStore()
-  useEffect(() => { void load() }, [load])
+  const summary = useStatsStore((s) => s.summary)
+  const error = useStatsStore((s) => s.error)
+  // 首次加载前（summary 为空且无错误）显示骨架；后续事件触发为静默刷新，不闪烁
+  const loading = !summary && !error
+  const failed = !summary && !!error
+
+  useEffect(() => {
+    void useStatsStore.getState().loadSummary()
+  }, [])
+
+  const dash = failed ? '—' : '--'
 
   return (
-    <div className="stats-bar">
-      <StatCard
-        loading={loading}
-        label="今日专注"
-        value={summary ? formatMinutes(summary.todayMinutes) : '--'}
-      />
-      <StatCard
-        loading={loading}
-        label="完成番茄"
-        value={summary ? String(summary.todayPomos) : '--'}
-      />
-      <StatCard
-        loading={loading}
-        label="连续天数"
-        value={summary ? String(summary.streakDays) : '--'}
-      />
-    </div>
+    <>
+      <div className="stats-bar">
+        <StatCard
+          loading={loading}
+          dimmed={failed}
+          label="今日专注"
+          value={summary ? formatMinutes(summary.todayMinutes) : dash}
+        />
+        <StatCard
+          loading={loading}
+          dimmed={failed}
+          label="完成番茄"
+          value={summary ? String(summary.todayPomos) : dash}
+        />
+        <StatCard
+          loading={loading}
+          dimmed={failed}
+          label="连续天数"
+          value={summary ? String(summary.streakDays) : dash}
+        />
+      </div>
+      {failed && <p className="stats-error">{error}</p>}
+    </>
   )
 }
 
-function StatCard(p: { loading: boolean; label: string; value: string }): JSX.Element {
+function StatCard(p: {
+  loading: boolean
+  dimmed?: boolean
+  label: string
+  value: string
+}): JSX.Element {
   return (
     <div className={`stat-card${p.loading ? ' loading' : ''}`}>
-      <div className="stat-value">{p.value}</div>
+      <div className={`stat-value${p.dimmed ? ' placeholder' : ''}`}>{p.value}</div>
       <div className="stat-label">{p.label}</div>
     </div>
   )

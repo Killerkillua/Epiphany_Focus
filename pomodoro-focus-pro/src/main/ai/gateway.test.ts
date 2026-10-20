@@ -12,7 +12,9 @@ import type { AiConfig, AiQuestion } from '../../shared/ai'
 /** 记录 OpenAI 客户端实例与调用参数（在 vi.mock 工厂与测试间共享） */
 const mockState = vi.hoisted(() => ({
   instances: [] as Array<{ apiKey: string; baseURL?: string }>,
-  calls: [] as Array<{ model: string; stream: boolean; temperature: number }>
+  calls: [] as Array<{ model: string; stream: boolean; temperature: number }>,
+  /** 注入下一次 create 抛出的错误（模拟 401 / 网络故障等） */
+  nextError: null as null | Error
 }))
 
 vi.mock('openai', () => {
@@ -50,6 +52,11 @@ vi.mock('openai', () => {
               stream: opts.stream,
               temperature: opts.temperature
             })
+            if (mockState.nextError) {
+              const err = mockState.nextError
+              mockState.nextError = null
+              throw err
+            }
             // openai SDK 在 stream:true 时直接返回可异步迭代的 Stream 对象
             return fakeStream()
           }
@@ -79,7 +86,9 @@ function makeConfig(overrides: Partial<AiConfig> = {}): AiConfig {
 }
 
 /** 发起一次 chat 并收集流式增量 */
-async function collectDeltas(gateway: EnglishGateway): Promise<{ content: string; deltas: string[] }> {
+async function collectDeltas(
+  gateway: EnglishGateway
+): Promise<{ content: string; deltas: string[] }> {
   const deltas: string[] = []
   const reply = await gateway.chat(QUESTION, [], (delta) => deltas.push(delta))
   return { content: reply.content, deltas }
@@ -89,6 +98,7 @@ describe('EnglishGateway 演示模式 / 真实模式判定', () => {
   beforeEach(() => {
     mockState.instances.length = 0
     mockState.calls.length = 0
+    mockState.nextError = null
   })
 
   it('apiKey 为空（空字符串）时返回演示模板回复，且不创建 OpenAI 客户端', async () => {
@@ -136,5 +146,30 @@ describe('EnglishGateway 演示模式 / 真实模式判定', () => {
     await collectDeltas(gateway)
     expect(mockState.instances).toHaveLength(3)
     expect(mockState.instances[2].baseURL).toBe('https://api.openai.com/v1')
+  })
+
+  it('HTTP 401：抛出中文、可操作、指向「设置 → AI 设置」的错误（不再裸抛 SDK 原文）', async () => {
+    mockState.nextError = Object.assign(new Error('401 status code (no body)'), { status: 401 })
+    const gateway = new EnglishGateway(() => makeConfig())
+    const err = await collectDeltas(gateway).then(
+      () => null,
+      (e: unknown) => e
+    )
+    expect(err).toBeInstanceOf(Error)
+    expect((err as Error).message).toContain('API Key')
+    expect((err as Error).message).toContain('设置 → AI 设置')
+    expect((err as Error).message).not.toContain('401 status code (no body)')
+  })
+
+  it('网络错误（fetch failed）：抛出中文「无法连接 AI 服务」提示', async () => {
+    mockState.nextError = new Error('fetch failed')
+    const gateway = new EnglishGateway(() => makeConfig())
+    const err = await collectDeltas(gateway).then(
+      () => null,
+      (e: unknown) => e
+    )
+    expect(err).toBeInstanceOf(Error)
+    expect((err as Error).message).toContain('无法连接 AI 服务')
+    expect((err as Error).message).toContain('设置 → AI 设置')
   })
 })
