@@ -1045,6 +1045,16 @@ body {
   white-space: pre-wrap;
 }
 
+.vocab-notebook-def p {
+  margin: 0;
+}
+
+.vocab-notebook-example {
+  margin-top: 6px !important;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .vocab-notebook-mask {
   margin: 8px 0 0;
   padding: 8px 10px;

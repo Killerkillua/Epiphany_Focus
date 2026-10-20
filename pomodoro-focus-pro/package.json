@@ -5,7 +5,6 @@
   "main": "./out/main/index.js",
   "author": "pomodoro-focus-pro",
   "license": "MIT",
-  "private": true,
   "scripts": {
     "dev": "electron-vite dev --watch",
     "start": "electron-vite preview",
@@ -23,7 +22,10 @@
     "icons:generate": "node scripts/generate-icons.mjs",
     "build:win": "npm run build && electron-builder --win --config electron-builder.yml",
     "build:mac": "npm run build && electron-builder --mac --config electron-builder.yml",
-    "build:linux": "npm run build && electron-builder --linux --config electron-builder.yml"
+    "build:linux": "npm run build && electron-builder --linux --config electron-builder.yml",
+    "release:win": "npm run build && electron-builder --win --publish always",
+    "release:mac": "npm run build && electron-builder --mac --publish always",
+    "release:linux": "npm run build && electron-builder --linux --publish always"
   },
   "dependencies": {
     "@ant-design/icons": "^5.6.1",

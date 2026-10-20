@@ -33,7 +33,7 @@ export default function RestorePreviewModal({
         message.success(
           `恢复完成：${res.records} 条记录、${res.notes} 条笔记、${res.sessions} 条会话${
             res.tasks ? `、${res.tasks} 条任务` : ''
-          }`
+          }${res.vocab ? `、${res.vocab} 条生词` : ''}`
         )
         onClose()
       } else {
@@ -71,6 +71,7 @@ export default function RestorePreviewModal({
               {preview.recordCount} 条学习记录、{preview.noteCount} 条笔记、
               {preview.sessionCount} 条学习会话
               {preview.taskCount ? `、${preview.taskCount} 条任务` : ''}
+              {preview.vocabCount ? `、${preview.vocabCount} 条生词` : ''}
             </span>
           </div>
           <div className="settings-row" style={{ marginTop: 10 }}>
@@ -91,8 +92,8 @@ export default function RestorePreviewModal({
             style={{ fontSize: 12, display: 'block', marginTop: 8 }}
           >
             {restoreMode === 'merge'
-              ? '合并模式：与现有数据合并，同一课程取更新时间较新的记录，笔记按 id 保留现有。适用于跨设备同步 / 补充数据。'
-              : '覆盖模式：将清空现有学习记录、标签、会话与笔记，完全替换为备份内容。此操作不可撤销！'}
+              ? '合并模式：与现有数据合并；同一课程取更新时间较新的记录，笔记按 id 保留现有；同词释义按字段合并（空不盖非空，都有则备份优先）。适用于跨设备同步 / 补充数据。'
+              : '覆盖模式：将清空现有学习记录、标签、会话、笔记、任务与生词本，完全替换为备份内容。旧版备份若不含生词本，覆盖后本地生词也会被清空。此操作不可撤销！'}
           </Typography.Text>
         </div>
       )}

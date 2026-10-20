@@ -1,5 +1,9 @@
 appId: com.pomodoro.focuspro
 productName: 静界专注
+publish:
+  provider: github
+  owner: Killerkillua
+  repo: Epiphany_Focus
 directories:
   buildResources: build
   output: dist

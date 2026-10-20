@@ -315,6 +315,7 @@ const api: RendererApi = {
       notes: number
       sessions: number
       tasks?: number
+      vocab?: number
       error?: string
     }> =>
       ipcRenderer.invoke(IPC_CHANNELS.playRecords.importData, filePath, mode) as Promise<{
@@ -323,6 +324,7 @@ const api: RendererApi = {
         notes: number
         sessions: number
         tasks?: number
+        vocab?: number
         error?: string
       }>,
     /** 备份元数据列表（M5） */
@@ -510,7 +512,9 @@ const api: RendererApi = {
 
   app: {
     isPackaged: (): Promise<boolean> =>
-      ipcRenderer.invoke(IPC_CHANNELS.app.isPackaged) as Promise<boolean>
+      ipcRenderer.invoke(IPC_CHANNELS.app.isPackaged) as Promise<boolean>,
+    getVersion: (): Promise<string> =>
+      ipcRenderer.invoke(IPC_CHANNELS.app.getVersion) as Promise<string>
   },
 
   /* 窗口控制（自定义标题栏） */

@@ -22,7 +22,8 @@ function run(job: BackupWorkerJob): unknown {
       recordCount: backup.data.playRecords.length,
       noteCount: backup.data.notes.length,
       sessionCount: backup.data.studySessions.length,
-      taskCount: backup.data.tasks?.length ?? 0
+      taskCount: backup.data.tasks?.length ?? 0,
+      vocabCount: backup.data.vocab?.length ?? 0
     }
   }
   if (job.op === 'export') {

@@ -188,7 +188,8 @@ function vocabSides(entry: Pick<VocabEntry, 'word' | 'phonetic' | 'definition' |
   const definition = escapeHtml(plainField(entry.definition))
   const example = escapeHtml(plainField(entry.example))
   const front = phonetic ? `${word}<br>${phonetic}` : word
-  const back = example ? `${definition}<br><br>${example}` : definition
+  // 释义与例句都空时 Back 为空；仅有其一则只写该项，避免多余 <br>
+  const back = [definition, example].filter((part) => part.length > 0).join('<br><br>')
   return { front, back }
 }
 

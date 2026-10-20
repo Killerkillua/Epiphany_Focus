@@ -1,6 +1,11 @@
 import { app } from 'electron'
 import { join } from 'path'
-import type { AddVocabResult, GrammarPoint, VocabEntry } from '../../shared/ai'
+import {
+  normalizeVocabWord,
+  type AddVocabResult,
+  type GrammarPoint,
+  type VocabEntry
+} from '../../shared/ai'
 import type { NoteEntry, NoteSource } from '../../shared/bili'
 import { resourceKeyFromRecordId, resourceKindOf, type StudyResourceKind } from '../../shared/study'
 import type { BackupFileData, BackupMeta, ImportResult } from '../../shared/backup'
@@ -476,6 +481,7 @@ export function getDb(): SqliteLike | null {
     migratePlayRecordsColumns(opened)
     migrateStudyResourceColumns(opened)
     migrateSessionTaskColumns(opened)
+    migrateVocabWordNormalize(opened)
     ensureQueryIndexes(opened)
     backfillHeatmapIfEmpty(opened)
     db = opened
@@ -547,6 +553,88 @@ export function migrateSessionTaskColumns(d: SqliteLike): void {
     }
   } catch (err) {
     console.warn('[storage] sessions 任务列迁移失败:', err instanceof Error ? err.message : err)
+  }
+}
+
+/**
+ * 生词本 word 归一化（D-03）：trim + NFKC + 小写，合并大小写/全半角重复行。
+ * 保留最早 added_at；空字段用其它行非空值补齐。
+ */
+export function migrateVocabWordNormalize(d: SqliteLike): void {
+  type Row = {
+    id: number
+    word: string
+    phonetic: string
+    definition: string
+    example: string
+    added_at: number
+  }
+  let rows: Row[]
+  try {
+    rows = d
+      .prepare('SELECT id, word, phonetic, definition, example, added_at FROM vocab')
+      .all() as Row[]
+  } catch {
+    return
+  }
+  if (rows.length === 0) return
+
+  const groups = new Map<string, Row[]>()
+  let needsWork = false
+  for (const row of rows) {
+    const norm = normalizeVocabWord(row.word)
+    if (norm !== row.word) needsWork = true
+    const list = groups.get(norm) ?? []
+    list.push(row)
+    groups.set(norm, list)
+    if (list.length > 1) needsWork = true
+  }
+  if (!needsWork) return
+
+  const del = d.prepare('DELETE FROM vocab WHERE id = ?')
+  const upd = d.prepare(
+    'UPDATE vocab SET word = ?, phonetic = ?, definition = ?, example = ?, added_at = ? WHERE id = ?'
+  )
+  try {
+    d.prepare('BEGIN').run()
+    try {
+      for (const [norm, list] of groups) {
+        list.sort((a, b) => a.added_at - b.added_at || a.id - b.id)
+        const keep = list[0]
+        let phonetic = keep.phonetic
+        let definition = keep.definition
+        let example = keep.example
+        let addedAt = keep.added_at
+        for (let i = 1; i < list.length; i++) {
+          const r = list[i]
+          if (!phonetic && r.phonetic) phonetic = r.phonetic
+          if (!definition && r.definition) definition = r.definition
+          if (!example && r.example) example = r.example
+          addedAt = Math.min(addedAt, r.added_at)
+          del.run(r.id)
+        }
+        if (
+          keep.word !== norm ||
+          phonetic !== keep.phonetic ||
+          definition !== keep.definition ||
+          example !== keep.example ||
+          addedAt !== keep.added_at
+        ) {
+          upd.run(norm, phonetic, definition, example, addedAt, keep.id)
+        }
+      }
+      d.prepare('COMMIT').run()
+    } catch (inner) {
+      try {
+        d.prepare('ROLLBACK').run()
+      } catch {
+        // 忽略回滚失败
+      }
+      throw inner
+    }
+    console.info('[storage] vocab 已归一化 word（NFKC + 小写，合并重复）')
+  } catch (err) {
+    console.warn('[storage] vocab word 归一化迁移失败:', err instanceof Error ? err.message : err)
   }
 }
 
@@ -1754,7 +1842,8 @@ export function exportBackupData(): BackupFileData {
       settings,
       tasks: [],
       focusSessions: [],
-      interruptionEvents: []
+      interruptionEvents: [],
+      vocab: []
     }
   }
   return collectBackupData(d, settings)
@@ -1762,13 +1851,14 @@ export function exportBackupData(): BackupFileData {
 
 /**
  * 恢复备份数据（M5）：事务原子。
- * - replace：清空 play_records / play_record_tags / study_sessions / notes 后整体写入
+ * - replace：清空 play_records / play_record_tags / study_sessions / notes / vocab 后整体写入
  * - merge ：play_records 同 bvid 取 updated_at 较新者；notes 按 id 保留现有（INSERT OR IGNORE）；
- *           sessions 追加（id 重建）；标签按记录聚合补入
+ *           sessions 追加（id 重建）；标签按记录聚合补入；
+ *           vocab 按 word 字段级合并（空不盖非空，都有则备份优先；added_at 取较早）
  */
 export function importBackupData(data: BackupFileData, mode: 'merge' | 'replace'): ImportResult {
   const d = getDb()
-  if (!d) return { records: 0, notes: 0, sessions: 0 }
+  if (!d) return { records: 0, notes: 0, sessions: 0, vocab: 0 }
   return applyContentBackup(d, data, mode)
 }
 
@@ -1939,7 +2029,7 @@ export function addVocab(payload: {
   example?: string
 }): AddVocabResult {
   const now = Date.now()
-  const word = payload.word.trim()
+  const word = normalizeVocabWord(payload.word)
   const d = getDb()
   if (d) {
     const existed = Boolean(d.prepare('SELECT id FROM vocab WHERE word = ?').get(word))
@@ -2038,7 +2128,7 @@ export interface LocalDictEntry {
 export function getLocalDictEntry(word: string): LocalDictEntry | null {
   const d = getDb()
   if (!d || !word) return null
-  const cleaned = word.trim().toLowerCase()
+  const cleaned = normalizeVocabWord(word)
   try {
     const row = d
       .prepare(
@@ -2070,7 +2160,7 @@ export function upsertLocalDictEntry(entry: LocalDictEntry): void {
          oxford = excluded.oxford,
          updated_at = excluded.updated_at`
     ).run(
-      entry.word.trim().toLowerCase(),
+      normalizeVocabWord(entry.word),
       entry.phonetic ?? '',
       entry.definition_cn,
       entry.definition_en ?? '',

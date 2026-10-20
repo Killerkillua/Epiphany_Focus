@@ -1,0 +1,7 @@
+# Bilibili WBI fallback keys are public, long-term stable keys (see
+# pomodoro-focus-pro/src/main/navigation/wbi.ts FALLBACK_WBI_KEYS comment).
+# They are not user credentials; ignore these known false positives.
+a8dcae35d3b945f66b7fded626d6211e431e4ff0:pomodoro-focus-pro/src/main/navigation/wbi.ts:generic-api-key:26
+a8dcae35d3b945f66b7fded626d6211e431e4ff0:pomodoro-focus-pro/src/main/navigation/wbi.ts:generic-api-key:27
+f32647ef823fa05d11f1b36e502005421a4ecde3:pomodoro-focus-pro/src/main/navigation/wbi.ts:generic-api-key:26
+f32647ef823fa05d11f1b36e502005421a4ecde3:pomodoro-focus-pro/src/main/navigation/wbi.ts:generic-api-key:27

@@ -567,6 +567,7 @@ export function registerNavigationModule(
       notes: number
       sessions: number
       tasks?: number
+      vocab?: number
       error?: string
     }> => {
       try {
@@ -586,6 +587,7 @@ export function registerNavigationModule(
             notes: number
             sessions: number
             tasks: number
+            vocab: number
           }>({ op: 'import', dbPath, filePath: fp, mode: m })
           pendingImport = null
           return { ok: true, ...result }
@@ -598,6 +600,7 @@ export function registerNavigationModule(
           records: 0,
           notes: 0,
           sessions: 0,
+          vocab: 0,
           error: err instanceof Error ? err.message : String(err)
         }
       }

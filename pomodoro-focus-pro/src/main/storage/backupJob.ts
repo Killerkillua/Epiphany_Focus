@@ -1,3 +1,4 @@
+import { normalizeVocabWord, type VocabEntry } from '../../shared/ai'
 import { BACKUP_VERSION, type BackupFile, type BackupFileData, type ImportResult } from '../../shared/backup'
 import type { NoteEntry } from '../../shared/bili'
 import type { PlayRecord, PlayStatus, SessionSource, StudySession } from '../../shared/stats'
@@ -50,6 +51,11 @@ export function collectBackupData(
       `SELECT tag FROM play_record_tags GROUP BY tag ORDER BY COUNT(*) DESC, tag COLLATE NOCASE`
     )
     .all() as Array<{ tag: string }>
+  const vocab = d
+    .prepare(
+      `SELECT id, word, phonetic, definition, example, added_at AS createdAt FROM vocab ORDER BY id ASC`
+    )
+    .all() as Array<Record<string, unknown>>
 
   return {
     playRecords: records.map(playRow),
@@ -60,6 +66,7 @@ export function collectBackupData(
       dailyMinutes: Number(goals.dailyMinutes) || 0,
       weeklyDays: Number(goals.weeklyDays) || 0
     },
+    vocab: vocab.map(vocabRow),
     ...collectTaskBackup(d)
   }
 }
@@ -108,7 +115,8 @@ export function applyContentBackup(
   const records = Array.isArray(data?.playRecords) ? data.playRecords : []
   const notes = Array.isArray(data?.notes) ? data.notes : []
   const sessions = Array.isArray(data?.studySessions) ? data.studySessions : []
-  const result: ImportResult = { records: 0, notes: 0, sessions: 0 }
+  const vocab = Array.isArray(data?.vocab) ? data.vocab : []
+  const result: ImportResult = { records: 0, notes: 0, sessions: 0, vocab: 0 }
   d.prepare('BEGIN').run()
   try {
     if (mode === 'replace') {
@@ -116,6 +124,7 @@ export function applyContentBackup(
       d.prepare('DELETE FROM play_record_tags').run()
       d.prepare('DELETE FROM study_sessions').run()
       d.prepare('DELETE FROM notes').run()
+      d.prepare('DELETE FROM vocab').run()
     }
     const upsertRecord = d.prepare(
       `INSERT INTO play_records (bvid, title, duration_s, watched_s, last_position_s, status, viewed_count, goal_rounds, goal_deadline, cover_url, author, created_at, updated_at)
@@ -200,6 +209,7 @@ export function applyContentBackup(
       )
       result.sessions++
     }
+    result.vocab = writeVocab(d, vocab, mode)
     d.prepare('COMMIT').run()
   } catch (err) {
     try {
@@ -294,6 +304,88 @@ function studyRow(row: Record<string, unknown>): StudySession {
     source: sessionSource(String(row.source ?? '')),
     createdAt: Number(row.created_at)
   }
+}
+
+function vocabRow(row: Record<string, unknown>): VocabEntry {
+  return {
+    id: Number(row.id),
+    word: String(row.word ?? ''),
+    phonetic: String(row.phonetic ?? ''),
+    definition: String(row.definition ?? ''),
+    example: String(row.example ?? ''),
+    createdAt: Number(row.createdAt ?? row.added_at ?? 0)
+  }
+}
+
+/** 备份非空优先；否则留本地（双方都非空 → 备份；仅一方非空 → 非空方） */
+function preferBackupField(backup: string, local: string): string {
+  return backup || local
+}
+
+/**
+ * 写入生词本：
+ * - replace：调用方已 DELETE；此处按备份整行插入
+ * - merge：按 word 唯一；字段级空不盖非空、都有则备份优先；added_at 取较早
+ */
+function writeVocab(
+  d: SqliteLike,
+  entries: VocabEntry[],
+  mode: 'merge' | 'replace'
+): number {
+  const localByWord = new Map<string, VocabEntry>()
+  if (mode === 'merge') {
+    const rows = d
+      .prepare(
+        `SELECT id, word, phonetic, definition, example, added_at AS createdAt FROM vocab`
+      )
+      .all() as Array<Record<string, unknown>>
+    for (const row of rows) {
+      const entry = vocabRow(row)
+      const key = normalizeVocabWord(entry.word)
+      if (key) localByWord.set(key, { ...entry, word: key })
+    }
+  }
+  const upsert = d.prepare(
+    `INSERT INTO vocab (word, phonetic, definition, example, added_at) VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(word) DO UPDATE SET
+       phonetic = excluded.phonetic,
+       definition = excluded.definition,
+       example = excluded.example,
+       added_at = excluded.added_at`
+  )
+  let written = 0
+  for (const raw of entries) {
+    const word = normalizeVocabWord(String(raw.word ?? ''))
+    if (!word) continue
+    const backup: VocabEntry = {
+      id: Number(raw.id) || 0,
+      word,
+      phonetic: String(raw.phonetic ?? ''),
+      definition: String(raw.definition ?? ''),
+      example: String(raw.example ?? ''),
+      createdAt: Number(raw.createdAt) || Date.now()
+    }
+    const local = localByWord.get(word)
+    if (mode === 'merge' && local) {
+      upsert.run(
+        word,
+        preferBackupField(backup.phonetic, local.phonetic),
+        preferBackupField(backup.definition, local.definition),
+        preferBackupField(backup.example, local.example),
+        Math.min(local.createdAt || backup.createdAt, backup.createdAt || local.createdAt)
+      )
+    } else {
+      upsert.run(
+        word,
+        backup.phonetic,
+        backup.definition,
+        backup.example,
+        backup.createdAt || Date.now()
+      )
+    }
+    written++
+  }
+  return written
 }
 
 function taskRow(row: Record<string, unknown>): Task {

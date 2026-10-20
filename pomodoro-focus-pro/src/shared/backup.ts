@@ -1,3 +1,4 @@
+import type { GrammarPoint, VocabEntry } from './ai'
 import type { PlayRecord, StudySession } from './stats'
 import type { NoteEntry } from './bili'
 import type { FocusSessionBackup, InterruptionEvent, Task } from './task'
@@ -7,9 +8,9 @@ import type { FocusSessionBackup, InterruptionEvent, Task } from './task'
  * 独立文件避免 stats ⇄ bili 的循环类型引用。
  */
 
-/** 备份文件格式版本（导出写入 1.1；导入同时接受 1.0） */
-export const BACKUP_VERSION = '1.1'
-export const BACKUP_VERSIONS = ['1.0', '1.1'] as const
+/** 备份文件格式版本（导出写入 1.2；导入同时接受 1.0 / 1.1） */
+export const BACKUP_VERSION = '1.2'
+export const BACKUP_VERSIONS = ['1.0', '1.1', '1.2'] as const
 
 /** 备份数据快照（play_records + notes + study_sessions + 标签 + 学习目标） */
 export interface BackupFileData {
@@ -24,6 +25,10 @@ export interface BackupFileData {
   tasks?: Task[]
   focusSessions?: FocusSessionBackup[]
   interruptionEvents?: InterruptionEvent[]
+  /** 1.1 及更早没有；导入时按空数组处理。createdAt = vocab.added_at */
+  vocab?: VocabEntry[]
+  /** 预留：本迭代不采集、不导入 */
+  grammarPoints?: GrammarPoint[]
 }
 
 /** 备份文件（导出 / 导入的 JSON 结构） */
@@ -40,6 +45,7 @@ export interface ImportPreview {
   noteCount: number
   sessionCount: number
   taskCount?: number
+  vocabCount?: number
 }
 
 /** 恢复结果计数 */
@@ -48,6 +54,7 @@ export interface ImportResult {
   notes: number
   sessions: number
   tasks?: number
+  vocab?: number
 }
 
 /** 备份元数据（backup_meta 表行） */
