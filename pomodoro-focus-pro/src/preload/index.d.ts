@@ -18,6 +18,8 @@ import type {
 import type {
   AddGrammarPayload,
   AddVocabPayload,
+  AddVocabResult,
+  UpdateVocabPayload,
   AiConfig,
   AiQuestion,
   AiReply,
@@ -36,6 +38,7 @@ import type {
   FeedbackStats,
   HeatmapCell,
   HomeSummary,
+  StudyReviewTotals,
   ModeStat,
   PlayRecord,
   PlayRecordTick,
@@ -45,6 +48,16 @@ import type {
   StudySession
 } from '../shared/stats'
 import type { BackupMeta, ImportPreview } from '../shared/backup'
+import type { ExportFileResult, StatsExportFormat, VocabExportFormat } from '../shared/export'
+import type {
+  AuthResult,
+  AuthState,
+  AuthUser,
+  DeleteAccountPayload,
+  LoginPayload,
+  RegisterPayload,
+  ResetPasswordPayload
+} from '../shared/auth'
 import type {
   DistractionPolicy,
   SessionStartOptions,
@@ -52,6 +65,8 @@ import type {
   TimerOptions,
   TimerSnapshot
 } from '../shared/types'
+import type { Task, TaskDraft, TaskFilter, TaskPatch, TaskReview, TaskStatus } from '../shared/task'
+import type { LocalMediaPickResult, OpenWebStudyPayload, SiteRulePreview } from '../shared/study'
 
 /** preload 暴露给渲染层的受限 API 类型定义 */
 export interface RendererApi {
@@ -85,7 +100,7 @@ export interface RendererApi {
     applyDistractionPolicy(policy: DistractionPolicy): Promise<DistractionPolicy>
   }
 
-  /** B 站模式（WBI 搜索 / 播放窗口 / 悬浮面板 / 导航判定） */
+  /** 视频学习模式（WBI 搜索 / 播放窗口 / 悬浮面板 / 导航判定） */
   bili: {
     search(keyword: string, options?: Partial<BiliSearchOptions>): Promise<BiliSearchResponse>
     openVideo(payload: OpenVideoPayload): Promise<void>
@@ -107,9 +122,29 @@ export interface RendererApi {
     getVideoDuration(): Promise<number>
   }
 
+  /** 本地视频与白名单学习网站 */
+  study: {
+    pickLocal(): Promise<LocalMediaPickResult & { token?: string }>
+    openLocal(payload: {
+      token: string
+      resourceKey: string
+      title: string
+      autoFullscreen: boolean
+      topic?: string
+      plannedMs?: number
+      seekSeconds?: number
+    }): Promise<void>
+    openWeb(payload: OpenWebStudyPayload): Promise<void>
+    resume(recordId: string): Promise<void>
+    previewSite(payload: {
+      text: string
+      pathPrefixes?: string[]
+      label?: string
+    }): Promise<SiteRulePreview>
+  }
+
   /** 记事本（增量 upsert + 分视频归档） */
   notes: {
-    save(entries: NoteEntry[]): Promise<void>
     load(): Promise<NoteEntry[]>
     /** 单条增量保存（P-1：不再整份覆盖） */
     upsert(entry: NoteEntry): Promise<NoteEntry>
@@ -117,6 +152,13 @@ export interface RendererApi {
     delete(id: string): Promise<void>
     /** 按视频归档读取 */
     loadByVideo(bvid: string): Promise<NoteEntry[]>
+  }
+
+  /** 标准化导出（CSV / Excel / Markdown / Anki） */
+  export: {
+    stats(payload: { format: StatsExportFormat }): Promise<ExportFileResult>
+    notesMarkdown(): Promise<ExportFileResult>
+    vocab(payload: { format: VocabExportFormat }): Promise<ExportFileResult>
   }
 
   /** 按视频学习进度（F-3 / M1 管理 / M2 快捷访问 / M3 统计） */
@@ -171,7 +213,14 @@ export interface RendererApi {
     importData(
       filePath: string,
       mode: 'merge' | 'replace'
-    ): Promise<{ ok: boolean; records: number; notes: number; sessions: number; error?: string }>
+    ): Promise<{
+      ok: boolean
+      records: number
+      notes: number
+      sessions: number
+      tasks?: number
+      error?: string
+    }>
     /** 备份元数据列表（M5） */
     listBackups(): Promise<BackupMeta[]>
   }
@@ -188,7 +237,7 @@ export interface RendererApi {
     stats(): Promise<FeedbackStats>
   }
 
-  /** 学习会话计时（B 站学习 / 英语学习模式） */
+  /** 学习会话计时（视频学习 / 英语学习模式） */
   session: {
     start(options: SessionStartOptions): Promise<SessionState>
     stop(): Promise<SessionState>
@@ -197,9 +246,10 @@ export interface RendererApi {
     getState(): Promise<SessionState>
   }
 
-  /** 白噪音（主进程侧：素材信息） */
+  /** 白噪音（主进程侧：素材信息 + 二进制读取） */
   audio: {
     getAssets(): Promise<AssetInfo[]>
+    getBuffer(key: string): Promise<Uint8Array | null>
   }
 
   /** 全局设置（electron-store，即时生效） */
@@ -208,6 +258,29 @@ export interface RendererApi {
     set(entries: Record<string, unknown>): Promise<AppSettings>
     /** 选择备份目录（M5；取消返回 null） */
     pickBackupDir(): Promise<string | null>
+    /** 打开系统日志目录 */
+    openLogDir(): Promise<string>
+    /** 获取系统日志文件绝对路径 */
+    getLogPath(): Promise<string>
+  }
+
+  /** 任务清单 */
+  tasks: {
+    list(filter?: TaskFilter): Promise<Task[]>
+    create(draft: TaskDraft): Promise<Task>
+    update(id: string, patch: TaskPatch): Promise<Task>
+    delete(id: string): Promise<boolean>
+    setStatus(id: string, status: TaskStatus): Promise<Task>
+    review(): Promise<TaskReview>
+  }
+
+  /** 专注进行中的内外部打扰 */
+  interruptions: {
+    add(payload: {
+      type: 'internal' | 'external'
+      note?: string
+    }): Promise<{ eventId: string; snapshot: TimerSnapshot }>
+    updateNote(id: string, note: string): Promise<boolean>
   }
 
   /** 学习统计 */
@@ -216,39 +289,72 @@ export interface RendererApi {
     modeCompare(): Promise<ModeStat[]>
     heatmap(): Promise<HeatmapCell[]>
     homeSummary(): Promise<HomeSummary>
+    review(): Promise<StudyReviewTotals>
+  }
+
+  /** 本地账号 */
+  auth: {
+    getState(): Promise<AuthState>
+    register(p: RegisterPayload): Promise<AuthResult<{ user: AuthUser; recoveryCode: string }>>
+    login(p: LoginPayload): Promise<AuthResult<{ user: AuthUser }>>
+    loginGuest(): Promise<AuthResult>
+    logout(): Promise<AuthResult>
+    changePassword(oldPassword: string, newPassword: string): Promise<AuthResult>
+    updateNickname(nickname: string): Promise<AuthResult<{ user: AuthUser }>>
+    deleteAccount(p: DeleteAccountPayload): Promise<AuthResult>
+    resetPassword(p: ResetPasswordPayload): Promise<AuthResult<{ recoveryCode: string }>>
   }
 
   /** 紧急退出（恢复码 bcrypt） */
   emergency: {
     exit(code: string): Promise<EmergencyExitResult>
-    /** 设置/修改恢复码（已设置过时必须携带旧码验证；强制会话中禁止修改） */
-    setCode(code: string, oldCode?: string): Promise<boolean>
+    /** 设置/修改恢复码（已设置过时必须验证账户密码；强制会话中禁止修改） */
+    setCode(code: string, password?: string): Promise<boolean>
     /** 紧急退出弹窗期间暂停窗口守卫失焦拉回（避免视频窗口抢焦点，输入不了恢复码） */
     setPullBackPaused(paused: boolean): Promise<void>
   }
 
   /** AI 网关 */
   ai: {
-    /** B 站学习助手：完整回复（携带学习上下文与多轮历史） */
+    /** 视频学习助手：完整回复（携带学习上下文与多轮历史） */
     ask(request: AiAskRequest): Promise<BiliAiReply>
-    /** B 站学习助手：流式问答（增量经 ai:chunk 事件推送，requestId 关联；F-4/P-2） */
+    /** 视频学习助手：流式问答（增量经 ai:chunk 事件推送，requestId 关联；F-4/P-2） */
     biliAsk(request: AiAskRequest): Promise<BiliAiReply>
     /** 英语模式：流式问答（增量经 ai:chunk 事件推送） */
     englishAsk(question: AiQuestion): Promise<AiReply>
     /** LLM 配置（BYOK，只读；写入走 设置页 settings:set） */
     getConfig(): Promise<AiConfig>
+    /** 用已保存的 Key、端点和模型发一次 1 token 请求 */
+    ping(): Promise<{ ok: boolean; message: string }>
+    /** 取消进行中的流式请求 */
+    abort(requestId: string): Promise<void>
     /** 会话提问用量 */
     usage(): Promise<AiUsage>
     /** 图片文字识别（OCR 模型） */
     ocr(req: OcrRequest): Promise<OcrResult>
     /** 生词本 */
-    addVocab(payload: AddVocabPayload): Promise<VocabEntry>
+    addVocab(payload: AddVocabPayload): Promise<AddVocabResult>
     listVocab(): Promise<VocabEntry[]>
+    updateVocab(payload: UpdateVocabPayload): Promise<VocabEntry>
     deleteVocab(id: number): Promise<boolean>
     /** 语法要点 */
     addGrammar(payload: AddGrammarPayload): Promise<GrammarPoint>
     listGrammar(): Promise<GrammarPoint[]>
     deleteGrammar(id: number): Promise<boolean>
+  }
+
+  /** 应用运行形态 */
+  app: {
+    /** 安装包为 true；开发模式为 false，此时开机自启开关不可用 */
+    isPackaged(): Promise<boolean>
+  }
+
+  /** 自定义标题栏窗口控制 */
+  window: {
+    minimize(): Promise<void>
+    maximize(): Promise<void>
+    close(): Promise<void>
+    isMaximized(): Promise<boolean>
   }
 }
 

@@ -3,10 +3,10 @@
  * UI 层统一从这里取值，新增模式只需在此登记一处，无需改动组件代码。
  */
 
-/** 模式展示名（专注 / B 站学习 / 英语学习） */
+/** 模式展示名（专注 / 视频学习 / 英语学习） */
 export const MODE_LABELS: Record<string, string> = {
   focus: '专注',
-  bili: 'B 站学习',
+  bili: '视频学习',
   english: '英语学习'
 }
 

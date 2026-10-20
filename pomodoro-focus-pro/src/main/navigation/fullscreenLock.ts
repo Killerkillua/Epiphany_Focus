@@ -1,7 +1,7 @@
 import type { BrowserWindow } from 'electron'
 
 /**
- * B 站全屏锁定守卫。
+ * 视频学习全屏锁定守卫。
  * 核心思路：不全局拦截 Esc（需留给紧急退出），
  * 而是用 leave-full-screen / exit-full-screen / resize 三个事件兜底拉回，
  * 形成"怎么退都退不出"的效果。
@@ -67,7 +67,7 @@ export function attachFullscreenLock(win: BrowserWindow, opts: FullscreenLockOpt
       escTimes = []
       opts.onEscapeSpam?.()
     }
-    // 仍消费单次 Esc：防止 B 站播放器退全屏触发"退出→拉回"闪烁
+    // 仍消费单次 Esc：防止 视频学习播放器退全屏触发"退出→拉回"闪烁
     _e.preventDefault()
   })
 }

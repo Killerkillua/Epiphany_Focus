@@ -8,10 +8,11 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
     build: {
       rollupOptions: {
-        // 双入口：应用主进程 + 守护进程（guardian 为独立 Node 脚本，供 L2 拉起）
+        // 主进程、守护进程，以及备份 Worker（不占用 UI 线程）
         input: {
           index: resolve('src/main/index.ts'),
-          guardian: resolve('src/main/guardian/guardian.ts')
+          guardian: resolve('src/main/guardian/guardian.ts'),
+          backupWorker: resolve('src/main/storage/backupWorker.ts')
         }
       }
     }

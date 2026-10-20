@@ -10,8 +10,8 @@ import {
   XAxis,
   YAxis
 } from 'recharts'
-import type { FeedbackStats, HeatmapCell, PlayRecord } from '../../../shared/stats'
-import type { NoteEntry } from '../../../shared/bili'
+import type { FeedbackStats, HeatmapCell, StudyReviewTotals } from '../../../shared/stats'
+import type { TaskReview } from '../../../shared/task'
 import { modeColor, modeLabel } from '../../../shared/constants'
 import { useStatsStore } from '../store/statsStore'
 
@@ -78,22 +78,24 @@ function StatsPage(): JSX.Element {
   const loading = useStatsStore((s) => s.loading)
   const error = useStatsStore((s) => s.error)
 
-  /* ===== R-4 B 站学习复盘卡（play_records + notes + feedback 聚合） ===== */
+  /* ===== R-4 视频学习复盘卡（play_records + notes + feedback 聚合） ===== */
+  const [taskReview, setTaskReview] = useState<TaskReview | null>(null)
   const [biliReview, setBiliReview] = useState<{
-    records: PlayRecord[]
+    totals: StudyReviewTotals
     feedback: FeedbackStats
-    notes: NoteEntry[]
   } | null>(null)
 
   useEffect(() => {
     let alive = true
     void Promise.all([
-      window.api.playRecords.list(),
+      window.api.stats.review(),
       window.api.feedback.stats(),
-      window.api.notes.load()
+      window.api.tasks.review().catch(() => null)
     ])
-      .then(([records, feedback, notes]) => {
-        if (alive) setBiliReview({ records, feedback, notes })
+      .then(([totals, feedback, reviewStats]) => {
+        if (!alive) return
+        setBiliReview({ totals, feedback })
+        setTaskReview(reviewStats)
       })
       .catch(() => {
         /* 数据不可用时不阻塞统计页 */
@@ -138,17 +140,12 @@ function StatsPage(): JSX.Element {
   /* ===== R-4 复盘派生数据 ===== */
   const review = useMemo(() => {
     if (!biliReview) return null
-    const records = biliReview.records
-    const watchedMinutes = records.reduce((sum, r) => sum + r.watchedS, 0) / 60
-    const doneCount = records.filter((r) => r.status === 'done').length
-    const learningCount = records.filter((r) => r.status === 'learning').length
-    const keyCount = biliReview.notes.filter((n) => n.isKey).length
     return {
-      watchedMinutes,
-      doneCount,
-      learningCount,
-      noteCount: biliReview.notes.length,
-      keyCount,
+      watchedMinutes: biliReview.totals.watchedMinutes,
+      doneCount: biliReview.totals.doneCount,
+      learningCount: biliReview.totals.learningCount,
+      noteCount: biliReview.totals.noteCount,
+      keyCount: biliReview.totals.keyCount,
       feedbackCount: biliReview.feedback.count,
       avgRating: biliReview.feedback.avgRating
     }
@@ -315,7 +312,49 @@ function StatsPage(): JSX.Element {
             </Typography.Text>
           </Card>
 
-          <Card size="small" title="📺 B 站学习复盘（R-4）" className="stats-card">
+          <Card size="small" title="✅ 任务与专注质量" className="stats-card">
+            {taskReview && (taskReview.todoCount > 0 || taskReview.creditedPomodoros > 0) ? (
+              <div className="bili-review-grid">
+                <div className="bili-review-item">
+                  <div className="bili-review-value">{taskReview.todayDone}</div>
+                  <div className="bili-review-label">今日完成任务</div>
+                </div>
+                <div className="bili-review-item">
+                  <div className="bili-review-value">
+                    {taskReview.actualOpen}/{taskReview.estimatedOpen}
+                  </div>
+                  <div className="bili-review-label">待办实际/预估</div>
+                </div>
+                <div className="bili-review-item">
+                  <div className="bili-review-value">{taskReview.internalInterruptions}</div>
+                  <div className="bili-review-label">内部打扰</div>
+                </div>
+                <div className="bili-review-item">
+                  <div className="bili-review-value">{taskReview.externalInterruptions}</div>
+                  <div className="bili-review-label">外部打扰</div>
+                </div>
+                <div className="bili-review-item">
+                  <div className="bili-review-value">
+                    {taskReview.avgInterruptionsPerPomo ?? '—'}
+                  </div>
+                  <div className="bili-review-label">每番茄打扰</div>
+                </div>
+              </div>
+            ) : (
+              <Empty description="完成关联任务的番茄后，这里会显示预估差异和打扰" />
+            )}
+            {taskReview && taskReview.topInterrupted.length > 0 && (
+              <div className="task-review-top">
+                {taskReview.topInterrupted.map((item) => (
+                  <div key={item.taskId}>
+                    {item.title} · {item.interruptions} 次打扰 / {item.pomos} 番茄
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+
+          <Card size="small" title="📺 视频学习复盘（R-4）" className="stats-card">
             {review ? (
               <div className="bili-review-grid">
                 <div className="bili-review-item">
@@ -351,7 +390,7 @@ function StatsPage(): JSX.Element {
                 </div>
               </div>
             ) : (
-              <Empty description="暂无 B 站学习数据：打开视频学习后这里会生成复盘" />
+              <Empty description="暂无视频学习数据：打开视频学习后这里会生成复盘" />
             )}
             <Typography.Text type="secondary" style={{ fontSize: 11 }}>
               数据源 play_records（按视频进度）+ notes（笔记/重点）+

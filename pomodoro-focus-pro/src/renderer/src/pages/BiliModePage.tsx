@@ -5,6 +5,7 @@ import {
   Empty,
   Input,
   Pagination,
+  Segmented,
   Select,
   Space,
   Spin,
@@ -24,10 +25,12 @@ import CoverImage from '../components/CoverImage'
 import SessionTimerBar from '../components/SessionTimerBar'
 import LearningAssistantDrawer from '../components/LearningAssistantDrawer'
 import { useSessionStore } from '../store/sessionStore'
+import StudySourcePanels from './StudySourcePanels'
+import { noiseEngine } from '../audio'
 import type { BiliOrder, BiliVideoItem, OverlaySnapshot } from '../../../shared/bili'
 
 /**
- * B 站学习模式页（核心版）：
+ * 视频学习模式页（核心版）：
  * - WBI 签名搜索（关键词 + 排序），结果网格展示
  * - 点击视频自动全屏打开（可配开关，localStorage 持久化）
  * - 订阅主进程事件：导航拦截提示 / 视频窗口开关
@@ -40,9 +43,9 @@ const ORDER_OPTIONS = [
 ]
 
 /**
- * B 站搜索接口默认每页条数（主进程未传 page_size，B 站按 20 条/页返回，
+ * 视频学习搜索接口默认每页条数（主进程未传 page_size，视频学习按 20 条/页返回，
  * 并以该粒度计算 numPages）。antd Pagination 用它与 numResults 推算总页数，
- * 必须与 B 站口径一致，否则页码按钮数与实际页数不符。
+ * 必须与 视频学习口径一致，否则页码按钮数与实际页数不符。
  */
 const PAGE_SIZE = 20
 
@@ -84,6 +87,7 @@ function BiliModePage(): JSX.Element {
   const [overlayVisible, setOverlayVisible] = useState(true)
   /** 学习助手抽屉（非视频模式入口，问题 3；打开视频时自动关闭与悬浮面板互斥） */
   const [assistantOpen, setAssistantOpen] = useState(false)
+  const [sourceTab, setSourceTab] = useState<'bili' | 'local' | 'web'>('bili')
 
   const persistAutoFullscreen = (value: boolean): void => {
     setAutoFullscreen(value)
@@ -104,6 +108,9 @@ function BiliModePage(): JSX.Element {
       try {
         // 分页修复：不再硬编码 page:1，传当前目标页码；消费 resp 返回的分页元数据
         const resp = await window.api.bili.search(kw, { order: targetOrder, page: targetPage })
+        console.info(
+          `[BiliMode] 搜索完成: kw="${kw}" page=${targetPage} 条数=${resp.items.length} numResults=${resp.numResults}`
+        )
         setItems(resp.items)
         setNumResults(resp.numResults)
         setNumPages(Math.max(1, resp.numPages))
@@ -114,6 +121,7 @@ function BiliModePage(): JSX.Element {
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
+        console.error(`[BiliMode] 搜索异常: kw="${kw}"`, err)
         setError(msg)
         setItems([])
       } finally {
@@ -148,7 +156,14 @@ function BiliModePage(): JSX.Element {
     }
   }, [searched, items])
 
+  // 视频学习不需要白噪音，进入页面即停止全部白噪音
+  useEffect(() => {
+    noiseEngine.stopAll()
+  }, [])
+
   const handleOpenVideo = (item: BiliVideoItem): void => {
+    // 播放视频前确保停止白噪音
+    noiseEngine.stopAll()
     // 会话上限时长：取当前学习会话的计划时长（首页时长浮层 / 计时条预设；未开始时为默认快照值），
     // 修复此前未传 plannedMs 导致视频强制会话 cap=0 的问题
     const plannedMs = useSessionStore.getState().snapshot.durationMs
@@ -235,10 +250,9 @@ function BiliModePage(): JSX.Element {
     <div className="page-dashboard">
       <div className="bili-page-head">
         <div>
-          <h1 className="page-title">B 站学习模式</h1>
+          <h1 className="page-title">视频学习模式</h1>
           <p className="page-sub">
-            输入学习主题 → WBI 签名搜索 → 结果网格 → 点击视频自动全屏；全屏时右侧悬浮学习助手（对话
-            / 笔记 / 进度，可拖拽、最小化）。
+            可以搜索 B 站、打开本地 MP4，或访问已加入白名单的学习网站。内容在全屏专注窗口中播放，右侧悬浮学习助手。
           </p>
         </div>
         {/* 问题 3：顶部导航栏右侧"学习助手"入口（非视频模式抽屉；反馈已迁移至设置页） */}
@@ -267,9 +281,25 @@ function BiliModePage(): JSX.Element {
         </div>
       )}
 
-      {/* 学习会话计时（倒计时 + 进度 + 到点自动关视频休息） */}
       <SessionTimerBar mode="bili" />
 
+      <Segmented
+        style={{ marginBottom: 16 }}
+        value={sourceTab}
+        onChange={(value) => setSourceTab(value as 'bili' | 'local' | 'web')}
+        options={[
+          { label: 'B 站', value: 'bili' },
+          { label: '本地视频', value: 'local' },
+          { label: '学习网站', value: 'web' }
+        ]}
+      />
+
+      {sourceTab !== 'bili' && (
+        <StudySourcePanels tab={sourceTab} autoFullscreen={autoFullscreen} topic={keyword.trim() || undefined} />
+      )}
+
+      {sourceTab === 'bili' && (
+      <>
       {/* 搜索区 */}
       <div className="bili-search-bar">
         <Input
@@ -303,7 +333,7 @@ function BiliModePage(): JSX.Element {
           showIcon
           className="bili-alert"
           message="搜索失败"
-          description={`${error}。若为 WBI 密钥问题，可稍后重试；网络代理需可直连 api.bilibili.com。`}
+          description={`${error}。若为 WBI 密钥问题，可稍后重试；网络代理需可直连视频站点接口。`}
         />
       )}
 
@@ -327,7 +357,16 @@ function BiliModePage(): JSX.Element {
           <Spin tip="搜索中…" />
         </div>
       ) : searched && items.length === 0 && !error ? (
-        <Empty description="没有找到相关视频" />
+        <Empty
+          description={
+            <div style={{ color: 'var(--muted)', fontSize: 13, lineHeight: 1.6 }}>
+              <div>没有找到相关视频</div>
+              <div style={{ fontSize: 12, marginTop: 4, opacity: 0.8 }}>
+                建议更换关键词或切换排序；若确信有该视频，可按 F12 打开控制台查看搜索诊断日志。
+              </div>
+            </div>
+          }
+        />
       ) : (
         <div ref={gridRef} className="bili-grid">
           {items.map((item) => (
@@ -373,7 +412,7 @@ function BiliModePage(): JSX.Element {
       )}
 
       {/* 分页：多于一页时显示（翻页重新请求，page 参数此前被硬编码为 1）。
-          total 用 numPages × PAGE_SIZE（B 站返回的页数口径），
+          total 用 numPages × PAGE_SIZE（视频学习返回的页数口径），
           不用 numResults：numResults 与页数换算可能不同步，导致页码按钮数与实际页数不符 */}
       {searched && items.length > 0 && numPages > 1 && (
         <div className="bili-pagination">
@@ -395,6 +434,9 @@ function BiliModePage(): JSX.Element {
             ? '：点击视频将全屏锁定播放（Esc/F11 无效；按 Ctrl+Shift+Q 或悬浮面板「关闭视频」退出）'
             : '：点击视频以普通窗口播放'}
         </div>
+      )}
+
+      </>
       )}
 
       <LearningAssistantDrawer

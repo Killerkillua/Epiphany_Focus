@@ -1,10 +1,11 @@
-import { ipcMain } from 'electron'
+import { ipcMain, type WebContents } from 'electron'
 import { randomUUID } from 'crypto'
 import { IPC_CHANNELS, IPC_EVENTS } from '../../shared/ipc'
 import type { AiAskRequest, BiliAiReply } from '../../shared/bili'
 import type {
   AddGrammarPayload,
   AddVocabPayload,
+  UpdateVocabPayload,
   AiConfig,
   AiQuestion,
   AiReply,
@@ -14,23 +15,25 @@ import type {
   OcrResult
 } from '../../shared/ai'
 import { EnglishGateway } from './gateway'
+import { AiAbortedError, toFriendlyAiError } from './errors'
+import OpenAI from 'openai'
 import { OcrGateway } from './ocr'
 import { runRag } from './rag'
 import { AiStore } from './store'
 import { recordTelemetry } from '../telemetry'
 import { ValidationError, str, optStr, num, arr, oneOf } from '../validate'
 /**
- * AI 网关（英语教学模式 + B 站学习助手）。
+ * AI 网关（英语教学模式 + 视频学习助手）。
  * - 流式问答：ai:english-ask（增量经 ai:chunk 事件推送，requestId 关联）
  * - 分层 Prompt + CoT + RAG（prompts.ts / rag.ts）
- * - B 站学习助手：ai:ask / ai:stream（bili 档位，注入学习上下文 topic/bvid + 多轮历史）
+ * - 视频学习助手：ai:ask / ai:stream（bili 档位，注入学习上下文 topic/bvid + 多轮历史）
  * - 图片文字识别：ai:ocr（OCR 模型）
  * - BYOK 配置与 SQLite 生词本 / 语法要点（store.ts）
  */
 
 const AI_SCENARIOS = ['grammar', 'vocabulary', 'conversation', 'writing', 'free'] as const
 
-/** H-01：B 站学习助手请求校验（message 必填，上下文/历史可选） */
+/** H-01：视频学习助手请求校验（message 必填，上下文/历史可选） */
 function parseBiliAskRequest(raw: unknown): AiAskRequest {
   const r = raw as AiAskRequest | null
   if (!r || typeof r !== 'object') throw new ValidationError('ai 请求必须是对象')
@@ -41,10 +44,21 @@ function parseBiliAskRequest(raw: unknown): AiAskRequest {
     if (typeof r.context !== 'object' || r.context === null) {
       throw new ValidationError('ai.context 必须是对象')
     }
+    const resourceKind = oneOf(
+      r.context.resourceKind,
+      'ai.context.resourceKind',
+      ['bili', 'local', 'web'] as const,
+      true
+    )
+    const rawBvid = optStr(r.context.bvid, 'ai.context.bvid', { max: 120 })
     context = {
       topic: optStr(r.context.topic, 'ai.context.topic', { max: 500 }),
       videoTitle: optStr(r.context.videoTitle, 'ai.context.videoTitle', { max: 500 }),
-      bvid: optStr(r.context.bvid, 'ai.context.bvid', { max: 100 })
+      resourceKind,
+      // 本地路径和网站地址不进入模型上下文
+      bvid: resourceKind === 'local' || resourceKind === 'web' || (rawBvid && /[\\/]/.test(rawBvid))
+        ? undefined
+        : rawBvid
     }
   }
   let history: AiAskRequest['history']
@@ -57,7 +71,8 @@ function parseBiliAskRequest(raw: unknown): AiAskRequest {
       return { role, content: str(it?.content, `ai.history[${i}].content`, { max: 20_000 }) }
     })
   }
-  return { message, requestId, context, history }
+  const continueFrom = optStr(r.continueFrom, 'ai.continueFrom', { max: 40_000 })
+  return { message, requestId, context, history, continueFrom }
 }
 
 /** H-01：英语模式提问校验 */
@@ -82,7 +97,35 @@ function parseEnglishQuestion(raw: unknown): AiQuestion {
       }
     })
   }
-  return { requestId, scenario, message, word, history }
+  const continueFrom = optStr(q.continueFrom, 'ai.question.continueFrom', { max: 40_000 })
+  return { requestId, scenario, message, word, history, continueFrom }
+}
+
+function surfaceAiError(err: unknown): Error {
+  if (err instanceof Error && err.name === 'Error' && !('status' in err)) return err
+  return toFriendlyAiError(err)
+}
+
+const inflight = new Map<string, AbortController>()
+
+function beginRequest(requestId: string, sender: WebContents): AbortSignal {
+  for (const [id, ctrl] of inflight) {
+    if (id !== requestId) ctrl.abort()
+  }
+  inflight.get(requestId)?.abort()
+  const controller = new AbortController()
+  inflight.set(requestId, controller)
+  const onGone = (): void => controller.abort()
+  sender.once('destroyed', onGone)
+  controller.signal.addEventListener(
+    'abort',
+    () => {
+      sender.removeListener('destroyed', onGone)
+      if (inflight.get(requestId) === controller) inflight.delete(requestId)
+    },
+    { once: true }
+  )
+  return controller.signal
 }
 
 export function registerAiIpc(): void {
@@ -90,7 +133,7 @@ export function registerAiIpc(): void {
   const gateway = new EnglishGateway(() => store.getConfig())
   const ocr = new OcrGateway(() => store.getConfig())
 
-  // ================= B 站学习助手（悬浮面板） =================
+  // ================= 视频学习助手（悬浮面板） =================
 
   ipcMain.handle(
     IPC_CHANNELS.ai.ask,
@@ -121,7 +164,7 @@ export function registerAiIpc(): void {
     return reply.content
   })
 
-  // B 站档流式问答（F-4/P-2）：增量经 ai:chunk 事件推送，requestId 关联；
+  // 视频学习档流式问答（F-4/P-2）：增量经 ai:chunk 事件推送，requestId 关联；
   // 复用 englishAsk 的流式链路，长回答逐字渲染，消除"一次性全量返回"的等待空白。
   ipcMain.handle(
     IPC_CHANNELS.ai.biliAsk,
@@ -138,17 +181,28 @@ export function registerAiIpc(): void {
         }
       }
 
-      const reply = await gateway.chat(
-        { requestId, scenario: 'free', message: r.message },
-        [],
-        (delta) => sendChunk(delta, false),
-        { profile: 'bili', biliRequest: r }
-      )
-      sendChunk('', true, { content: reply.content, sources: reply.sources })
-      return {
-        role: 'assistant',
-        content: reply.content,
-        sources: reply.sources.map((s) => s.title)
+      const signal = beginRequest(requestId, sender)
+      try {
+        const reply = await gateway.chat(
+          { requestId, scenario: 'free', message: r.message },
+          [],
+          (delta) => sendChunk(delta, false),
+          { profile: 'bili', biliRequest: r, signal, continueFrom: r.continueFrom }
+        )
+        sendChunk('', true, { content: reply.content, sources: reply.sources })
+        return {
+          role: 'assistant',
+          content: reply.content,
+          sources: reply.sources.map((s) => s.title)
+        }
+      } catch (err) {
+        if (err instanceof AiAbortedError) {
+          sendChunk('', true, { aborted: true })
+          return { role: 'assistant', content: r.continueFrom ?? '', sources: [] }
+        }
+        const friendly = surfaceAiError(err)
+        sendChunk('', true, { incomplete: true, error: friendly.message })
+        throw friendly
       }
     }
   )
@@ -158,11 +212,10 @@ export function registerAiIpc(): void {
   ipcMain.handle(
     IPC_CHANNELS.ai.englishAsk,
     async (event, question: AiQuestion): Promise<AiReply> => {
-      if (!store.tryUseQuestion()) {
+      const q = parseEnglishQuestion(question)
+      if (!q.continueFrom && !store.tryUseQuestion()) {
         throw new Error(`已达本会话提问上限（${store.getUsage().limit} 次），请重启应用或调整设置`)
       }
-      // requestId 由渲染层生成并随问题传入，保证 ai:chunk 事件能关联到对应消息
-      const q = parseEnglishQuestion(question)
       const requestId = q.requestId
       const sender = event.sender
 
@@ -173,16 +226,57 @@ export function registerAiIpc(): void {
         }
       }
 
-      const sources = await runRag(q)
-      const reply = await gateway.chat(q, sources, (delta) => sendChunk(delta, false))
-      sendChunk('', true, { content: reply.content, sources: reply.sources })
-      return reply
+      const signal = beginRequest(requestId, sender)
+      try {
+        const sources = await runRag(q)
+        const reply = await gateway.chat(q, sources, (delta) => sendChunk(delta, false), {
+          signal,
+          continueFrom: q.continueFrom
+        })
+        sendChunk('', true, { content: reply.content, sources: reply.sources })
+        return reply
+      } catch (err) {
+        if (err instanceof AiAbortedError) {
+          sendChunk('', true, { aborted: true })
+          return { content: q.continueFrom ?? '', sources: [] }
+        }
+        const friendly = surfaceAiError(err)
+        sendChunk('', true, { incomplete: true, error: friendly.message })
+        throw friendly
+      }
     }
   )
 
+  ipcMain.handle(IPC_CHANNELS.ai.abort, (_event, requestId: unknown): void => {
+    const id = str(requestId, 'ai.abort.requestId', { max: 200 })
+    inflight.get(id)?.abort()
+  })
+
+  ipcMain.handle(IPC_CHANNELS.ai.ping, async (): Promise<{ ok: boolean; message: string }> => {
+    const cfg = store.getConfig()
+    if (!cfg.apiKey) return { ok: false, message: '请先填写并保存 API Key' }
+    try {
+      const client = new OpenAI({
+        apiKey: cfg.apiKey,
+        baseURL: cfg.baseURL || undefined,
+        timeout: 15_000,
+        maxRetries: 0
+      })
+      await client.chat.completions.create({
+        model: cfg.model,
+        messages: [{ role: 'user', content: 'ping' }],
+        max_tokens: 1,
+        stream: false
+      })
+      return { ok: true, message: '连接成功' }
+    } catch (err) {
+      return { ok: false, message: toFriendlyAiError(err).message }
+    }
+  })
+
   // ================= 配置（BYOK） =================
 
-  ipcMain.handle(IPC_CHANNELS.ai.getConfig, (): AiConfig => store.getConfig())
+  ipcMain.handle(IPC_CHANNELS.ai.getConfig, (): AiConfig => store.getPublicConfig())
 
   ipcMain.handle(IPC_CHANNELS.ai.usage, (): AiUsage => store.getUsage())
 
@@ -200,7 +294,8 @@ export function registerAiIpc(): void {
   ipcMain.handle(IPC_CHANNELS.ai.addVocab, (_event, payload: AddVocabPayload) => {
     if (!payload || typeof payload !== 'object') throw new ValidationError('生词本写入必须是对象')
     const p = payload as AddVocabPayload
-    const word = str(p.word, 'vocab.word', { max: 200 })
+    const word = str(p.word, 'vocab.word', { max: 200 }).trim()
+    if (!word) throw new ValidationError('vocab.word 不能为空')
     return store.addVocab({
       word,
       phonetic: optStr(p.phonetic, 'vocab.phonetic', { max: 200 }),
@@ -209,6 +304,15 @@ export function registerAiIpc(): void {
     })
   })
   ipcMain.handle(IPC_CHANNELS.ai.listVocab, () => store.listVocab())
+  ipcMain.handle(IPC_CHANNELS.ai.updateVocab, (_event, payload: UpdateVocabPayload) => {
+    if (!payload || typeof payload !== 'object') throw new ValidationError('生词释义更新必须是对象')
+    const p = payload as UpdateVocabPayload
+    const id = num(p.id, 'vocab.id')
+    const definition = str(p.definition, 'vocab.definition', { max: 2000, allowEmpty: true }).trim()
+    const entry = store.updateVocab(id, definition)
+    if (!entry) throw new ValidationError('生词不存在')
+    return entry
+  })
   ipcMain.handle(IPC_CHANNELS.ai.deleteVocab, (_event, id: number) => {
     store.deleteVocab(num(id, 'vocab.id'))
     return true

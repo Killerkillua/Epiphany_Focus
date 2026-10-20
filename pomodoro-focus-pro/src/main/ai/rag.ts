@@ -1,12 +1,13 @@
 import type { AiQuestion, AiSource } from '../../shared/ai'
+import { getLocalDictEntry, upsertLocalDictEntry } from '../storage/db'
 
 /**
  * RAG 检索增强：关键词触发检索权威词典。
- * 检索源：
- * - Merriam-Webster（经 dictionaryapi.dev 免费接口，数据源自 MW）
- * - Cambridge（直接抓取词典页，best-effort，可能失败则跳过）
- * - Oxford Learner's（无免费 API，命中时给出查询入口链接）
- * 全部失败时优雅降级：返回空来源，LLM 仍可回答。
+ * 检索策略（本地秒级优先 + 云端兜底 + 自动缓存）：
+ * 1. 优先检索本地 SQLite `dict_entries` 表（毫秒级离线响应，杜绝弱网延迟与反爬）
+ * 2. 本地未命中时，并发查询 Merriam-Webster（dictionaryapi.dev）与 Cambridge
+ * 3. 云端查询成功后自动回写本地缓存，后续查询立变离线秒级
+ * 4. 全部失败时优雅降级：返回 Oxford 查询入口，LLM 仍可回答
  */
 
 const UA =
@@ -79,11 +80,30 @@ async function fetchCambridge(word: string): Promise<{ title: string; snippet: s
   }
 }
 
-/** 执行 RAG 检索（并发各源，容忍失败） */
+/** 执行 RAG 检索（本地优先，云端兜底并回写缓存） */
 export async function runRag(question: AiQuestion): Promise<AiSource[]> {
   const word = extractWord(question)
   if (!word) return []
 
+  // 1. 本地离线词库优先检索
+  try {
+    const local = getLocalDictEntry(word)
+    if (local && (local.definition_cn || local.definition_en)) {
+      const phoneticPart = local.phonetic ? ` /${local.phonetic}/` : ''
+      const defPart = local.definition_cn || local.definition_en || ''
+      return [
+        {
+          title: `Local Dictionary: ${local.word}${phoneticPart}`,
+          url: `https://www.merriam-webster.com/dictionary/${encodeURIComponent(word)}`,
+          snippet: defPart
+        }
+      ]
+    }
+  } catch {
+    // 降级继续走远程查询
+  }
+
+  // 2. 远程查询
   const [mw, cam] = await Promise.all([fetchMerriamWebster(word), fetchCambridge(word)])
 
   const sources: AiSource[] = []
@@ -95,6 +115,18 @@ export async function runRag(question: AiQuestion): Promise<AiSource[]> {
       url: `https://www.merriam-webster.com/dictionary/${encodeURIComponent(word)}`,
       snippet: meanings || '权威释义（音标/词性/例句）'
     })
+
+    // 成功检索后写回本地缓存，下次直接秒级命中
+    try {
+      upsertLocalDictEntry({
+        word: mw.word,
+        phonetic: mw.phonetic,
+        definition_cn: meanings,
+        definition_en: meanings
+      })
+    } catch {
+      // 忽略缓存写失败
+    }
   }
 
   if (cam) {

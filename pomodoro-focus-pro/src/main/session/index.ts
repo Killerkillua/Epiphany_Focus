@@ -1,4 +1,4 @@
-import { BrowserWindow, Notification, ipcMain } from 'electron'
+import { BrowserWindow, ipcMain } from 'electron'
 import { IPC_CHANNELS, IPC_EVENTS } from '../../shared/ipc'
 import { TimerService } from '../timer'
 import { recordSessionEnd, recordSessionStart, recordStudyStats, todayLocal } from '../storage/db'
@@ -6,6 +6,8 @@ import { closeVideo, getVideoState } from '../navigation/biliWindow'
 import { applyLevelWindow, releaseLevelWindow } from '../enforcement/lockScreen'
 import { getSettings } from '../storage/settings'
 import { recordTelemetry } from '../telemetry'
+import { showAppNotification } from '../notify'
+import { isVideoStudyMode } from '../../shared/study'
 import type {
   SessionMode,
   SessionStartOptions,
@@ -14,24 +16,24 @@ import type {
 } from '../../shared/types'
 
 /**
- * 学习会话计时服务（B 站学习 / 英语学习模式）。
+ * 学习会话计时服务（视频学习 / 英语学习模式）。
  * - 复用 TimerService 倒计时引擎，但为独立实例：与专注模式的强制引擎解耦，
- *   不施加锁屏 / 快捷键拦截 / 守护进程（B 站、英语是半开放环境）
+ *   不施加锁屏 / 快捷键拦截 / 守护进程（视频学习、英语是半开放环境）
  * - 可选全屏遮罩（settings.sessionOverlay，默认开启）：计时开始后对主窗口施加
  *   与专注模式一致的窗口级遮罩（全屏 + 置顶 + 禁缩放 + 隐藏任务栏 + 拦截关闭）
- * - B 站打开视频窗口时由导航模块挂起主窗口遮罩（视频窗口自身全屏锁定接管），关闭后恢复
- * - 到点：提示音（渲染层）+ 桌面通知 + 学习统计落库；B 站模式自动关闭视频窗口（到点休息）
+ * - 视频学习打开视频窗口时由导航模块挂起主窗口遮罩（视频窗口自身全屏锁定接管），关闭后恢复
+ * - 到点：提示音（渲染层）+ 桌面通知 + 学习统计落库；视频学习模式自动关闭视频窗口（到点休息）
  * - 会话状态不持久化：学习会话非强制，重启后不恢复（与强制会话语义区分）
  */
 
 const MIN_SESSION_MS = 1000
 const MAX_SESSION_MS = 8 * 3600_000
 
-/** 学习会话模块句柄（供 B 站导航模块联动主窗口遮罩） */
+/** 学习会话模块句柄（供 视频学习导航模块联动主窗口遮罩） */
 export interface SessionHandle {
-  /** B 站视频窗口打开：挂起主窗口遮罩，避免 screen-saver 置顶遮罩盖住全屏视频 */
+  /** 学习视频窗口打开：挂起主窗口遮罩，避免 screen-saver 置顶遮罩盖住全屏视频 */
   suspendOverlay: () => void
-  /** B 站视频窗口关闭：恢复主窗口遮罩（会话仍在进行且设置开启时） */
+  /** 学习视频窗口关闭：恢复主窗口遮罩（会话仍在进行且设置开启时） */
   resumeOverlay: () => void
 }
 
@@ -59,7 +61,7 @@ export function registerSessionModule(getWindow: () => BrowserWindow | null): Se
   let currentMode: SessionMode = 'english'
   /** 主窗口学习会话遮罩是否已施加（settings.sessionOverlay 开启时） */
   let overlayApplied = false
-  /** B 站视频窗口打开期间是否挂起了主窗口遮罩 */
+  /** 学习视频窗口打开期间是否挂起了主窗口遮罩 */
   let overlaySuspended = false
 
   /** 施加主窗口全屏遮罩（与专注模式 applyLevelWindow 同源，按窗口引用计数） */
@@ -93,8 +95,8 @@ export function registerSessionModule(getWindow: () => BrowserWindow | null): Se
       sessionId = null
     }
 
-    // B 站模式到点：自动关闭视频窗口（到点休息，方案 2.2）
-    if (currentMode === 'bili') {
+    // 视频学习模式到点：自动关闭学习内容窗口（到点休息）
+    if (isVideoStudyMode(currentMode)) {
       try {
         closeVideo()
       } catch {
@@ -102,11 +104,10 @@ export function registerSessionModule(getWindow: () => BrowserWindow | null): Se
       }
     }
 
-    new Notification({
-      title: currentMode === 'bili' ? '📺 B 站学习时间到' : '📖 英语学习时间到',
-      body: `本轮学习 ${minutes} 分钟，休息一下吧！`,
-      silent: true
-    }).show()
+    showAppNotification(
+      isVideoStudyMode(currentMode) ? '视频学习时间到' : '英语学习时间到',
+      `本轮学习 ${minutes} 分钟，休息一下吧！`
+    )
 
     // 到点完成：解除主窗口学习会话遮罩
     releaseSessionOverlay()
@@ -117,7 +118,7 @@ export function registerSessionModule(getWindow: () => BrowserWindow | null): Se
       MIN_SESSION_MS,
       Math.min(MAX_SESSION_MS, Number.isFinite(opts?.durationMs) ? opts.durationMs : 60 * 60_000)
     )
-    currentMode = opts?.mode === 'bili' ? 'bili' : 'english'
+    currentMode = opts?.mode === 'study' ? 'study' : opts?.mode === 'bili' ? 'bili' : 'english'
     recordTelemetry('session', 'start', {
       mode: currentMode,
       durationMinutes: Math.round(durationMs / 60_000)
@@ -177,7 +178,7 @@ export function registerSessionModule(getWindow: () => BrowserWindow | null): Se
     timer: sessionTimer.getSnapshot()
   }))
 
-  // ================= 遮罩联动句柄（B 站视频窗口开/关） =================
+  // ================= 遮罩联动句柄（学习视频窗口开/关） =================
 
   return {
     suspendOverlay: (): void => {

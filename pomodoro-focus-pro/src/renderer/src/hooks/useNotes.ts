@@ -6,7 +6,7 @@ import type { ChatMsg } from '../overlay/ChatPane'
 /**
  * 共享笔记 hook（H-07/H-09/H-11 统一）。
  *
- * B 站学习助手的两处入口——悬浮面板（OverlayApp）与学习助手抽屉
+ * 视频学习助手的两处入口——悬浮面板（OverlayApp）与学习助手抽屉
  * （LearningAssistantDrawer）——过去各自实现一遍笔记逻辑（500ms 防抖自动保存 +
  * upsert 增量落库 + 草稿 flush + AI 回答入笔记 + 增删改/重点/时间点）。本 hook 抽出
  * 这份逻辑，两处共用。
@@ -68,6 +68,7 @@ export function useNotes({ source, getContext }: UseNotesOptions): {
             createdAt: existing?.createdAt ?? Date.now(),
             content: prev.noteDraft,
             bvid: ctx?.bvid,
+            resourceKey: ctx?.resourceKey,
             videoTitle: ctx?.videoTitle,
             source
           })
@@ -112,6 +113,7 @@ export function useNotes({ source, getContext }: UseNotesOptions): {
         createdAt: existing?.createdAt ?? Date.now(),
         content: savedDraft,
         bvid: ctx?.bvid,
+        resourceKey: ctx?.resourceKey,
         videoTitle: ctx?.videoTitle,
         source
       }
@@ -164,6 +166,7 @@ export function useNotes({ source, getContext }: UseNotesOptions): {
             createdAt: existing?.createdAt ?? Date.now(),
             content: cur.noteDraft,
             bvid: ctx?.bvid,
+            resourceKey: ctx?.resourceKey,
             videoTitle: ctx?.videoTitle,
             source
           })
@@ -214,6 +217,7 @@ export function useNotes({ source, getContext }: UseNotesOptions): {
         createdAt: Date.now(),
         content: msg.content,
         bvid: ctx?.bvid,
+        resourceKey: ctx?.resourceKey,
         videoTitle: ctx?.videoTitle,
         source: 'ai'
       }

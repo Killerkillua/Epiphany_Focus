@@ -1,17 +1,13 @@
 import { app } from 'electron'
 import { join } from 'path'
-import {
-  existsSync,
-  mkdirSync,
-  readdirSync,
-  readFileSync,
-  rmSync,
-  statSync,
-  writeFileSync
-} from 'fs'
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'fs'
 import { BACKUP_VERSION, type BackupFile, type BackupMeta } from '../../shared/backup'
-import { exportBackupData, recordBackupMeta } from './db'
+import { exportTaskBackup } from './taskRepository'
+import { exportBackupData, recordBackupMeta, resolveDbPath } from './db'
+import { runBackupJob } from './backupRunner'
 import { getSettings } from './settings'
+
+export { MAX_BACKUP_BYTES, parseBackupFile, readBackupFile } from './backupParse'
 
 /**
  * 数据备份服务（M5：本地 JSON 备份 + 自动备份调度）。
@@ -21,9 +17,9 @@ import { getSettings } from './settings'
  * - 无需 node-cron 依赖（spec 允许 setTimeout 轮询）
  */
 
-/** 默认备份目录：文档/番茄专注备份 */
+/** 默认备份目录：文档/静界专注备份 */
 export function defaultBackupDir(): string {
-  return join(app.getPath('documents'), '番茄专注备份')
+  return join(app.getPath('documents'), '静界专注备份')
 }
 
 /** 组装备份文件（当前数据快照 + 学习目标） */
@@ -34,35 +30,13 @@ export function buildBackupFile(): BackupFile {
     exportedAt: Date.now(),
     data: {
       ...exportBackupData(),
+      ...exportTaskBackup(),
       settings: {
         dailyMinutes: Number(goals.dailyMinutes) || 0,
         weeklyDays: Number(goals.weeklyDays) || 0
       }
     }
   }
-}
-
-/** 解析并校验备份文件（version + 必填字段），非法抛错 */
-export function parseBackupFile(text: string): BackupFile {
-  let json: unknown
-  try {
-    json = JSON.parse(text)
-  } catch {
-    throw new Error('备份文件不是有效的 JSON')
-  }
-  const file = json as BackupFile
-  if (
-    !file ||
-    typeof file !== 'object' ||
-    file.version !== BACKUP_VERSION ||
-    !file.data ||
-    !Array.isArray(file.data.playRecords) ||
-    !Array.isArray(file.data.notes) ||
-    !Array.isArray(file.data.studySessions)
-  ) {
-    throw new Error('备份文件格式不正确或版本不受支持（需要 version ' + BACKUP_VERSION + '）')
-  }
-  return file
 }
 
 /** 写入备份文件（含元数据落库），返回元数据 */
@@ -113,7 +87,7 @@ let scheduler: NodeJS.Timeout | null = null
  * 执行一次自动备份（幂等：当天已备份则跳过）。返回是否执行。
  * 频率：daily = 每天到点；weekly = 每周日到点（frequency 取 weekly 时）。
  */
-export function runAutoBackupOnce(now = new Date()): boolean {
+export async function runAutoBackupOnce(now = new Date()): Promise<boolean> {
   const cfg = getSettings().backup
   if (!cfg?.enabled) return false
   const [h, m] = (cfg.time ?? '03:00').split(':').map((x) => Number(x) || 0)
@@ -139,7 +113,24 @@ export function runAutoBackupOnce(now = new Date()): boolean {
     )
     if (done) return false
     const stamp = `${today}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`
-    writeBackupFile(join(dir, `pomodoro-backup-${stamp}.json`), buildBackupFile(), 'auto')
+    const filePath = join(dir, `pomodoro-backup-${stamp}.json`)
+    const goals = getSettings().studyGoals ?? { dailyMinutes: 0, weeklyDays: 0 }
+    const written = await runBackupJob<{ recordCount: number; fileSize: number }>({
+      op: 'export',
+      dbPath: resolveDbPath(),
+      filePath,
+      goals: {
+        dailyMinutes: Number(goals.dailyMinutes) || 0,
+        weeklyDays: Number(goals.weeklyDays) || 0
+      }
+    })
+    recordBackupMeta({
+      filePath,
+      fileSize: written.fileSize,
+      recordCount: written.recordCount,
+      backupType: 'auto',
+      createdAt: Date.now()
+    })
     pruneBackups(dir, cfg.keepCount ?? 7)
     console.info(`[backup] 自动备份完成：${today}`)
     return true
@@ -157,17 +148,10 @@ export function runAutoBackupOnce(now = new Date()): boolean {
 export function startAutoBackup(): void {
   if (scheduler) return
   const tick = (): void => {
-    try {
-      runAutoBackupOnce()
-    } catch (err) {
+    void runAutoBackupOnce().catch((err: unknown) => {
       console.warn('[backup] 自动备份调度异常:', err instanceof Error ? err.message : err)
-    }
+    })
   }
   tick()
   scheduler = setInterval(tick, 60_000)
-}
-
-/** 读取备份文件（手动导入用） */
-export function readBackupFile(filePath: string): BackupFile {
-  return parseBackupFile(readFileSync(filePath, 'utf-8'))
 }

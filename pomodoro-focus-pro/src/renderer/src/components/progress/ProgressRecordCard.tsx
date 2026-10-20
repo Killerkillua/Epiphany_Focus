@@ -94,6 +94,8 @@ function ProgressRecordCard({
       </div>
       <div className="progress-card-main">
         <div className="progress-card-title" title={rec.title || rec.bvid}>
+          {rec.resourceType === 'local' && <Tag>本地</Tag>}
+          {rec.resourceType === 'web' && <Tag>网站</Tag>}
           {rec.title || rec.bvid}
         </div>
         <div className="progress-card-meta">

@@ -22,7 +22,7 @@ export const IPC_CHANNELS = {
     enter: 'mode:enter',
     exit: 'mode:exit'
   },
-  /** 学习会话计时（B 站学习 / 英语学习，与强制引擎解耦） */
+  /** 学习会话计时（视频学习 / 英语学习，与强制引擎解耦） */
   session: {
     start: 'session:start',
     stop: 'session:stop',
@@ -30,11 +30,11 @@ export const IPC_CHANNELS = {
     resume: 'session:resume',
     getState: 'session:get-state'
   },
-  /** 导航管控（B 站模式） */
+  /** 导航管控（视频学习模式） */
   nav: {
     check: 'nav:check'
   },
-  /** B 站模式（WBI 搜索 / 播放窗口 / 悬浮面板 / 导航判定） */
+  /** 视频学习模式（WBI 搜索 / 播放窗口 / 悬浮面板 / 导航判定） */
   bili: {
     search: 'bili:search',
     openVideo: 'bili:open-video',
@@ -58,13 +58,21 @@ export const IPC_CHANNELS = {
     /** 读取视频总时长（秒，HTML5 video.duration；用于进度百分比与"回到上次位置"） */
     getVideoDuration: 'bili:get-video-duration'
   },
+  /** 通用学习：本地视频与白名单网站（B 站通道保持兼容） */
+  study: {
+    pickLocal: 'study:pick-local',
+    openLocal: 'study:open-local',
+    openWeb: 'study:open-web',
+    resume: 'study:resume',
+    previewSite: 'study:preview-site'
+  },
   /** AI 网关 */
   ai: {
-    /** B 站 overlay 兼容：单轮完整回复 */
+    /** 视频学习 overlay 兼容：单轮完整回复 */
     ask: 'ai:ask',
     /** 兼容：一次性返回整段文本 */
     stream: 'ai:stream',
-    /** B 站学习助手：流式问答（增量经 ai:chunk 事件推送，requestId 关联；F-4/P-2） */
+    /** 视频学习助手：流式问答（增量经 ai:chunk 事件推送，requestId 关联；F-4/P-2） */
     biliAsk: 'ai:bili-ask',
     /** 英语模式：流式问答（增量经 ai:chunk 事件推送） */
     englishAsk: 'ai:english-ask',
@@ -72,20 +80,23 @@ export const IPC_CHANNELS = {
     ocr: 'ai:ocr',
     /** LLM 配置（BYOK，只读；写入走 settings:set） */
     getConfig: 'ai:get-config',
+    /** 用已保存的 Key / 端点 / 模型发一次 1 token 请求 */
+    ping: 'ai:ping',
+    abort: 'ai:abort',
     /** 会话提问用量 */
     usage: 'ai:usage',
     /** 生词本 */
     addVocab: 'ai:add-vocab',
     listVocab: 'ai:list-vocab',
+    updateVocab: 'ai:update-vocab',
     deleteVocab: 'ai:delete-vocab',
     /** 语法要点 */
     addGrammar: 'ai:add-grammar',
     listGrammar: 'ai:list-grammar',
     deleteGrammar: 'ai:delete-grammar'
   },
-  /** 记事本（增量 upsert + 按视频归档） */
+  /** 记事本（按 id 增量 upsert，不再整表覆盖） */
   notes: {
-    save: 'notes:save',
     load: 'notes:load',
     /** 单条增量保存（P-1：不再整份覆盖） */
     upsert: 'notes:upsert',
@@ -93,6 +104,12 @@ export const IPC_CHANNELS = {
     delete: 'notes:delete',
     /** 按视频归档读取 */
     loadByVideo: 'notes:load-by-video'
+  },
+  /** 标准化导出（CSV / Excel / Markdown / Anki），与应用内 JSON 备份分开 */
+  export: {
+    stats: 'export:stats',
+    notesMarkdown: 'export:notes-markdown',
+    vocab: 'export:vocab'
   },
   /** 按视频学习进度（F-3 / M1 / M2 / M3 / M4 / M5） */
   playRecords: {
@@ -148,7 +165,9 @@ export const IPC_CHANNELS = {
   /** 白噪音（主进程侧：素材信息；混音引擎在渲染层） */
   audio: {
     /** 采样素材信息（路径 + 存在性） */
-    getAssets: 'audio:get-assets'
+    getAssets: 'audio:get-assets',
+    /** 直接读取素材二进制数据（IPC 兜底通道） */
+    getBuffer: 'audio:get-buffer'
   },
   /** 强制引擎 */
   enforce: {
@@ -162,10 +181,36 @@ export const IPC_CHANNELS = {
   /** 紧急退出 */
   emergency: {
     exit: 'emergency:exit',
-    /** 设置/修改紧急恢复码（已设置过时需携带旧码验证，强制会话中禁止修改） */
+    /** 设置/修改紧急恢复码（已设置过时需验证账户密码，强制会话中禁止修改） */
     setCode: 'emergency:set-code',
     /** 紧急退出弹窗期间暂停窗口守卫的失焦拉回（避免视频窗口抢焦点，输入不了恢复码） */
     setPullBackPaused: 'emergency:set-pull-back-paused'
+  },
+  /** 本地账号（登录 / 注册 / 游客 / 账号管理） */
+  auth: {
+    getState: 'auth:get-state',
+    register: 'auth:register',
+    login: 'auth:login',
+    loginGuest: 'auth:login-guest',
+    logout: 'auth:logout',
+    changePassword: 'auth:change-password',
+    updateNickname: 'auth:update-nickname',
+    deleteAccount: 'auth:delete-account',
+    resetPassword: 'auth:reset-password'
+  },
+  /** 任务清单（待办 / 优先级 / 预估番茄） */
+  tasks: {
+    list: 'tasks:list',
+    create: 'tasks:create',
+    update: 'tasks:update',
+    delete: 'tasks:delete',
+    setStatus: 'tasks:set-status',
+    review: 'tasks:review'
+  },
+  /** 专注进行中的内外部打扰 */
+  interruptions: {
+    add: 'interruptions:add',
+    updateNote: 'interruptions:update-note'
   },
   /** 学习统计（study_stats / sessions 聚合） */
   stats: {
@@ -176,19 +221,34 @@ export const IPC_CHANNELS = {
     /** 时段热力图（星期 × 小时） */
     heatmap: 'stats:heatmap',
     /** 首页聚合汇总（今日专注 / 完成番茄 / 连续天数） */
-    homeSummary: 'stats:home-summary'
+    homeSummary: 'stats:home-summary',
+    /** 视频学习复盘聚合（观看分钟 / 课程状态 / 笔记数） */
+    review: 'stats:review'
   },
   /** 全局设置（electron-store，即时生效） */
   settings: {
     get: 'settings:get',
     set: 'settings:set',
     /** 选择备份目录（M5：dialog 目录选择，返回路径；取消返回 null） */
-    pickBackupDir: 'settings:pick-backup-dir'
+    pickBackupDir: 'settings:pick-backup-dir',
+    /** 打开系统日志目录 */
+    openLogDir: 'settings:open-log-dir',
+    /** 获取系统日志文件路径 */
+    getLogPath: 'settings:get-log-path'
   },
   /** 应用级信息 */
   app: {
     getVersion: 'app:get-version',
-    platform: 'app:platform'
+    platform: 'app:platform',
+    /** 是否为安装包运行（开发模式不写开机登录项） */
+    isPackaged: 'app:is-packaged'
+  },
+  /** 自定义标题栏窗口控制 */
+  window: {
+    minimize: 'window:minimize',
+    maximize: 'window:maximize',
+    close: 'window:close',
+    isMaximized: 'window:is-maximized'
   }
 } as const
 
@@ -202,14 +262,14 @@ export const IPC_EVENTS = {
     /** 计时完成（到点 / 正序手动结束） */
     complete: 'timer:complete'
   },
-  /** 学习会话计时事件（B 站 / 英语模式） */
+  /** 学习会话计时事件（视频学习 / 英语模式） */
   session: {
     /** 每秒推送会话计时快照 */
     tick: 'session:tick',
     /** 会话到点完成 */
     complete: 'session:complete'
   },
-  /** B 站模式事件（播放窗口 / 导航拦截 / 悬浮面板状态） */
+  /** 视频学习模式事件（播放窗口 / 导航拦截 / 悬浮面板状态） */
   bili: {
     videoOpened: 'bili:video-opened',
     videoClosed: 'bili:video-closed',
@@ -233,6 +293,10 @@ export const IPC_EVENTS = {
   settings: {
     /** 设置变更广播（settings:set / ai 配置写入后推送最新快照，渲染层据此实时刷新） */
     changed: 'settings:changed'
+  },
+  /** 窗口状态事件 */
+  window: {
+    maximizeChanged: 'window:maximize-changed'
   }
 } as const
 

@@ -26,6 +26,15 @@ export interface HeatmapCell {
   sessions: number
 }
 
+/** 统计页视频学习复盘（全表聚合，不依赖被截断的列表） */
+export interface StudyReviewTotals {
+  watchedMinutes: number
+  doneCount: number
+  learningCount: number
+  noteCount: number
+  keyCount: number
+}
+
 /** 首页聚合汇总（今日专注 / 完成番茄 / 连续天数） */
 export interface HomeSummary {
   /** 今日累计专注分钟（study_stats 按 date 聚合） */
@@ -69,6 +78,11 @@ export interface PlayRecord {
   coverUrl: string
   /** UP 主名称 */
   author: string
+  /** 稳定资源键。旧记录可能为空，读取时由 bvid 补齐 */
+  resourceKey?: string
+  resourceType?: 'bili' | 'local' | 'web'
+  /** 仅网站记录回传规范化 URL。本地路径留在主进程，不发给渲染层 */
+  sourceUri?: string
 }
 
 /** 学习记录可修改字段（play-records:update / 「调整进度」对话框；M1） */

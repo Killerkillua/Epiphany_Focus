@@ -13,9 +13,14 @@ const PRESETS = [15, 30, 60, 120]
 
 const MODE_META: Record<SessionMode, { title: string; icon: string; hint: string }> = {
   bili: {
-    title: 'B 站学习会话',
+    title: '视频学习会话',
     icon: '📺',
     hint: '倒计时结束将自动关闭视频窗口并休息'
+  },
+  study: {
+    title: '视频学习会话',
+    icon: '📺',
+    hint: '倒计时结束将自动关闭学习窗口并休息'
   },
   english: {
     title: '英语学习会话',
@@ -26,6 +31,7 @@ const MODE_META: Record<SessionMode, { title: string; icon: string; hint: string
 
 const MODE_ACCENT: Record<SessionMode, string> = {
   bili: 'var(--accent)',
+  study: 'var(--accent)',
   english: 'var(--accent2)'
 }
 
@@ -46,7 +52,7 @@ interface Props {
 }
 
 /**
- * 学习会话计时条（B 站学习 / 英语学习模式）。
+ * 学习会话计时条（视频学习 / 英语学习模式）。
  * - 空闲：预设时长 + 开始按钮（首页进入时已由时长弹窗启动，此处用于直达页面）
  * - 进行中：倒计时 + 进度条 + 暂停/继续/结束
  * - 到点：提示音 + 消息 + 白噪音联动；主进程同步桌面通知与统计落库
@@ -82,20 +88,22 @@ function SessionTimerBar({ mode }: Props): JSX.Element {
     void init()
   }, [init])
 
-  // 到点：提示音 + 消息 + 白噪音休息联动（与专注模式一致）
+  // 到点：提示音 + 消息 + 白噪音休息联动（视频学习不联动白噪音）
   useEffect(() => {
     if (justCompleted) {
       playChime()
-      const restAction = noiseEngine.getSettings().restAction
-      if (restAction === 'stop') {
-        noiseEngine.stopAll()
-      } else if (restAction === 'duck') {
-        noiseEngine.duck()
+      if (currentMode !== 'bili') {
+        const restAction = noiseEngine.getSettings().restAction
+        if (restAction === 'stop') {
+          noiseEngine.stopAll()
+        } else if (restAction === 'duck') {
+          noiseEngine.duck()
+        }
       }
       void message.success(`🍅 ${meta.title}完成，休息一下吧！`)
       clearCompleted()
     }
-  }, [justCompleted, meta.title, clearCompleted])
+  }, [justCompleted, meta.title, clearCompleted, currentMode])
 
   const percent =
     snapshot.durationMs > 0 ? Math.min(100, (snapshot.elapsedMs / snapshot.durationMs) * 100) : 0
@@ -111,16 +119,21 @@ function SessionTimerBar({ mode }: Props): JSX.Element {
     const minutes = Math.max(1, Math.min(480, Math.round(pendingMin) || 60))
     void start(currentMode, minutes * MINUTE)
       .then(() => {
-        // 白噪音联动：学习会话开始自动播放（可配）+ 恢复音量（解除休息降音量）
-        noiseEngine.restore()
-        if (noiseEngine.getSettings().autoPlayOnStart) {
-          void noiseEngine
-            .playPreset(getNoisePreset(noiseEngine.getSettings().preset))
-            .then((result) => {
-              if (result.started === 0 && result.skipped.length > 0) {
-                void message.info(`白噪音：${result.skipped.join('、')} 素材未打包，已跳过`)
-              }
-            })
+        if (currentMode === 'bili') {
+          // 视频学习不需要白噪音开启，且确保立即停止当前可能播放的白噪音
+          noiseEngine.stopAll()
+        } else {
+          // 白噪音联动：英语学习会话开始自动播放（可配）+ 恢复音量（解除休息降音量）
+          noiseEngine.restore()
+          if (noiseEngine.getSettings().autoPlayOnStart) {
+            void noiseEngine
+              .playPreset(getNoisePreset(noiseEngine.getSettings().preset))
+              .then((result) => {
+                if (result.started === 0 && result.skipped.length > 0) {
+                  void message.info(`白噪音：${result.skipped.join('、')} 素材未打包，已跳过`)
+                }
+              })
+          }
         }
       })
       .catch((err: unknown) => {
@@ -208,8 +221,10 @@ function SessionTimerBar({ mode }: Props): JSX.Element {
                   danger
                   icon={<StopOutlined />}
                   onClick={() => {
-                    // 白噪音闭环：手动结束时停止播放
-                    noiseEngine.stopAll()
+                    // 白噪音闭环：非视频模式手动结束时停止播放
+                    if (currentMode !== 'bili') {
+                      noiseEngine.stopAll()
+                    }
                     void stop()
                   }}
                 >

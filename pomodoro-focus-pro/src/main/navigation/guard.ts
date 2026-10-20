@@ -2,7 +2,7 @@ import type { WebContents } from 'electron'
 import type { NavCategory, NavVerdict, BiliGuardContext } from '../../shared/bili'
 
 /**
- * B 站导航管控（四层判定：L1 域名 / L2 路径 / L3 历史 / L4 内容相关性）。
+ * 视频学习导航管控（四层判定：L1 域名 / L2 路径 / L3 历史 / L4 内容相关性）。
  *
  * L1 域名：仅放行 bilibili.com 及其子域（www./search./api./space. 等）。
  * L2 路径：拦截 直播 / 番剧 / 影视 / 动态 四类内容；严格档额外开启 BV 白名单。
@@ -48,7 +48,7 @@ const HISTORY_TRAP = `
   })()
 `
 
-/* ===== L4 内容提取脚本（C-1：多候选选择器降级链，抗 B 站前端改版） ===== */
+/* ===== L4 内容提取脚本（C-1：多候选选择器降级链，抗 视频学习前端改版） ===== */
 const CONTENT_EXTRACTOR = `
   (() => {
     function text(sel) {
@@ -213,7 +213,7 @@ export function buildBlockPageHtml(verdict: NavVerdict): string {
     <h1>${title}</h1>
     <p>原因：${verdict.reason}</p>
     <p class="url">${escapeHtml(verdict.url)}</p>
-    <p class="hint">学习模式仅允许 bilibili.com 子域内的点播内容。<br/>请关闭本窗口，回到搜索结果页重新选择视频。</p>
+    <p class="hint">学习模式仅允许视频站点内的点播内容。<br/>请关闭本窗口，回到搜索结果页重新选择视频。</p>
     ${markBtn}
   </div>
 </body>

@@ -13,10 +13,10 @@ Date: 2026-08-18
 
 采用设计文档推荐的「流体 + 容器查询」方案，而非传统的「固定 px + 媒体查询」方案：
 
-1. **页面级**：引入内容驱动的 @media 断点体系（与设计文档 §5 一致的四档：**Compact <768px / Medium 768–1200px / Wide 1200–1600px / Ultrawide >1600px**）。主窗口 minWidth 940px，Compact 档实际不触发（保留供 B 站窗口与未来兼容）；实现中 Wide/Ultrawide 以 `@media (min-width: 1200px / 1600px)` 落地，Medium 行为由 antd Sider `breakpoint="md"`（768px）与容器查询承担
+1. **页面级**：引入内容驱动的 @media 断点体系（与设计文档 §5 一致的四档：**Compact <768px / Medium 768–1200px / Wide 1200–1600px / Ultrawide >1600px**）。主窗口 minWidth 940px，Compact 档实际不触发（保留供 视频学习窗口与未来兼容）；实现中 Wide/Ultrawide 以 `@media (min-width: 1200px / 1600px)` 落地，Medium 行为由 antd Sider `breakpoint="md"`（768px）与容器查询承担
 2. **区域级**：引入 @container 容器查询，让组件根据所在容器宽度自适应
 3. **元素级**：使用 clamp() / min() / max() 实现字号、间距、尺寸的无级缩放
-4. **约束**：内容区域设置 max-width（阅读 1200px / 数据 1600px），全屏下居中；数据型页面（统计 / B 站，`.page-dashboard`）在 Wide（≥1200px）即放宽到 `--dashboard-max`（1600px）
+4. **约束**：内容区域设置 max-width（阅读 1200px / 数据 1600px），全屏下居中；数据型页面（统计 / 视频学习，`.page-dashboard`）在 Wide（≥1200px）即放宽到 `--dashboard-max`（1600px）
 
 替代方案（被否决）：仅用 @media 媒体查询做断点适配。否决理由：组件无法感知自身容器宽度，同一组件放在窄侧栏和宽主区域时需要重复写不同的样式规则，维护成本高且违反设计文档的核心原则。
 

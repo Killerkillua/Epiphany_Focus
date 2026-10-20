@@ -75,8 +75,17 @@ function NoiseControl(): JSX.Element {
             style={{ flex: 1 }}
             value={settings.preset}
             options={presetOptions}
-            disabled={playing}
-            onChange={(value) => noiseEngine.setSettings({ preset: value as string })}
+            onChange={(value) => {
+              const presetKey = value as string
+              noiseEngine.setSettings({ preset: presetKey })
+              if (playing) {
+                void noiseEngine.playPreset(getNoisePreset(presetKey)).then((result) => {
+                  if (result.action === 'start' && result.started === 0) {
+                    message.warning('所选预设暂无可用音轨')
+                  }
+                })
+              }
+            }}
           />
           <Button
             type={playing ? 'default' : 'primary'}

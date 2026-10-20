@@ -28,13 +28,16 @@ let dir: string
 /** 素材目录：app.getAppPath()/resources/audio */
 let assetsDir: string
 let getAssets: () => AssetInfo[]
+let getBuffer: (event: unknown, key: string) => Uint8Array | null
 
 function register(): void {
   ;(app.getAppPath as ReturnType<typeof vi.fn>).mockReturnValue(dir)
   registerAudioModule(() => null)
   const handleMock = ipcMain.handle as unknown as ReturnType<typeof vi.fn>
-  const entry = handleMock.mock.calls.find(([ch]) => ch === IPC_CHANNELS.audio.getAssets)
-  getAssets = entry![1] as () => AssetInfo[]
+  const entryAssets = handleMock.mock.calls.find(([ch]) => ch === IPC_CHANNELS.audio.getAssets)
+  getAssets = entryAssets![1] as () => AssetInfo[]
+  const entryBuffer = handleMock.mock.calls.find(([ch]) => ch === IPC_CHANNELS.audio.getBuffer)
+  getBuffer = entryBuffer![1] as (event: unknown, key: string) => Uint8Array | null
 }
 
 beforeEach(() => {
@@ -64,31 +67,48 @@ describe('audio:get-assets（素材解析）', () => {
     }
   })
 
-  it('存在 rain.mp3：rain 可用且 url=tomato-audio://rain.mp3，其余仍不可用', () => {
+  it('存在 rain.mp3：rain 可用且 url=tomato-audio://audio/rain.mp3，其余仍不可用', () => {
     writeFileSync(join(assetsDir, 'rain.mp3'), 'x')
     const assets = getAssets()
     const rain = assets.find((a) => a.key === 'rain')!
     expect(rain.exists).toBe(true)
-    expect(rain.url).toBe('tomato-audio://rain.mp3')
+    expect(rain.url).toBe('tomato-audio://audio/rain.mp3')
     expect(rain.path).toBe(join(assetsDir, 'rain.mp3'))
     for (const a of assets) {
       if (a.key !== 'rain') expect(a.exists, a.key).toBe(false)
     }
   })
 
-  it('OGG > MP3 > WAV 兜底：同素材同时存在 ogg 与 mp3 时优先 ogg', () => {
+  it('MP3 > OGG > WAV 兜底：同素材同时存在 ogg 与 mp3 时优先 mp3', () => {
     writeFileSync(join(assetsDir, 'rain.mp3'), 'x')
     writeFileSync(join(assetsDir, 'rain.ogg'), 'x')
     const rain = getAssets().find((a) => a.key === 'rain')!
-    expect(rain.path).toBe(join(assetsDir, 'rain.ogg'))
-    expect(rain.url).toBe('tomato-audio://rain.ogg')
+    expect(rain.path).toBe(join(assetsDir, 'rain.mp3'))
+    expect(rain.url).toBe('tomato-audio://audio/rain.mp3')
   })
 
-  it('WAV 素材（library）按 spec 文件名解析', () => {
-    writeFileSync(join(assetsDir, 'library.wav'), 'x')
+  it('MP3 素材（library）按 spec 文件名解析，仅存在 wav 时也可兜底', () => {
+    writeFileSync(join(assetsDir, 'library.mp3'), 'x')
     const library = getAssets().find((a) => a.key === 'library')!
     expect(library.exists).toBe(true)
-    expect(library.url).toBe('tomato-audio://library.wav')
+    expect(library.url).toBe('tomato-audio://audio/library.mp3')
+
+    // 仅存在 wav 时可作为候选兜底
+    rmSync(join(assetsDir, 'library.mp3'))
+    writeFileSync(join(assetsDir, 'library.wav'), 'x')
+    const fallback = getAssets().find((a) => a.key === 'library')!
+    expect(fallback.exists).toBe(true)
+    expect(fallback.url).toBe('tomato-audio://audio/library.wav')
+  })
+
+  it('audio:get-buffer：直接读取存在的文件二进制数据，不存在返回 null', () => {
+    writeFileSync(join(assetsDir, 'waves.mp3'), Buffer.from('waves-content'))
+    const buf = getBuffer({}, 'waves')
+    expect(buf).not.toBeNull()
+    expect(Buffer.from(buf!).toString()).toBe('waves-content')
+
+    const notFound = getBuffer({}, 'non-existent')
+    expect(notFound).toBeNull()
   })
 })
 

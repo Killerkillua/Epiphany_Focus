@@ -1,15 +1,17 @@
-import { getSettings } from '../storage/settings'
+import { getPublicSettings, getSettings } from '../storage/settings'
 import {
   addGrammarPoint,
   addVocab as dbAddVocab,
   deleteGrammarPoint,
   deleteVocab as dbDeleteVocab,
   listGrammarPoints,
-  listVocab as dbListVocab
+  listVocab as dbListVocab,
+  updateVocabDefinition
 } from '../storage/db'
 import type {
   AddGrammarPayload,
   AddVocabPayload,
+  AddVocabResult,
   AiConfig,
   AiUsage,
   GrammarPoint,
@@ -27,6 +29,11 @@ export class AiStore {
     return getSettings().ai
   }
 
+  /** 面向渲染层的配置：API Key 仅返回掩码，不泄露明文 */
+  getPublicConfig(): AiConfig {
+    return getPublicSettings().ai
+  }
+
   getUsage(): AiUsage {
     return { used: this.usedQuestions, limit: getSettings().ai.maxQuestionsPerSession }
   }
@@ -40,12 +47,16 @@ export class AiStore {
 
   // ================= 生词本（中央 SQLite，added_at） =================
 
-  addVocab(payload: AddVocabPayload): VocabEntry {
+  addVocab(payload: AddVocabPayload): AddVocabResult {
     return dbAddVocab(payload)
   }
 
   listVocab(): VocabEntry[] {
     return dbListVocab()
+  }
+
+  updateVocab(id: number, definition: string): VocabEntry | null {
+    return updateVocabDefinition(id, definition)
   }
 
   deleteVocab(id: number): void {

@@ -1,8 +1,8 @@
 import { app } from 'electron'
-import { createRequire } from 'module'
 import { join } from 'path'
-import type { GrammarPoint, VocabEntry } from '../../shared/ai'
+import type { AddVocabResult, GrammarPoint, VocabEntry } from '../../shared/ai'
 import type { NoteEntry, NoteSource } from '../../shared/bili'
+import { resourceKeyFromRecordId, resourceKindOf, type StudyResourceKind } from '../../shared/study'
 import type { BackupFileData, BackupMeta, ImportResult } from '../../shared/backup'
 import type {
   DailyStat,
@@ -20,9 +20,16 @@ import type {
   ProgressFilter,
   ProgressStats,
   SessionSource,
+  StudyReviewTotals,
   StudySession
 } from '../../shared/stats'
 import { getSettings } from './settings'
+import { applyContentBackup, collectBackupData } from './backupJob'
+import { addSessionToHeatmap, backfillHeatmapIfEmpty, rebuildHeatmap } from './heatmap'
+import { openSqlite, type SqliteLike } from './sqliteOpen'
+
+export type { SqliteLike }
+export { openSqlite, rebuildHeatmap }
 
 /**
  * 中央 SQLite 存储（方案 3.4，表名/字段名与规约一致）：
@@ -42,16 +49,8 @@ import { getSettings } from './settings'
  *   ai_conversations(id, mode, messages_json, created_at)
  */
 
-interface SqliteLike {
-  pragma(sql: string): unknown
-  exec(sql: string): void
-  prepare(sql: string): {
-    run(...params: unknown[]): { changes?: number; lastInsertRowid?: number | bigint }
-    all(...params: unknown[]): unknown[]
-    get(...params: unknown[]): unknown
-  }
-  close?(): void
-}
+/** 列表查询单次上限（统计页与进度页不再一次拉全表） */
+export const LIST_QUERY_CAP = 2000
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS sessions (
@@ -64,7 +63,11 @@ CREATE TABLE IF NOT EXISTS sessions (
   pomos_completed INTEGER NOT NULL DEFAULT 0,
   interruptions INTEGER NOT NULL DEFAULT 0,
   status TEXT NOT NULL DEFAULT 'active',
-  ended_at INTEGER
+  ended_at INTEGER,
+  task_id TEXT,
+  internal_interruptions INTEGER NOT NULL DEFAULT 0,
+  external_interruptions INTEGER NOT NULL DEFAULT 0,
+  pomo_credited INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS study_stats (
   date TEXT NOT NULL,
@@ -85,7 +88,9 @@ CREATE TABLE IF NOT EXISTS notes (
   timestamp_s INTEGER DEFAULT 0,
   is_key INTEGER DEFAULT 0,
   source TEXT DEFAULT 'main',
-  parent_id TEXT DEFAULT ''
+  parent_id TEXT DEFAULT '',
+  resource_key TEXT DEFAULT '',
+  resource_type TEXT DEFAULT ''
 );
 -- 按视频学习进度（F-3）：bvid 主键，会话级撮合，非逐帧跟踪。
 -- M1/M2 扩展：cover_url / author（记录卡片封面与 UP 主快照）
@@ -101,6 +106,9 @@ CREATE TABLE IF NOT EXISTS play_records (
   goal_deadline TEXT DEFAULT '',
   cover_url TEXT DEFAULT '',
   author TEXT DEFAULT '',
+  resource_key TEXT DEFAULT '',
+  resource_type TEXT DEFAULT '',
+  source_uri TEXT DEFAULT '',
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL
 );
@@ -121,6 +129,8 @@ CREATE TABLE IF NOT EXISTS study_sessions (
   end_at INTEGER NOT NULL DEFAULT 0,
   duration_s INTEGER NOT NULL DEFAULT 0,
   source TEXT DEFAULT 'manual',
+  resource_key TEXT DEFAULT '',
+  resource_type TEXT DEFAULT '',
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_study_sessions_bvid ON study_sessions(bvid);
@@ -170,6 +180,47 @@ CREATE TABLE IF NOT EXISTS ai_conversations (
   mode TEXT NOT NULL,
   messages_json TEXT NOT NULL,
   created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS dict_entries (
+  word TEXT PRIMARY KEY,
+  phonetic TEXT DEFAULT '',
+  definition_cn TEXT NOT NULL,
+  definition_en TEXT DEFAULT '',
+  pos TEXT DEFAULT '',
+  collins INTEGER DEFAULT 0,
+  oxford INTEGER DEFAULT 0,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_dict_entries_word ON dict_entries(word);
+CREATE TABLE IF NOT EXISTS tasks (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  priority TEXT NOT NULL DEFAULT 'medium',
+  estimated_pomodoros INTEGER NOT NULL DEFAULT 1,
+  actual_pomodoros INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'todo',
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  completed_at INTEGER
+);
+CREATE TABLE IF NOT EXISTS interruption_events (
+  id TEXT PRIMARY KEY,
+  session_id INTEGER NOT NULL,
+  task_id TEXT,
+  type TEXT NOT NULL,
+  note TEXT NOT NULL DEFAULT '',
+  elapsed_ms INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_interruptions_session ON interruption_events(session_id);
+CREATE INDEX IF NOT EXISTS idx_interruptions_task ON interruption_events(task_id);
+CREATE TABLE IF NOT EXISTS heatmap_cells (
+  weekday INTEGER NOT NULL,
+  hour INTEGER NOT NULL,
+  minutes REAL NOT NULL DEFAULT 0,
+  sessions INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (weekday, hour)
 );
 `
 
@@ -266,38 +317,168 @@ export function migratePlayRecordsColumns(d: SqliteLike): void {
   }
 }
 
+function columnNames(d: SqliteLike, table: string): Set<string> {
+  const cols = d.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>
+  return new Set(cols.map((c) => c.name))
+}
+
+/**
+ * 通用学习资源列：保留原 bvid 主键，追加 resource_key / resource_type / source_uri。
+ * 旧 BV 记录回填为 bili:<bvid>，避免改主键造成笔记和进度丢失。
+ */
+export function migrateStudyResourceColumns(d: SqliteLike): void {
+  const add = (table: string, column: string, ddl: string): void => {
+    if (!columnNames(d, table).has(column)) {
+      d.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`)
+    }
+  }
+  try {
+    add('play_records', 'resource_key', "TEXT DEFAULT ''")
+    add('play_records', 'resource_type', "TEXT DEFAULT ''")
+    add('play_records', 'source_uri', "TEXT DEFAULT ''")
+    add('notes', 'resource_key', "TEXT DEFAULT ''")
+    add('notes', 'resource_type', "TEXT DEFAULT ''")
+    add('study_sessions', 'resource_key', "TEXT DEFAULT ''")
+    add('study_sessions', 'resource_type', "TEXT DEFAULT ''")
+    d.exec(`
+      UPDATE play_records
+        SET resource_key = CASE
+              WHEN bvid LIKE 'local:%' OR bvid LIKE 'web:%' OR bvid LIKE 'bili:%' THEN bvid
+              ELSE 'bili:' || bvid
+            END,
+            resource_type = CASE
+              WHEN bvid LIKE 'local:%' THEN 'local'
+              WHEN bvid LIKE 'web:%' THEN 'web'
+              ELSE 'bili'
+            END
+        WHERE IFNULL(resource_key, '') = '' AND IFNULL(bvid, '') != '';
+      UPDATE notes
+        SET resource_key = CASE
+              WHEN bvid LIKE 'local:%' OR bvid LIKE 'web:%' OR bvid LIKE 'bili:%' THEN bvid
+              ELSE 'bili:' || bvid
+            END,
+            resource_type = CASE
+              WHEN bvid LIKE 'local:%' THEN 'local'
+              WHEN bvid LIKE 'web:%' THEN 'web'
+              ELSE 'bili'
+            END
+        WHERE IFNULL(resource_key, '') = '' AND IFNULL(bvid, '') != '';
+      UPDATE study_sessions
+        SET resource_key = CASE
+              WHEN bvid LIKE 'local:%' OR bvid LIKE 'web:%' OR bvid LIKE 'bili:%' THEN bvid
+              ELSE 'bili:' || bvid
+            END,
+            resource_type = CASE
+              WHEN bvid LIKE 'local:%' THEN 'local'
+              WHEN bvid LIKE 'web:%' THEN 'web'
+              ELSE 'bili'
+            END
+        WHERE IFNULL(resource_key, '') = '' AND IFNULL(bvid, '') != '';
+    `)
+  } catch (err) {
+    console.warn('[storage] 学习资源列迁移失败:', err instanceof Error ? err.message : err)
+  }
+}
+
 let db: SqliteLike | null = null
 let warned = false
 
+/** 默认（旧版/首个注册账号接管）数据库文件名 */
+export const LEGACY_DB_FILE = 'pomodoro.db'
+
+/** 当前账号对应的数据库文件名（相对 userData）；账号模块登录/登出时切换 */
+let activeDbFile: string = LEGACY_DB_FILE
+
+/**
+ * 切换当前账号的数据库文件：关闭旧连接，下次 getDb() 打开新文件。
+ * 每个账号独立一个 SQLite 文件，所有业务查询天然按账号隔离。
+ */
+export function setActiveDbFile(file: string): void {
+  if (file === activeDbFile) return
+  closeDb()
+  activeDbFile = file
+}
+
+export function getActiveDbFile(): string {
+  return activeDbFile
+}
+
+/** 当前业务库绝对路径（测试注入 POMODORO_DB_PATH，否则 userData 下的账号文件） */
+export function resolveDbPath(): string {
+  return process.env.POMODORO_DB_PATH || join(app.getPath('userData'), activeDbFile)
+}
+
+/** 导入期间关闭连接：会话写入先排队，重开后再刷出 */
+let dbHeld = false
+const writeQueue: Array<() => void> = []
+
+function runOrQueue(fn: () => void): void {
+  if (dbHeld) writeQueue.push(fn)
+  else fn()
+}
+
+/** 导入占库时把写入推迟到 releaseDatabase；返回 true 表示已入队 */
+export function deferWrite(fn: () => void): boolean {
+  if (!dbHeld) return false
+  writeQueue.push(fn)
+  return true
+}
+
+/** 关闭主连接并返回路径，供备份 Worker 独占写入 */
+export function holdDatabase(): string {
+  const path = resolveDbPath()
+  dbHeld = true
+  closeDb()
+  return path
+}
+
+/** 重开连接并执行导入期间排队的会话写入 */
+export function releaseDatabase(): void {
+  dbHeld = false
+  getDb()
+  const jobs = writeQueue.splice(0, writeQueue.length)
+  for (const job of jobs) {
+    try {
+      job()
+    } catch (err) {
+      console.warn('[storage] 延迟写入失败:', err instanceof Error ? err.message : err)
+    }
+  }
+}
+
+const QUERY_INDEXES = [
+  'CREATE INDEX IF NOT EXISTS idx_sessions_status_ended ON sessions(status, ended_at)',
+  'CREATE INDEX IF NOT EXISTS idx_sessions_mode_credited ON sessions(mode, pomo_credited)',
+  'CREATE INDEX IF NOT EXISTS idx_sessions_task ON sessions(task_id)',
+  'CREATE INDEX IF NOT EXISTS idx_play_records_updated ON play_records(updated_at)',
+  'CREATE INDEX IF NOT EXISTS idx_notes_bvid_created ON notes(bvid, created_at)',
+  'CREATE INDEX IF NOT EXISTS idx_tasks_status_completed ON tasks(status, completed_at)',
+  'CREATE INDEX IF NOT EXISTS idx_study_sessions_long ON study_sessions(start_at) WHERE duration_s >= 60'
+]
+
+function ensureQueryIndexes(d: SqliteLike): void {
+  for (const sql of QUERY_INDEXES) {
+    try {
+      d.exec(sql)
+    } catch (err) {
+      console.warn('[storage] 索引创建失败:', err instanceof Error ? err.message : err)
+    }
+  }
+}
+
 export function getDb(): SqliteLike | null {
   if (db) return db
+  if (dbHeld) return null
   try {
-    // 测试注入：POMODORO_DB_PATH 指向隔离的临时数据库（生产环境不设置，走 userData）
-    const dbPath = process.env.POMODORO_DB_PATH || join(app.getPath('userData'), 'pomodoro.db')
-
-    // 测试专用驱动：系统 Node 内置 SQLite（better-sqlite3 按 Electron ABI 编译，
-    // 纯 Node 的 vitest 无法加载原生绑定）。生产环境始终走 better-sqlite3 分支。
-    if (process.env.POMODORO_DB_DRIVER === 'node:sqlite') {
-      const { DatabaseSync } = createRequire(__filename)(
-        'node:sqlite'
-      ) as typeof import('node:sqlite')
-      const sync = new DatabaseSync(dbPath)
-      sync.exec('PRAGMA journal_mode = WAL')
-      sync.exec(SCHEMA)
-      migrateNotesTable(sync as unknown as SqliteLike)
-      migratePlayRecordsColumns(sync as unknown as SqliteLike)
-      db = sync as unknown as SqliteLike
-      return db
-    }
-
-    // better-sqlite3 为原生模块，动态 require 以便加载失败时优雅降级
-    const require = createRequire(__filename)
-    const Database = require('better-sqlite3') as new (file: string) => SqliteLike
-    db = new Database(dbPath)
-    db.pragma('journal_mode = WAL')
-    db.exec(SCHEMA)
-    migrateNotesTable(db)
-    migratePlayRecordsColumns(db)
+    const opened = openSqlite(resolveDbPath())
+    opened.exec(SCHEMA)
+    migrateNotesTable(opened)
+    migratePlayRecordsColumns(opened)
+    migrateStudyResourceColumns(opened)
+    migrateSessionTaskColumns(opened)
+    ensureQueryIndexes(opened)
+    backfillHeatmapIfEmpty(opened)
+    db = opened
     return db
   } catch (err) {
     if (!warned) {
@@ -311,7 +492,7 @@ export function getDb(): SqliteLike | null {
   }
 }
 
-/** 关闭并释放数据库连接（测试隔离用；生产环境无需调用） */
+/** 关闭并释放数据库连接（账号切换/测试隔离用） */
 export function closeDb(): void {
   if (db) {
     try {
@@ -322,7 +503,6 @@ export function closeDb(): void {
     db = null
   }
 }
-
 /** 本地日期 YYYY-MM-DD */
 export function todayLocal(): string {
   const d = new Date()
@@ -333,20 +513,64 @@ export function todayLocal(): string {
 
 // ================= sessions =================
 
+/**
+ * sessions 任务关联列（老库幂等补列）。
+ * task_id 可空；打扰计数与 pomo_credited 默认 0，避免把历史会话误结算成已计入任务。
+ */
+export function migrateSessionTaskColumns(d: SqliteLike): void {
+  const cols = d.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>
+  const names = new Set(cols.map((c) => c.name))
+  const alters: string[] = []
+  if (!names.has('task_id')) alters.push('ALTER TABLE sessions ADD COLUMN task_id TEXT')
+  if (!names.has('internal_interruptions')) {
+    alters.push('ALTER TABLE sessions ADD COLUMN internal_interruptions INTEGER NOT NULL DEFAULT 0')
+  }
+  if (!names.has('external_interruptions')) {
+    alters.push('ALTER TABLE sessions ADD COLUMN external_interruptions INTEGER NOT NULL DEFAULT 0')
+  }
+  if (!names.has('pomo_credited')) {
+    alters.push('ALTER TABLE sessions ADD COLUMN pomo_credited INTEGER NOT NULL DEFAULT 0')
+  }
+  if (alters.length === 0) return
+  try {
+    d.prepare('BEGIN').run()
+    try {
+      for (const sql of alters) d.exec(sql)
+      d.prepare('COMMIT').run()
+    } catch (inner) {
+      try {
+        d.prepare('ROLLBACK').run()
+      } catch {
+        // 忽略回滚失败
+      }
+      throw inner
+    }
+  } catch (err) {
+    console.warn('[storage] sessions 任务列迁移失败:', err instanceof Error ? err.message : err)
+  }
+}
+
 export function recordSessionStart(opts: {
   mode: string
   level: string
   startedAt: number
   durationPlanned: number
+  taskId?: string | null
 }): number | null {
+  if (dbHeld) {
+    runOrQueue(() => {
+      recordSessionStart(opts)
+    })
+    return null
+  }
   const d = getDb()
   if (!d) return null
   const info = d
     .prepare(
-      `INSERT INTO sessions (mode, level, started_at, duration_planned, status)
-       VALUES (?, ?, ?, ?, 'active')`
+      `INSERT INTO sessions (mode, level, started_at, duration_planned, status, task_id)
+       VALUES (?, ?, ?, ?, 'active', ?)`
     )
-    .run(opts.mode, opts.level, opts.startedAt, opts.durationPlanned)
+    .run(opts.mode, opts.level, opts.startedAt, opts.durationPlanned, opts.taskId ?? null)
   return Number(info.lastInsertRowid ?? 0) || null
 }
 
@@ -354,10 +578,29 @@ export function recordSessionEnd(
   sessionId: number,
   opts: { durationActual: number; pomosCompleted: number; interruptions: number; status: string }
 ): void {
+  if (!sessionId) return
+  if (dbHeld) {
+    runOrQueue(() => recordSessionEnd(sessionId, opts))
+    return
+  }
   const d = getDb()
-  if (!d || !sessionId) return
+  if (!d) return
+  const prev = d
+    .prepare(`SELECT status, started_at FROM sessions WHERE id = ?`)
+    .get(sessionId) as { status: string; started_at: number } | undefined
+  // 已自然结算的专注会话保持 done / 时长 / 番茄数，避免结束后的收尾把状态降成 abandoned。
+  // 进行中已写入的内外部打扰优先于调用方传入的合计。
   d.prepare(
-    `UPDATE sessions SET duration_actual = ?, pomos_completed = ?, interruptions = ?, status = ?, ended_at = ? WHERE id = ?`
+    `UPDATE sessions SET
+       duration_actual = CASE WHEN pomo_credited = 1 THEN duration_actual ELSE ? END,
+       pomos_completed = CASE WHEN pomo_credited = 1 THEN pomos_completed ELSE ? END,
+       interruptions = CASE
+         WHEN internal_interruptions + external_interruptions > 0
+         THEN internal_interruptions + external_interruptions
+         ELSE ? END,
+       status = CASE WHEN pomo_credited = 1 THEN status ELSE ? END,
+       ended_at = COALESCE(ended_at, ?)
+     WHERE id = ?`
   ).run(
     opts.durationActual,
     opts.pomosCompleted,
@@ -366,6 +609,14 @@ export function recordSessionEnd(
     Date.now(),
     sessionId
   )
+  const next = d
+    .prepare(`SELECT status, started_at, duration_actual FROM sessions WHERE id = ?`)
+    .get(sessionId) as
+    | { status: string; started_at: number; duration_actual: number }
+    | undefined
+  if (prev && next && prev.status !== 'done' && next.status === 'done') {
+    addSessionToHeatmap(d, Number(next.started_at), Number(next.duration_actual))
+  }
 }
 
 // ================= study_stats =================
@@ -384,6 +635,10 @@ export function recordStudyStats(
   elapsedMs: number,
   pomos: number
 ): void {
+  if (dbHeld) {
+    runOrQueue(() => recordStudyStats(date, mode, elapsedMs, pomos))
+    return
+  }
   const d = getDb()
   if (!d || !Number.isFinite(elapsedMs) || elapsedMs < MIN_RECORD_MS) return
   const minutes = Math.max(1, Math.round(elapsedMs / 60_000))
@@ -425,14 +680,7 @@ export function getHourHeatmap(): HeatmapCell[] {
   if (!d) return []
   const rows = d
     .prepare(
-      `SELECT
-         CAST(strftime('%w', datetime(started_at / 1000, 'unixepoch', 'localtime')) AS INTEGER) AS weekday,
-         CAST(strftime('%H', datetime(started_at / 1000, 'unixepoch', 'localtime')) AS INTEGER) AS hour,
-         CAST(SUM(duration_actual) AS REAL) / 60000.0 AS minutes,
-         COUNT(*) AS sessions
-       FROM sessions
-       WHERE status = 'done' AND ended_at IS NOT NULL
-       GROUP BY weekday, hour`
+      `SELECT weekday, hour, minutes, sessions FROM heatmap_cells`
     )
     .all() as Array<{ weekday: number; hour: number; minutes: number; sessions: number }>
   return rows.map((r) => ({
@@ -500,14 +748,17 @@ function noteRowToEntry(row: {
   timestamp_s?: number
   is_key?: number
   source?: string
+  resource_key?: string
 }): NoteEntry {
   const ts = Number(row.timestamp_s ?? 0)
+  const recordId = row.bvid || ''
   return {
     id: String(row.id),
     createdAt: Number(row.created_at),
     content: row.content,
     videoTitle: row.video_title || undefined,
-    bvid: row.bvid || undefined,
+    bvid: recordId || undefined,
+    resourceKey: row.resource_key || (recordId ? resourceKeyFromRecordId(recordId) : undefined),
     timestampS: ts > 0 ? ts : undefined,
     isKey: Number(row.is_key ?? 0) === 1,
     source: (row.source as NoteSource) || 'main'
@@ -523,9 +774,12 @@ export function upsertNote(entry: NoteEntry): NoteEntry {
   const now = entry.createdAt || Date.now()
   const id = entry.id || `n-${now}`
   if (!d) return { ...entry, id, createdAt: now }
+  const recordId = entry.bvid ?? ''
+  const resourceKey = entry.resourceKey || (recordId ? resourceKeyFromRecordId(recordId) : '')
+  const resourceType = resourceKindOf(resourceKey) ?? ''
   d.prepare(
-    `INSERT INTO notes (id, created_at, video_title, content, tags, bvid, timestamp_s, is_key, source, parent_id)
-     VALUES (?, ?, ?, ?, '', ?, ?, ?, ?, '')
+    `INSERT INTO notes (id, created_at, video_title, content, tags, bvid, timestamp_s, is_key, source, parent_id, resource_key, resource_type)
+     VALUES (?, ?, ?, ?, '', ?, ?, ?, ?, '', ?, ?)
      ON CONFLICT(id) DO UPDATE SET
        created_at = excluded.created_at,
        video_title = excluded.video_title,
@@ -535,18 +789,28 @@ export function upsertNote(entry: NoteEntry): NoteEntry {
        timestamp_s = excluded.timestamp_s,
        is_key = excluded.is_key,
        source = excluded.source,
-       parent_id = excluded.parent_id`
+       parent_id = excluded.parent_id,
+       resource_key = excluded.resource_key,
+       resource_type = excluded.resource_type`
   ).run(
     id,
     now,
     entry.videoTitle ?? '',
     entry.content,
-    entry.bvid ?? '',
+    recordId,
     entry.timestampS ?? 0,
     entry.isKey ? 1 : 0,
-    entry.source ?? 'main'
+    entry.source ?? 'main',
+    resourceKey,
+    resourceType
   )
-  return { ...entry, id, createdAt: now }
+  return {
+    ...entry,
+    id,
+    createdAt: now,
+    bvid: recordId || undefined,
+    resourceKey: resourceKey || undefined
+  }
 }
 
 /** 按 id 删除单条笔记（不再整表清空） */
@@ -556,40 +820,15 @@ export function deleteNote(id: string): void {
   d.prepare('DELETE FROM notes WHERE id = ?').run(id)
 }
 
-/**
- * 兼容旧契约的整份保存：以入参集合为"应有集合"，删除集合外记录 + 逐条增量 upsert。
- * 语义与旧版"整份覆盖"一致，但内部为按 id 增量操作，不再先清空全表。
- */
-export function saveNotesAll(entries: NoteEntry[]): void {
-  const d = getDb()
-  if (!d) return
-  const keep = entries.map((e) => e.id || `n-${e.createdAt || Date.now()}`)
-  d.prepare('BEGIN').run()
-  try {
-    if (keep.length === 0) {
-      d.prepare('DELETE FROM notes').run()
-    } else {
-      const placeholders = keep.map(() => '?').join(',')
-      d.prepare(`DELETE FROM notes WHERE id NOT IN (${placeholders})`).run(...keep)
-    }
-    for (const e of entries) {
-      upsertNote(e)
-    }
-    d.prepare('COMMIT').run()
-  } catch (err) {
-    d.prepare('ROLLBACK').run()
-    throw err
-  }
-}
-
-/** 全量加载（新笔记在前：ORDER BY created_at DESC） */
-export function loadNotesAll(): NoteEntry[] {
+/** 全量加载（新笔记在前）。界面默认最多 2000 条；备份传 unlimited。 */
+export function loadNotesAll(opts?: { unlimited?: boolean }): NoteEntry[] {
   const d = getDb()
   if (!d) return []
+  const limitSql = opts?.unlimited ? '' : ` LIMIT ${LIST_QUERY_CAP}`
   const rows = d
     .prepare(
-      `SELECT id, created_at, video_title, content, bvid, timestamp_s, is_key, source
-       FROM notes ORDER BY created_at DESC, id DESC`
+      `SELECT id, created_at, video_title, content, bvid, timestamp_s, is_key, source, resource_key
+       FROM notes ORDER BY created_at DESC, id DESC${limitSql}`
     )
     .all() as Array<{
     id: string
@@ -610,10 +849,10 @@ export function loadNotesByVideo(bvid: string): NoteEntry[] {
   if (!d || !bvid) return []
   const rows = d
     .prepare(
-      `SELECT id, created_at, video_title, content, bvid, timestamp_s, is_key, source
-       FROM notes WHERE bvid = ? ORDER BY created_at DESC, id DESC`
+      `SELECT id, created_at, video_title, content, bvid, timestamp_s, is_key, source, resource_key
+       FROM notes WHERE bvid = ? OR resource_key = ? ORDER BY created_at DESC, id DESC`
     )
-    .all(bvid) as Array<{
+    .all(bvid, bvid) as Array<{
     id: string
     created_at: number
     video_title?: string
@@ -646,7 +885,14 @@ function playRowToRecord(row: {
   tags_csv?: string | null
   created_at: number
   updated_at: number
+  resource_key?: string
+  resource_type?: string
+  source_uri?: string
 }): PlayRecord {
+  const resourceKey = row.resource_key || resourceKeyFromRecordId(row.bvid)
+  const resourceType = (row.resource_type ||
+    resourceKindOf(resourceKey) ||
+    'bili') as StudyResourceKind
   return {
     bvid: row.bvid,
     title: row.title,
@@ -660,6 +906,9 @@ function playRowToRecord(row: {
     tags: (row.tags_csv ?? '').split(',').filter(Boolean),
     coverUrl: row.cover_url ?? '',
     author: row.author ?? '',
+    resourceKey,
+    resourceType,
+    sourceUri: resourceType === 'web' ? (row.source_uri ?? '') : '',
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at)
   }
@@ -669,6 +918,7 @@ function playRowToRecord(row: {
 const PLAY_RECORD_SELECT = `
   SELECT pr.bvid, pr.title, pr.duration_s, pr.watched_s, pr.last_position_s, pr.status,
          pr.viewed_count, pr.goal_rounds, pr.goal_deadline, pr.cover_url, pr.author,
+         pr.resource_key, pr.resource_type, pr.source_uri,
          pr.created_at, pr.updated_at,
          (SELECT GROUP_CONCAT(tag) FROM play_record_tags WHERE bvid = pr.bvid) AS tags_csv
   FROM play_records pr`
@@ -688,6 +938,10 @@ export function upsertPlayRecord(rec: {
   coverUrl?: string
   /** UP 主名称 */
   author?: string
+  resourceKey?: string
+  resourceType?: StudyResourceKind
+  /** 主进程内部：本地绝对路径或网站规范化 URL */
+  sourceUri?: string
 }): PlayRecord | null {
   const d = getDb()
   if (!d || !rec.bvid) return null
@@ -719,9 +973,12 @@ export function upsertPlayRecord(rec: {
   const coverUrl = rec.coverUrl ?? prev?.cover_url ?? ''
   const author = rec.author ?? prev?.author ?? ''
   const watchedS = rec.watchedS ?? prev?.watched_s ?? 0
+  const resourceKey = rec.resourceKey || resourceKeyFromRecordId(rec.bvid)
+  const resourceType = rec.resourceType || resourceKindOf(resourceKey) || 'bili'
+  const sourceUri = rec.sourceUri ?? ''
   d.prepare(
-    `INSERT INTO play_records (bvid, title, duration_s, watched_s, last_position_s, status, viewed_count, goal_rounds, goal_deadline, cover_url, author, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO play_records (bvid, title, duration_s, watched_s, last_position_s, status, viewed_count, goal_rounds, goal_deadline, cover_url, author, resource_key, resource_type, source_uri, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(bvid) DO UPDATE SET
        title = excluded.title,
        duration_s = excluded.duration_s,
@@ -730,6 +987,9 @@ export function upsertPlayRecord(rec: {
        viewed_count = excluded.viewed_count,
        cover_url = excluded.cover_url,
        author = excluded.author,
+       resource_key = CASE WHEN excluded.resource_key != '' THEN excluded.resource_key ELSE play_records.resource_key END,
+       resource_type = CASE WHEN excluded.resource_type != '' THEN excluded.resource_type ELSE play_records.resource_type END,
+       source_uri = CASE WHEN excluded.source_uri != '' THEN excluded.source_uri ELSE play_records.source_uri END,
        updated_at = excluded.updated_at`
   ).run(
     rec.bvid,
@@ -743,10 +1003,22 @@ export function upsertPlayRecord(rec: {
     prev?.goal_deadline ?? '',
     coverUrl,
     author,
+    resourceKey,
+    resourceType,
+    sourceUri,
     prev?.created_at ?? now,
     now
   )
   return getPlayRecord(rec.bvid)
+}
+
+/** 主进程续学：读取本地路径或网站 URL。不要把本地路径通过进度 IPC 回传。 */
+export function getPlaySourceUri(recordId: string): string {
+  const d = getDb()
+  if (!d || !recordId) return ''
+  const row = d.prepare(`SELECT source_uri FROM play_records WHERE bvid = ?`).get(recordId) as
+    { source_uri?: string } | undefined
+  return row?.source_uri ?? ''
 }
 
 /**
@@ -835,11 +1107,12 @@ export function getPlayRecord(bvid: string): PlayRecord | null {
   return row ? playRowToRecord(row) : null
 }
 
-/** 全部视频学习进度（新学习在前） */
-export function listPlayRecords(): PlayRecord[] {
+/** 全部视频学习进度（新学习在前）。界面默认最多 2000 条；备份传 unlimited。 */
+export function listPlayRecords(opts?: { unlimited?: boolean }): PlayRecord[] {
   const d = getDb()
   if (!d) return []
-  const rows = d.prepare(`${PLAY_RECORD_SELECT} ORDER BY pr.updated_at DESC`).all() as Array<{
+  const limitSql = opts?.unlimited ? '' : ` LIMIT ${LIST_QUERY_CAP}`
+  const rows = d.prepare(`${PLAY_RECORD_SELECT} ORDER BY pr.updated_at DESC${limitSql}`).all() as Array<{
     bvid: string
     title: string
     duration_s: number
@@ -898,7 +1171,7 @@ export function searchPlayRecords(filter: ProgressFilter): PlayRecord[] {
   const sortBy = f.sortBy ?? 'updated_at'
   const col = orderCol[sortBy] ?? orderCol.updated_at
   const dir = f.sortOrder === 'asc' ? 'ASC' : 'DESC'
-  const sql = `${PLAY_RECORD_SELECT}${where.length > 0 ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY ${col} ${dir}, pr.updated_at DESC`
+  const sql = `${PLAY_RECORD_SELECT}${where.length > 0 ? ` WHERE ${where.join(' AND ')}` : ''} ORDER BY ${col} ${dir}, pr.updated_at DESC LIMIT ${LIST_QUERY_CAP}`
   const rows = d.prepare(sql).all(...params) as Array<{
     bvid: string
     title: string
@@ -1184,12 +1457,14 @@ export function recordStudySessionStart(
   const d = getDb()
   if (!d || !bvid) return null
   const now = Date.now()
+  const resourceKey = resourceKeyFromRecordId(bvid)
+  const resourceType = resourceKindOf(resourceKey) ?? 'bili'
   const info = d
     .prepare(
-      `INSERT INTO study_sessions (bvid, start_at, end_at, duration_s, source, created_at)
-       VALUES (?, ?, 0, 0, ?, ?)`
+      `INSERT INTO study_sessions (bvid, start_at, end_at, duration_s, source, resource_key, resource_type, created_at)
+       VALUES (?, ?, 0, 0, ?, ?, ?, ?)`
     )
-    .run(bvid, now, source, now)
+    .run(bvid, now, source, resourceKey, resourceType, now)
   return Number(info.lastInsertRowid ?? 0) || null
 }
 
@@ -1276,15 +1551,16 @@ export function getProgressStats(): ProgressStats {
     return Math.round(Number(row.s) / 60)
   }
 
-  // 连续学习天数 + 本周学习天数：按本地日期聚合会话时长，≥1 分钟算有效学习日
+  // 连续学习天数 + 本周学习天数：SQL 按本地日期聚合，避免把全部会话拉进 JS
   const rows = d
-    .prepare(`SELECT start_at, duration_s FROM study_sessions WHERE duration_s >= 60`)
-    .all() as Array<{ start_at: number; duration_s: number }>
-  const byDay = new Map<string, number>()
-  for (const r of rows) {
-    const day = localDate(new Date(Number(r.start_at)))
-    byDay.set(day, (byDay.get(day) ?? 0) + Number(r.duration_s))
-  }
+    .prepare(
+      `SELECT date(start_at / 1000, 'unixepoch', 'localtime') AS day, SUM(duration_s) AS s
+       FROM study_sessions
+       WHERE duration_s >= 60
+       GROUP BY day`
+    )
+    .all() as Array<{ day: string; s: number }>
+  const byDay = new Map(rows.map((r) => [r.day, Number(r.s)]))
   let streak = 0
   const cursor = new Date()
   if ((byDay.get(localDate(cursor)) ?? 0) < MIN_SESSION_SECONDS)
@@ -1387,18 +1663,101 @@ export function getAllStudySessions(): StudySession[] {
   }))
 }
 
-/** 组装备份数据快照（play_records + notes + sessions + tags + 学习目标） */
+/** 会话统计明细（study_stats 全表，供 CSV / Excel 导出，不是图表采样） */
+export interface StudyStatExportRow {
+  date: string
+  mode: string
+  minutes: number
+  pomos: number
+}
+
+/** 番茄会话明细（sessions 全表，供 CSV / Excel 导出） */
+export interface FocusSessionExportRow {
+  id: number
+  mode: string
+  level: string
+  startedAt: number
+  endedAt: number | null
+  durationPlanned: number
+  durationActual: number
+  pomosCompleted: number
+  interruptions: number
+  status: string
+  taskId: string
+}
+
+export function listStudyStatsForExport(): StudyStatExportRow[] {
+  const d = getDb()
+  if (!d) return []
+  const rows = d
+    .prepare(`SELECT date, mode, minutes, pomos FROM study_stats ORDER BY date ASC, mode ASC`)
+    .all() as Array<{ date: string; mode: string; minutes: number; pomos: number }>
+  return rows.map((r) => ({
+    date: String(r.date),
+    mode: String(r.mode),
+    minutes: Number(r.minutes),
+    pomos: Number(r.pomos)
+  }))
+}
+
+export function listFocusSessionsForExport(): FocusSessionExportRow[] {
+  const d = getDb()
+  if (!d) return []
+  const rows = d
+    .prepare(
+      `SELECT id, mode, level, started_at, ended_at, duration_planned, duration_actual,
+              pomos_completed, interruptions, status, task_id
+       FROM sessions ORDER BY started_at ASC, id ASC`
+    )
+    .all() as Array<{
+    id: number
+    mode: string
+    level: string
+    started_at: number
+    ended_at: number | null
+    duration_planned: number
+    duration_actual: number
+    pomos_completed: number
+    interruptions: number
+    status: string
+    task_id: string | null
+  }>
+  return rows.map((r) => ({
+    id: Number(r.id),
+    mode: String(r.mode),
+    level: String(r.level),
+    startedAt: Number(r.started_at),
+    endedAt: r.ended_at == null ? null : Number(r.ended_at),
+    durationPlanned: Number(r.duration_planned),
+    durationActual: Number(r.duration_actual),
+    pomosCompleted: Number(r.pomos_completed),
+    interruptions: Number(r.interruptions),
+    status: String(r.status),
+    taskId: r.task_id == null ? '' : String(r.task_id)
+  }))
+}
+
+/** 组装备份数据快照（全量，不受列表上限影响） */
 export function exportBackupData(): BackupFileData {
-  return {
-    playRecords: listPlayRecords(),
-    notes: loadNotesAll(),
-    studySessions: getAllStudySessions(),
-    tags: getAllPlayRecordTags(),
-    settings: (() => {
-      const g = getSettings().studyGoals ?? { dailyMinutes: 0, weeklyDays: 0 }
-      return { dailyMinutes: Number(g.dailyMinutes) || 0, weeklyDays: Number(g.weeklyDays) || 0 }
-    })()
+  const d = getDb()
+  const goals = getSettings().studyGoals ?? { dailyMinutes: 0, weeklyDays: 0 }
+  const settings = {
+    dailyMinutes: Number(goals.dailyMinutes) || 0,
+    weeklyDays: Number(goals.weeklyDays) || 0
   }
+  if (!d) {
+    return {
+      playRecords: [],
+      notes: [],
+      studySessions: [],
+      tags: [],
+      settings,
+      tasks: [],
+      focusSessions: [],
+      interruptionEvents: []
+    }
+  }
+  return collectBackupData(d, settings)
 }
 
 /**
@@ -1410,125 +1769,7 @@ export function exportBackupData(): BackupFileData {
 export function importBackupData(data: BackupFileData, mode: 'merge' | 'replace'): ImportResult {
   const d = getDb()
   if (!d) return { records: 0, notes: 0, sessions: 0 }
-  const records = Array.isArray(data?.playRecords) ? data.playRecords : []
-  const notes = Array.isArray(data?.notes) ? data.notes : []
-  const sessions = Array.isArray(data?.studySessions) ? data.studySessions : []
-  const result: ImportResult = { records: 0, notes: 0, sessions: 0 }
-
-  d.prepare('BEGIN').run()
-  try {
-    if (mode === 'replace') {
-      d.prepare('DELETE FROM play_records').run()
-      d.prepare('DELETE FROM play_record_tags').run()
-      d.prepare('DELETE FROM study_sessions').run()
-      d.prepare('DELETE FROM notes').run()
-    }
-
-    const upsertRecord = d.prepare(
-      `INSERT INTO play_records (bvid, title, duration_s, watched_s, last_position_s, status, viewed_count, goal_rounds, goal_deadline, cover_url, author, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(bvid) DO UPDATE SET
-         title = excluded.title,
-         duration_s = excluded.duration_s,
-         watched_s = excluded.watched_s,
-         last_position_s = excluded.last_position_s,
-         status = excluded.status,
-         viewed_count = excluded.viewed_count,
-         goal_rounds = excluded.goal_rounds,
-         goal_deadline = excluded.goal_deadline,
-         cover_url = excluded.cover_url,
-         author = excluded.author,
-         updated_at = excluded.updated_at`
-    )
-    // merge 模式：同 bvid 仅写 updated_at 较新者（取备份 vs 现有的较新值）
-    let newerMap = new Map<string, number>()
-    if (mode === 'merge') {
-      const existing = d.prepare(`SELECT bvid, updated_at FROM play_records`).all() as Array<{
-        bvid: string
-        updated_at: number
-      }>
-      newerMap = new Map(existing.map((r) => [r.bvid, Number(r.updated_at)]))
-    }
-    for (const r of records) {
-      if (
-        mode === 'merge' &&
-        newerMap.has(r.bvid) &&
-        Number(r.updatedAt) < (newerMap.get(r.bvid) ?? 0)
-      )
-        continue
-      upsertRecord.run(
-        r.bvid,
-        r.title ?? '',
-        Number(r.durationS) || 0,
-        Number(r.watchedS) || 0,
-        Number(r.lastPositionS) || 0,
-        PLAY_STATUSES.has(r.status) ? r.status : 'planned',
-        Number(r.viewedCount) || 0,
-        Number(r.goalRounds) || 0,
-        r.goalDeadline ?? '',
-        r.coverUrl ?? '',
-        r.author ?? '',
-        Number(r.createdAt) || Date.now(),
-        Number(r.updatedAt) || Date.now()
-      )
-      result.records++
-    }
-
-    // 标签：按记录内嵌 tags 聚合补入（replace 表已清空，merge 为 INSERT OR IGNORE）
-    const tagStmt = d.prepare(
-      'INSERT OR IGNORE INTO play_record_tags (bvid, tag, created_at) VALUES (?, ?, ?)'
-    )
-    for (const r of records) {
-      for (const t of r.tags ?? []) {
-        if (String(t).trim()) tagStmt.run(r.bvid, String(t).trim(), Date.now())
-      }
-    }
-
-    // 笔记：按 id（replace 表已清空；merge 保留现有）
-    const insertNote = d.prepare(
-      `INSERT OR IGNORE INTO notes (id, created_at, video_title, content, tags, bvid, timestamp_s, is_key, source, parent_id)
-       VALUES (?, ?, ?, ?, '', ?, ?, ?, ?, '')`
-    )
-    for (const n of notes) {
-      insertNote.run(
-        String(n.id || `n-${n.createdAt || Date.now()}`),
-        Number(n.createdAt) || Date.now(),
-        n.videoTitle ?? '',
-        n.content ?? '',
-        n.bvid ?? '',
-        Number(n.timestampS) || 0,
-        n.isKey ? 1 : 0,
-        n.source ?? 'main'
-      )
-      result.notes++
-    }
-
-    // 会话：追加（自增 id 重建）
-    const insertSession = d.prepare(
-      `INSERT INTO study_sessions (bvid, start_at, end_at, duration_s, source, created_at) VALUES (?, ?, ?, ?, ?, ?)`
-    )
-    for (const s of sessions) {
-      insertSession.run(
-        s.bvid ?? '',
-        Number(s.startAt) || Date.now(),
-        Number(s.endAt) || 0,
-        Number(s.durationS) || 0,
-        s.source === 'resume' || s.source === 'search' ? s.source : 'manual',
-        Number(s.createdAt) || Date.now()
-      )
-      result.sessions++
-    }
-
-    d.prepare('COMMIT').run()
-  } catch (err) {
-    try {
-      d.prepare('ROLLBACK').run()
-    } catch {
-      // 忽略回滚失败
-    }
-    throw err
-  }
-  return result
+  return applyContentBackup(d, data, mode)
 }
 
 /** 记录备份元数据（backup_meta 表） */
@@ -1601,31 +1842,67 @@ export function listFeedback(): FeedbackEntry[] {
   if (!d) return []
   return d
     .prepare(
-      `SELECT id, mode, rating, category, detail, created_at AS createdAt FROM feedback ORDER BY id DESC`
+      `SELECT id, mode, rating, category, detail, created_at AS createdAt
+       FROM feedback ORDER BY id DESC LIMIT ${LIST_QUERY_CAP}`
     )
     .all() as FeedbackEntry[]
 }
 
-/** 反馈聚合（平均分 + 分类计数），供复盘页使用 */
+/** 反馈聚合（平均分 + 分类计数），供复盘页使用。走 SQL，不依赖被截断的列表。 */
 export function getFeedbackStats(): FeedbackStats {
   const d = getDb()
   if (!d) return { count: 0, avgRating: 0, byCategory: {} }
-  const rows = d.prepare(`SELECT rating, category FROM feedback`).all() as Array<{
-    rating: number
-    category: string
-  }>
-  if (rows.length === 0) return { count: 0, avgRating: 0, byCategory: {} }
+  const head = d
+    .prepare(`SELECT COUNT(*) AS count, AVG(rating) AS avg FROM feedback`)
+    .get() as { count: number; avg: number | null }
+  if (!head || Number(head.count) === 0) return { count: 0, avgRating: 0, byCategory: {} }
+  const rows = d
+    .prepare(
+      `SELECT CASE WHEN category IS NULL OR category = '' THEN '其他' ELSE category END AS category,
+              COUNT(*) AS c
+       FROM feedback GROUP BY 1`
+    )
+    .all() as Array<{ category: string; c: number }>
   const byCategory: Record<string, number> = {}
-  let sum = 0
   for (const r of rows) {
-    sum += Number(r.rating)
     const cat: FeedbackCategory = (r.category as FeedbackCategory) || '其他'
-    byCategory[cat] = (byCategory[cat] ?? 0) + 1
+    byCategory[cat] = Number(r.c)
   }
   return {
-    count: rows.length,
-    avgRating: Math.round((sum / rows.length) * 10) / 10,
+    count: Number(head.count),
+    avgRating: Math.round((Number(head.avg) || 0) * 10) / 10,
     byCategory
+  }
+}
+
+
+export function getStudyReviewTotals(): StudyReviewTotals {
+  const empty: StudyReviewTotals = {
+    watchedMinutes: 0,
+    doneCount: 0,
+    learningCount: 0,
+    noteCount: 0,
+    keyCount: 0
+  }
+  const d = getDb()
+  if (!d) return empty
+  const watch = d
+    .prepare(`SELECT COALESCE(SUM(watched_s), 0) AS s FROM play_records`)
+    .get() as { s: number }
+  const counts = d
+    .prepare(`SELECT status, COUNT(*) AS c FROM play_records GROUP BY status`)
+    .all() as Array<{ status: string; c: number }>
+  const notes = d
+    .prepare(`SELECT COUNT(*) AS n, COALESCE(SUM(CASE WHEN is_key = 1 THEN 1 ELSE 0 END), 0) AS k FROM notes`)
+    .get() as { n: number; k: number }
+  const countOf = (status: string): number =>
+    Number(counts.find((r) => r.status === status)?.c ?? 0)
+  return {
+    watchedMinutes: Number(watch.s) / 60,
+    doneCount: countOf('done'),
+    learningCount: countOf('learning'),
+    noteCount: Number(notes.n),
+    keyCount: Number(notes.k)
   }
 }
 
@@ -1652,51 +1929,54 @@ export function recordEvent(
 
 // ================= vocab（added_at） =================
 
+const VOCAB_SELECT =
+  'SELECT id, word, phonetic, definition, example, added_at AS createdAt FROM vocab'
+
 export function addVocab(payload: {
   word: string
   phonetic?: string
   definition?: string
   example?: string
-}): VocabEntry {
+}): AddVocabResult {
   const now = Date.now()
+  const word = payload.word.trim()
   const d = getDb()
   if (d) {
+    const existed = Boolean(d.prepare('SELECT id FROM vocab WHERE word = ?').get(word))
+    // 冲突时不更新，避免再次加入把记事本里写好的释义清掉。
     d.prepare(
       `INSERT INTO vocab (word, phonetic, definition, example, added_at) VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(word) DO UPDATE SET
-         phonetic = excluded.phonetic,
-         definition = excluded.definition,
-         example = excluded.example`
-    ).run(
-      payload.word.trim(),
-      payload.phonetic ?? '',
-      payload.definition ?? '',
-      payload.example ?? '',
-      now
-    )
-    const row = d
-      .prepare('SELECT * FROM vocab WHERE word = ?')
-      .get(payload.word.trim()) as VocabEntry
-    return row
+       ON CONFLICT(word) DO NOTHING`
+    ).run(word, payload.phonetic ?? '', payload.definition ?? '', payload.example ?? '', now)
+    const entry = d.prepare(`${VOCAB_SELECT} WHERE word = ?`).get(word) as VocabEntry
+    return { entry, existed }
   }
   return {
-    id: Date.now(),
-    word: payload.word.trim(),
-    phonetic: payload.phonetic ?? '',
-    definition: payload.definition ?? '',
-    example: payload.example ?? '',
-    createdAt: now
+    entry: {
+      id: Date.now(),
+      word,
+      phonetic: payload.phonetic ?? '',
+      definition: payload.definition ?? '',
+      example: payload.example ?? '',
+      createdAt: now
+    },
+    existed: false
   }
+}
+
+export function updateVocabDefinition(id: number, definition: string): VocabEntry | null {
+  const d = getDb()
+  if (!d) return null
+  const existing = d.prepare(`${VOCAB_SELECT} WHERE id = ?`).get(id) as VocabEntry | undefined
+  if (!existing) return null
+  d.prepare('UPDATE vocab SET definition = ? WHERE id = ?').run(definition, id)
+  return { ...existing, definition }
 }
 
 export function listVocab(): VocabEntry[] {
   const d = getDb()
   if (!d) return []
-  return d
-    .prepare(
-      `SELECT id, word, phonetic, definition, example, added_at AS createdAt FROM vocab ORDER BY id DESC`
-    )
-    .all() as VocabEntry[]
+  return d.prepare(`${VOCAB_SELECT} ORDER BY id DESC`).all() as VocabEntry[]
 }
 
 export function deleteVocab(id: number): void {
@@ -1739,4 +2019,67 @@ export function deleteGrammarPoint(id: number): void {
   const d = getDb()
   if (!d) return
   d.prepare('DELETE FROM grammar_points WHERE id = ?').run(id)
+}
+
+// ================= dict_entries（本地离线词典缓存/词库） =================
+
+export interface LocalDictEntry {
+  word: string
+  phonetic?: string
+  definition_cn: string
+  definition_en?: string
+  pos?: string
+  collins?: number
+  oxford?: number
+  updated_at?: number
+}
+
+/** 查询本地离线词典条目 */
+export function getLocalDictEntry(word: string): LocalDictEntry | null {
+  const d = getDb()
+  if (!d || !word) return null
+  const cleaned = word.trim().toLowerCase()
+  try {
+    const row = d
+      .prepare(
+        `SELECT word, phonetic, definition_cn, definition_en, pos, collins, oxford, updated_at
+         FROM dict_entries WHERE word = ? LIMIT 1`
+      )
+      .get(cleaned) as LocalDictEntry | undefined
+    return row || null
+  } catch {
+    return null
+  }
+}
+
+/** 写入或更新本地词典条目（缓存或预装词库） */
+export function upsertLocalDictEntry(entry: LocalDictEntry): void {
+  const d = getDb()
+  if (!d || !entry.word) return
+  const now = Date.now()
+  try {
+    d.prepare(
+      `INSERT INTO dict_entries (word, phonetic, definition_cn, definition_en, pos, collins, oxford, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(word) DO UPDATE SET
+         phonetic = excluded.phonetic,
+         definition_cn = excluded.definition_cn,
+         definition_en = excluded.definition_en,
+         pos = excluded.pos,
+         collins = excluded.collins,
+         oxford = excluded.oxford,
+         updated_at = excluded.updated_at`
+    ).run(
+      entry.word.trim().toLowerCase(),
+      entry.phonetic ?? '',
+      entry.definition_cn,
+      entry.definition_en ?? '',
+      entry.pos ?? '',
+      entry.collins ?? 0,
+      entry.oxford ?? 0,
+      now
+    )
+  } catch {
+    // 忽略异常，降级处理
+  }
 }

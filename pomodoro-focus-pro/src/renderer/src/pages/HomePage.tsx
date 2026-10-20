@@ -4,6 +4,8 @@ import ModeCard from '../components/ModeCard'
 import DurationConfigModal, { type ModeTarget } from '../components/DurationConfigModal'
 import { useFocusStore } from '../store/focusStore'
 import { useSessionStore } from '../store/sessionStore'
+import { noiseEngine } from '../audio'
+import { getNoisePreset } from '../../../shared/audio'
 
 interface Props {
   onNavigate: (page: 'focus' | 'bili' | 'english') => void
@@ -15,15 +17,28 @@ function HomePage({ onNavigate }: Props): JSX.Element {
   const sessionStart = useSessionStore((s) => s.start)
   // 番茄/学习会话完成后的统计刷新由 statsStore 统一订阅（StatsBar 挂载即激活）
 
-  const handleConfirm = async (minutes: number): Promise<void> => {
+  const handleConfirm = async (minutes: number, taskId?: string | null): Promise<void> => {
     const t = target
     setTarget(null)
     if (!t) return
     if (t === 'focus') {
-      await focusStart('countdown', minutes * 60_000)
+      await focusStart('countdown', minutes * 60_000, taskId)
+      noiseEngine.restore()
+      if (noiseEngine.getSettings().autoPlayOnStart) {
+        void noiseEngine.playPreset(getNoisePreset(noiseEngine.getSettings().preset))
+      }
     } else {
-      // B 站 / 英语模式：进入页面即启动学习会话计时（与强制引擎解耦）
+      // 视频学习 / 英语模式：进入页面即启动学习会话计时（与强制引擎解耦）
       await sessionStart(t, minutes * 60_000)
+      if (t === 'english') {
+        noiseEngine.restore()
+        if (noiseEngine.getSettings().autoPlayOnStart) {
+          void noiseEngine.playPreset(getNoisePreset(noiseEngine.getSettings().preset))
+        }
+      } else if (t === 'bili') {
+        // 视频学习不需要白噪音，确保停止
+        noiseEngine.stopAll()
+      }
     }
     onNavigate(t)
   }
@@ -31,14 +46,14 @@ function HomePage({ onNavigate }: Props): JSX.Element {
   return (
     <div className="home">
       <h1 className="page-title">首页</h1>
-      <p className="page-sub">欢迎使用番茄专注 Pro —— 想学就学，无法摸鱼。</p>
+      <p className="page-sub">欢迎使用静界专注 —— 想学就学，无法摸鱼。</p>
 
       <StatsBar />
 
       <div className="mode-grid">
         <ModeCard
           mark="▶"
-          title="B 站学习"
+          title="视频学习"
           accent="#FF5588"
           tagline="输入学习主题，进入锁定网页学习"
           highlights={['WBI 搜索', '导航管控', 'AI 助手 + 记事本']}

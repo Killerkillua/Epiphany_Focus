@@ -23,6 +23,7 @@ export default function EnforcementCard({
   onCodeSaved
 }: EnforcementCardProps): JSX.Element {
   const [codeOpen, setCodeOpen] = useState(false)
+  const canLockScreen = window.api.platform === 'win32'
   const [lockLevel, setLockLevel] = useSetting<LockLevel>(
     form,
     update,
@@ -63,13 +64,18 @@ export default function EnforcementCard({
           value={endAction}
           disabled={saving}
           options={[
-            { value: 'lock', label: '锁屏' },
+            { value: 'lock', label: '锁屏', disabled: !canLockScreen },
             { value: 'overlay', label: '全屏遮罩（保持）' },
             { value: 'notify', label: '仅提示' }
           ]}
           onChange={(v) => setEndAction(v as EndAction)}
         />
       </div>
+      {!canLockScreen && (
+        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+          当前系统不提供锁屏。到点可以选择全屏遮罩或仅提示。
+        </Typography.Text>
+      )}
       <NumberSettingRow
         label="会话上限（小时）"
         dottedKey="sessionMaxHours"
@@ -91,8 +97,8 @@ export default function EnforcementCard({
           </Button>
         </Space>
       </div>
-      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-        L1/L2 强制会话开始前必须已设置恢复码；连按 5 次 Esc 触发紧急退出。
+      <Typography.Text type="secondary" style={{ fontSize: 12, display: 'block', marginTop: 4 }}>
+        连按 5 次 Esc 触发紧急退出。
       </Typography.Text>
 
       <RecoveryCodeModal

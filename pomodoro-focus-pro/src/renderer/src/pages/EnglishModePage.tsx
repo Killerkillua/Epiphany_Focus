@@ -1,19 +1,26 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Button,
   Card,
   Collapse,
+  Dropdown,
   Empty,
   Input,
   List,
   Segmented,
   Space,
-  Tag,
   Tooltip,
   Typography,
   message
 } from 'antd'
-import { DeleteOutlined, BookOutlined, BulbOutlined, FileImageOutlined } from '@ant-design/icons'
+import {
+  DeleteOutlined,
+  BookOutlined,
+  BulbOutlined,
+  DownloadOutlined,
+  FileImageOutlined
+} from '@ant-design/icons'
 import MarkdownView from '../components/MarkdownView'
 import ScrollArea, { type ScrollAreaHandle } from '../components/ScrollArea'
 import SourcesPanel from '../components/SourcesPanel'
@@ -21,6 +28,7 @@ import SessionTimerBar from '../components/SessionTimerBar'
 import { useEnglishStore, type ChatMessage } from '../store/englishStore'
 import { extractErrorMessage } from '../utils/errorMessage'
 import type { AiScenario } from '../../../shared/ai'
+import type { VocabExportFormat } from '../../../shared/export'
 
 const { TextArea } = Input
 
@@ -40,13 +48,39 @@ const SCENARIO_PLACEHOLDER: Record<AiScenario, string> = {
   free: '自由提问英语学习问题…'
 }
 
-/** 从回复中提取单词（加粗词优先，其次首个 ≥3 字母英文词） */
-function extractWordFromContent(content: string): string {
-  const bold = content.match(/\*\*([A-Za-z][A-Za-z'-]{2,40})\*\*/)
-  if (bold) return bold[1].toLowerCase()
-  const plain = content.replace(/[*#`>|]/g, '')
-  const m = plain.match(/[A-Za-z][A-Za-z'-]{2,40}/)
-  return m ? m[0].toLowerCase() : ''
+/** 与主进程 vocab.word 校验一致 */
+const VOCAB_WORD_MAX = 200
+
+interface VocabPick {
+  text: string
+  top: number
+  left: number
+}
+
+/** 选区两端都落在同一条对话气泡的正文里（不含操作按钮） */
+function bubbleOf(node: Node | null): Element | null {
+  const el = node instanceof Element ? node : node?.parentElement
+  if (!el || el.closest('.chat-msg-actions')) return null
+  return el.closest('.chat-msg-bubble')
+}
+
+function readChatSelection(viewport: HTMLElement): VocabPick | null {
+  const sel = window.getSelection()
+  if (!sel || sel.isCollapsed || sel.rangeCount === 0) return null
+  const text = sel.toString().replace(/\s+/g, ' ').trim()
+  if (!text) return null
+  const start = bubbleOf(sel.anchorNode)
+  const end = bubbleOf(sel.focusNode)
+  if (!start || start !== end || !viewport.contains(start)) return null
+  const range = sel.getRangeAt(0)
+  const rects = range.getClientRects()
+  const rect = rects.length > 0 ? rects[0] : range.getBoundingClientRect()
+  if (rect.width === 0 && rect.height === 0) return null
+  return {
+    text,
+    top: Math.max(8, rect.top - 8),
+    left: Math.min(Math.max(8, rect.left), window.innerWidth - 132)
+  }
 }
 
 /** 去除 Markdown 符号的纯文本 */
@@ -58,30 +92,10 @@ function stripMarkdown(text: string): string {
 }
 
 function MessageItem({ msg }: { msg: ChatMessage }): JSX.Element {
-  const { addVocab, addGrammar, config } = useEnglishStore()
+  const { addGrammar, continue: continueReply } = useEnglishStore()
   const [busy, setBusy] = useState(false)
 
   const isUser = msg.role === 'user'
-
-  const handleAddVocab = async (): Promise<void> => {
-    if (busy) return
-    setBusy(true)
-    try {
-      const word = msg.queryWord || extractWordFromContent(msg.content)
-      if (!word) {
-        message.warning('未识别到单词')
-        return
-      }
-      const plain = stripMarkdown(msg.content)
-      await addVocab({
-        word,
-        definition: plain.slice(0, 160) || `${word} 的讲解`
-      })
-      message.success(`已加入生词本：${word}`)
-    } finally {
-      setBusy(false)
-    }
-  }
 
   const handleAddGrammar = async (): Promise<void> => {
     if (busy) return
@@ -109,19 +123,19 @@ function MessageItem({ msg }: { msg: ChatMessage }): JSX.Element {
               <span className="chat-thinking">思考中…</span>
             )}
             {msg.streaming && <span className="chat-cursor" />}
+            {msg.incomplete && !msg.streaming && (
+              <div className="chat-msg-actions">
+                <Button size="small" type="link" onClick={() => void continueReply(msg.id).catch((err) => message.error(extractErrorMessage(err)))}>
+                  继续生成
+                </Button>
+                {msg.error && (
+                  <span className="chat-thinking">{msg.error}</span>
+                )}
+              </div>
+            )}
             <SourcesPanel sources={msg.sources} />
             {!msg.streaming && msg.content && (
               <div className="chat-msg-actions">
-                <Tooltip title="从该回复提取单词加入生词本">
-                  <Button
-                    size="small"
-                    type="text"
-                    icon={<BookOutlined />}
-                    onClick={() => void handleAddVocab()}
-                  >
-                    加入生词本
-                  </Button>
-                </Tooltip>
                 <Tooltip title="将该回复要点加入语法要点">
                   <Button
                     size="small"
@@ -152,6 +166,7 @@ function EnglishModePage(): JSX.Element {
     init,
     ask,
     refreshLists,
+    addVocab,
     deleteVocab,
     deleteGrammar
   } = useEnglishStore()
@@ -159,18 +174,92 @@ function EnglishModePage(): JSX.Element {
   const [scenario, setScenario] = useState<AiScenario>('grammar')
   const [input, setInput] = useState('')
   const [ocrBusy, setOcrBusy] = useState(false)
+  const [vocabPick, setVocabPick] = useState<VocabPick | null>(null)
   const listRef = useRef<ScrollAreaHandle>(null)
   const ocrFileRef = useRef<HTMLInputElement>(null)
+  const vocabPopRef = useRef<HTMLDivElement>(null)
+  /** 点浮层时选区会先塌掉，这段时间不要把浮层关掉，否则 click 到不了按钮 */
+  const vocabPopHold = useRef(false)
 
   useEffect(() => {
     void init()
   }, [init])
 
-  // 新消息自动滚到底部
+  // 新消息自动滚到底部，并收起选词浮层（滚动后位置已失效）
   useEffect(() => {
     const el = listRef.current?.viewport
     if (el) el.scrollTop = el.scrollHeight
+    setVocabPick(null)
   }, [messages])
+
+  useEffect(() => {
+    const viewport = listRef.current?.viewport
+    if (!viewport) return
+
+    const onMouseUp = (event: MouseEvent): void => {
+      if (vocabPopRef.current?.contains(event.target as Node)) return
+      window.setTimeout(() => {
+        const host = listRef.current?.viewport
+        setVocabPick(host ? readChatSelection(host) : null)
+      }, 0)
+    }
+    const onMouseDown = (event: MouseEvent): void => {
+      if (vocabPopRef.current?.contains(event.target as Node)) return
+      setVocabPick(null)
+    }
+    const onScroll = (): void => setVocabPick(null)
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') setVocabPick(null)
+    }
+    const onSelectionChange = (): void => {
+      if (vocabPopHold.current) return
+      const sel = window.getSelection()
+      if (!sel || sel.isCollapsed) setVocabPick(null)
+    }
+
+    document.addEventListener('mouseup', onMouseUp)
+    document.addEventListener('mousedown', onMouseDown)
+    document.addEventListener('keydown', onKeyDown)
+    document.addEventListener('selectionchange', onSelectionChange)
+    viewport.addEventListener('scroll', onScroll)
+    return () => {
+      document.removeEventListener('mouseup', onMouseUp)
+      document.removeEventListener('mousedown', onMouseDown)
+      document.removeEventListener('keydown', onKeyDown)
+      document.removeEventListener('selectionchange', onSelectionChange)
+      viewport.removeEventListener('scroll', onScroll)
+    }
+  }, [])
+
+  const addSelectedVocab = async (text: string): Promise<void> => {
+    const word = text.replace(/\s+/g, ' ').trim()
+    setVocabPick(null)
+    window.getSelection()?.removeAllRanges()
+    if (!word) return
+    if (word.length > VOCAB_WORD_MAX) {
+      message.warning(`选中内容超过 ${VOCAB_WORD_MAX} 字，请缩短后再加入`)
+      return
+    }
+    try {
+      const existed = await addVocab({ word })
+      message.success(
+        existed ? '已在生词本，可在记事本查看' : `已加入生词本：${word}，可在记事本查看`
+      )
+    } catch (err) {
+      message.error(extractErrorMessage(err))
+    }
+  }
+
+  const exportVocab = async (format: VocabExportFormat): Promise<void> => {
+    try {
+      const res = await window.api.export.vocab({ format })
+      if (res.canceled) return
+      if (res.ok) message.success(format === 'apkg' ? '已导出 Anki 卡包' : '已导出 Anki 文本')
+      else message.error(res.error ?? '导出失败')
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : '导出失败')
+    }
+  }
 
   const handleSend = async (): Promise<void> => {
     const text = input.trim()
@@ -242,6 +331,33 @@ function EnglishModePage(): JSX.Element {
               messages.map((m) => <MessageItem key={m.id} msg={m} />)
             )}
           </ScrollArea>
+          {vocabPick &&
+            createPortal(
+              <div
+                ref={vocabPopRef}
+                className="vocab-select-pop"
+                style={{ top: vocabPick.top, left: vocabPick.left }}
+              >
+                <Button
+                  size="small"
+                  type="primary"
+                  icon={<BookOutlined />}
+                  onMouseDown={(event) => {
+                    vocabPopHold.current = true
+                    event.preventDefault()
+                  }}
+                  onMouseUp={() => {
+                    window.setTimeout(() => {
+                      vocabPopHold.current = false
+                    }, 0)
+                  }}
+                  onClick={() => void addSelectedVocab(vocabPick.text)}
+                >
+                  加入生词本
+                </Button>
+              </div>,
+              document.body
+            )}
 
           <div className="chat-input-bar">
             <Segmented
@@ -310,15 +426,43 @@ function EnglishModePage(): JSX.Element {
             title="📖 生词本"
             className="english-side-card"
             extra={
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                {vocab.length}
-              </Typography.Text>
+              <Space size={4}>
+                <Tooltip
+                  title={vocab.length === 0 ? '生词本是空的，先加入单词再导出' : '导出到 Anki'}
+                >
+                  <span>
+                    <Dropdown
+                      disabled={vocab.length === 0}
+                      menu={{
+                        items: [
+                          { key: 'apkg', label: 'Anki 卡包 (.apkg)' },
+                          { key: 'txt', label: 'Anki 文本 (.txt)' }
+                        ],
+                        onClick: ({ key }) => void exportVocab(key === 'txt' ? 'txt' : 'apkg')
+                      }}
+                    >
+                      <Button
+                        size="small"
+                        type="text"
+                        icon={<DownloadOutlined />}
+                        disabled={vocab.length === 0}
+                      />
+                    </Dropdown>
+                  </span>
+                </Tooltip>
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  {vocab.length}
+                </Typography.Text>
+              </Space>
             }
           >
+            <Typography.Text type="secondary" className="vocab-side-hint">
+              完整列表请到记事本查看
+            </Typography.Text>
             <ScrollArea style={{ maxHeight: 216 }}>
               {vocab.length === 0 ? (
                 <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                  回复下点击"加入生词本"收藏单词
+                  选中对话中的单词或短语即可加入。完整列表请到记事本查看
                 </Typography.Text>
               ) : (
                 <List
@@ -334,15 +478,7 @@ function EnglishModePage(): JSX.Element {
                         />
                       ]}
                     >
-                      <List.Item.Meta
-                        title={
-                          <Space size={6}>
-                            <span>{v.word}</span>
-                            {v.phonetic && <Tag style={{ marginInlineEnd: 0 }}>{v.phonetic}</Tag>}
-                          </Space>
-                        }
-                        description={<span className="vocab-def">{v.definition.slice(0, 60)}</span>}
-                      />
+                      <span>{v.word}</span>
                     </List.Item>
                   )}
                 />

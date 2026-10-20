@@ -1,13 +1,44 @@
 import OpenAI from 'openai'
-import type { AiConfig, AiQuestion, AiReply, AiSource } from '../../shared/ai'
+import type { AiConfig, AiQuestion, AiReply, AiScenario, AiSource } from '../../shared/ai'
 import type { AiAskRequest } from '../../shared/bili'
 import { buildBiliMessages, buildMessages, SCENARIO_TEMPLATES, SYSTEM_PROMPT } from './prompts'
-import { toFriendlyAiError } from './errors'
+import {
+  AiAbortedError,
+  aiRetryDelayMs,
+  isAiAborted,
+  isRetryableAiError,
+  toFriendlyAiError,
+  waitForAiRetry
+} from './errors'
+
+/**
+ * 英语 5 大场景超参数矩阵：
+ * - 词汇查询：超低温 0.1，防释义/音标幻觉
+ * - 语法讲解：低温 0.2 + CoT 逐步推理，重逻辑与句子成分拆解
+ * - 写作批改：0.3 + 频率惩罚 0.2，精准润色，减少套话
+ * - 自由提问：中温 0.5，平衡开放度与准确性
+ * - 对话练习：0.75 + 存在惩罚 0.4，话题多变自然，避免机械重复
+ */
+export const SCENARIO_HYPERPARAMS: Record<
+  AiScenario,
+  {
+    temperature: number
+    top_p?: number
+    presence_penalty?: number
+    frequency_penalty?: number
+  }
+> = {
+  vocabulary: { temperature: 0.1, top_p: 0.8 },
+  grammar: { temperature: 0.2, top_p: 0.85, frequency_penalty: 0.1 },
+  writing: { temperature: 0.3, top_p: 0.9, frequency_penalty: 0.2 },
+  free: { temperature: 0.5, top_p: 0.9 },
+  conversation: { temperature: 0.75, top_p: 0.95, presence_penalty: 0.4, frequency_penalty: 0.2 }
+}
 
 /**
  * AI 网关（OpenAI 兼容 SDK，双档位）：
- * - 英语教学档位（profile='english'）：TESOL 分层 Prompt + CoT + RAG，temperature 0.7
- * - B 站学习助手档位（profile='bili'）：跨学科学习教练，注入 topic/bvid 上下文 + 多轮历史，temperature 0.5
+ * - 英语教学档位（profile='english'）：TESOL 分层 Prompt + CoT + RAG，根据场景动态自适应超参数
+ * - 视频学习助手档位（profile='bili'）：跨学科学习教练，注入 topic/bvid 上下文 + 多轮历史，temperature 0.5
  * - 未配置 API Key：进入演示模式，双档位各有结构化模拟回复，
  *   保证无 Key 时 UI/流式/来源面板全链路可验证
  */
@@ -16,11 +47,17 @@ import { toFriendlyAiError } from './errors'
 export type AiProfile = 'english' | 'bili'
 
 export interface ChatOptions {
-  /** 档位：英语教学（默认）/ B 站学习助手 */
+  /** 档位：英语教学（默认）/ 视频学习助手 */
   profile?: AiProfile
-  /** B 站档位时用于组装学习上下文与多轮历史 */
+  /** 视频学习档位时用于组装学习上下文与多轮历史 */
   biliRequest?: AiAskRequest
+  /** 窗口关闭或用户发起新问题时取消；取消不重试 */
+  signal?: AbortSignal
+  /** 已生成的助手文本，从中断处续写，只推送新增片段 */
+  continueFrom?: string
 }
+
+const CONTINUE_HINT = '从中断处继续，不要重复。'
 
 interface MockEntry {
   scenario: AiQuestion['scenario']
@@ -153,7 +190,8 @@ export class EnglishGateway {
     if (!this.client || this.client.baseURL !== cfg.baseURL || this.client.apiKey !== cfg.apiKey) {
       this.client = new OpenAI({
         apiKey: cfg.apiKey,
-        baseURL: cfg.baseURL || undefined
+        baseURL: cfg.baseURL || undefined,
+        maxRetries: 0
       })
     }
     return this.client
@@ -162,7 +200,7 @@ export class EnglishGateway {
   /**
    * 流式问答：onDelta 逐段回调；resolve 时携带完整回复与 RAG 来源。
    * @param options.profile 档位（english / bili），决定提示词体系与 temperature
-   * @param options.biliRequest B 站档位请求（学习上下文 + 多轮历史）
+   * @param options.biliRequest 视频学习档位请求（学习上下文 + 多轮历史）
    */
   async chat(
     question: AiQuestion,
@@ -177,32 +215,65 @@ export class EnglishGateway {
 
     const cfg = this.getConfig()
     const profile: AiProfile = options.profile ?? 'english'
-    const messages =
+    const baseMessages =
       profile === 'bili' && options.biliRequest
         ? buildBiliMessages(options.biliRequest)
         : buildMessages(question, sources)
+    const seed = options.continueFrom?.trim() ?? ''
+    const scenarioParams =
+      profile === 'bili'
+        ? { temperature: 0.5 }
+        : SCENARIO_HYPERPARAMS[question.scenario] ?? { temperature: 0.7 }
 
-    // 根因 C 修复：create / 流式迭代 任一环节失败（401 鉴权、网络、限流等）
-    // 都翻译为中文、可操作、指向「设置 → AI 设置」的错误，不再裸抛 SDK 原文。
-    try {
-      const stream = await client.chat.completions.create({
-        model: cfg.model,
-        messages,
-        stream: true,
-        temperature: profile === 'bili' ? 0.5 : 0.7
-      })
+    let content = seed
+    let preFailures = 0
+    let resumes = 0
 
-      let content = ''
-      for await (const chunk of stream) {
-        const delta = chunk.choices[0]?.delta?.content ?? ''
-        if (delta) {
+    const messagesFor = (): typeof baseMessages => {
+      if (!content) return baseMessages
+      return [
+        ...baseMessages,
+        { role: 'assistant', content },
+        { role: 'user', content: CONTINUE_HINT }
+      ]
+    }
+
+    while (true) {
+      if (options.signal?.aborted) throw new AiAbortedError()
+      const before = content.length
+      try {
+        const stream = await client.chat.completions.create(
+          {
+            model: cfg.model,
+            messages: messagesFor(),
+            stream: true,
+            ...scenarioParams
+          },
+          { signal: options.signal }
+        )
+        for await (const chunk of stream) {
+          if (options.signal?.aborted) throw new AiAbortedError()
+          const delta = chunk.choices[0]?.delta?.content ?? ''
+          if (!delta) continue
           content += delta
           onDelta(delta)
         }
+        return { content, sources }
+      } catch (err) {
+        if (isAiAborted(err) || options.signal?.aborted) throw new AiAbortedError()
+        if (!isRetryableAiError(err)) throw toFriendlyAiError(err)
+        const grew = content.length > before
+        if (!grew) {
+          // 流开始前一共 3 次（当前这次失败后，preFailures 已有 2 次就不再重试）
+          if (preFailures >= 2) throw toFriendlyAiError(err)
+          await waitForAiRetry(aiRetryDelayMs(err, preFailures))
+          preFailures += 1
+          continue
+        }
+        if (resumes >= 2) throw toFriendlyAiError(err)
+        await waitForAiRetry(aiRetryDelayMs(err, resumes))
+        resumes += 1
       }
-      return { content, sources }
-    } catch (err) {
-      throw toFriendlyAiError(err)
     }
   }
 
@@ -233,7 +304,7 @@ export class EnglishGateway {
     })
   }
 
-  /** B 站学习助手演示回复：展示学习主题/视频标题、能力清单与配置入口 */
+  /** 视频学习助手演示回复：展示学习主题/视频标题、能力清单与配置入口 */
   private mockBiliReply(request?: AiAskRequest): string {
     const topic = request?.context?.topic?.trim()
     const videoTitle = request?.context?.videoTitle?.trim()

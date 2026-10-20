@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Button, InputNumber, Modal } from 'antd'
+import TaskSelect from './TaskSelect'
 
 export type ModeTarget = 'focus' | 'bili' | 'english'
 
@@ -8,7 +9,7 @@ interface Props {
   mode: ModeTarget | null
   defaultMin: number
   onCancel: () => void
-  onConfirm: (minutes: number) => void
+  onConfirm: (minutes: number, taskId?: string | null) => void
 }
 
 const FOCUS_PRESETS = [25, 45, 60, 90]
@@ -16,12 +17,13 @@ const SESSION_PRESETS = [60, 120, 240]
 
 const LABELS: Record<ModeTarget, string> = {
   focus: '专注模式',
-  bili: 'B 站学习',
+  bili: '视频学习',
   english: '英语学习'
 }
 
 function DurationConfigModal({ open, mode, defaultMin, onCancel, onConfirm }: Props): JSX.Element {
   const [custom, setCustom] = useState<number>(defaultMin)
+  const [taskId, setTaskId] = useState<string | null>(null)
 
   if (!mode) return <></>
 
@@ -32,7 +34,7 @@ function DurationConfigModal({ open, mode, defaultMin, onCancel, onConfirm }: Pr
 
   const handleConfirm = (): void => {
     const v = Math.max(1, Math.min(480, custom))
-    onConfirm(v)
+    onConfirm(v, isFocus ? taskId : null)
   }
 
   return (
@@ -44,7 +46,7 @@ function DurationConfigModal({ open, mode, defaultMin, onCancel, onConfirm }: Pr
       okText="开始"
       cancelText="取消"
       destroyOnClose
-      // 全屏（B 站/专注强制会话）下按视口比例流体缩放，窗口模式下保持常规宽度
+      // 全屏（视频学习/专注强制会话）下按视口比例流体缩放，窗口模式下保持常规宽度
       rootClassName="app-fluid-modal"
     >
       <div style={{ marginBottom: 12 }}>
@@ -57,6 +59,11 @@ function DurationConfigModal({ open, mode, defaultMin, onCancel, onConfirm }: Pr
           </Button>
         ))}
       </div>
+      {isFocus && (
+        <div style={{ marginBottom: 14 }}>
+          <TaskSelect value={taskId} onChange={setTaskId} />
+        </div>
+      )}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <span style={{ color: 'var(--muted)', fontSize: 13 }}>自定义：</span>
         <InputNumber

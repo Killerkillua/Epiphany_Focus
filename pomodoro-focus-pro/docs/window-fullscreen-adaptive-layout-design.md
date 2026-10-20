@@ -115,10 +115,10 @@ App.tsx
 | 窗口         | 尺寸             | 最小尺寸 | 可全屏 | 可调整大小     |
 | ------------ | ---------------- | -------- | ------ | -------------- |
 | 主窗口       | 1200×800         | 940×640  | —      | 是             |
-| B 站视频窗口 | 1280×760         | 900×560  | 是     | 是             |
+| 学习视频窗口 | 1280×760         | 900×560  | 是     | 是             |
 | 悬浮面板     | 340×560 / 64×240 | —        | —      | **否（固定）** |
 
-> 实际视口宽度范围：主窗口 940px–2560px+，B 站窗口 900px–全屏。悬浮面板固定尺寸，排除出自适应范围。
+> 实际视口宽度范围：主窗口 940px–2560px+，视频学习窗口 900px–全屏。悬浮面板固定尺寸，排除出自适应范围。
 
 ---
 
@@ -250,7 +250,7 @@ App.tsx
 | -------------- | ---- | -------------------- | ------------------------------------------------------------------------------------- |
 | `.app-content` | L215 | `padding: 28px 32px` | `max-width: var(--content-max); margin-inline: auto; padding: clamp(1rem, 3vw, 3rem)` |
 | 统计页容器     | —    | 无 max-width         | `max-width: var(--dashboard-max); margin-inline: auto`                                |
-| B 站页容器     | —    | 无 max-width         | `max-width: var(--dashboard-max); margin-inline: auto`                                |
+| 视频学习页容器     | —    | 无 max-width         | `max-width: var(--dashboard-max); margin-inline: auto`                                |
 
 ### 6.4 流体间距 — 替换固定 gap/margin/padding
 
@@ -341,7 +341,7 @@ App.tsx
     max-width: var(--content-max);
     margin-inline: auto;
   }
-  /* 数据密集型页面（统计 / B 站，.page-dashboard）在宽容器下放宽到 --dashboard-max，
+  /* 数据密集型页面（统计 / 视频学习，.page-dashboard）在宽容器下放宽到 --dashboard-max，
      不再被 .app-content 的 1200px 上限卡住；阅读型页面保持 --content-max */
   .app-content:has(.page-dashboard) {
     max-width: var(--dashboard-max);
@@ -359,12 +359,12 @@ App.tsx
 }
 ```
 
-> **实现对齐（P-2）**：数据型页面（统计 / B 站）的 1600px 上限在 **Wide（≥1200px）** 即生效——
+> **实现对齐（P-2）**：数据型页面（统计 / 视频学习）的 1600px 上限在 **Wide（≥1200px）** 即生效——
 > 视口 1200–1600px 时可随视口增长（上限 1600px），Ultrawide 下保持 1600px 居中；
 > 阅读型页面（首页/专注/英语/记事本/设置）始终为 `--content-max`（1200px）。
 > 与 §3.4「阅读型 1200px，数据型 1600px」及 ADR 0001 口径一致。
 
-> **注意**：主窗口 minWidth 940px 意味着默认的堆叠布局（< 768px）实际不触发，但保留供 B 站窗口和未来兼容。
+> **注意**：主窗口 minWidth 940px 意味着默认的堆叠布局（< 768px）实际不触发，但保留供 视频学习窗口和未来兼容。
 
 ### 7.3 固定侧栏 → 流体宽度
 
@@ -413,9 +413,9 @@ App.tsx
 | 组件            | 所在页面  | 容器条件                             | 布局变化                  |
 | --------------- | --------- | ------------------------------------ | ------------------------- |
 | ModeCard        | 首页      | `@container page (min-width: 600px)` | 竖排 → 横排内容布局       |
-| BiliCard        | B 站学习  | `@container page (min-width: 500px)` | 紧凑模式 → 展示完整元数据 |
+| BiliCard        | 视频学习  | `@container page (min-width: 500px)` | 紧凑模式 → 展示完整元数据 |
 | 表单字段        | 设置      | `@container (min-width: 500px)`      | 单列堆叠 → 多列并排       |
-| Session bar     | B 站/英语 | `@container (min-width: 400px)`      | 换行排列 → 水平排列       |
+| Session bar     | 视频学习/英语 | `@container (min-width: 400px)`      | 换行排列 → 水平排列       |
 | Stats card 内部 | 统计      | `@container page (min-width: 800px)` | 紧凑间距 → 宽松间距       |
 
 **示例 — ModeCard 容器查询**：
@@ -528,7 +528,7 @@ main.tsx ConfigProvider 扩展，使 antd 内置组件的响应式行为与项�
 | `.chat-msg-bubble` max-width | 82%                                   | 保留                                |
 | 内容区域                     | 无 max-width                          | max-width: var(--dashboard-max)     |
 
-### 9.4 B 站学习（BiliModePage）
+### 9.4 视频学习（BiliModePage）
 
 | 元素                   | 当前                               | 目标                                          |
 | ---------------------- | ---------------------------------- | --------------------------------------------- |
@@ -732,7 +732,7 @@ main.tsx ConfigProvider 扩展，使 antd 内置组件的响应式行为与项�
 | focus-side       | 专注页右侧栏，固定 320px                   | 目标：clamp(240px, 22vw, 340px) |
 | english-layout   | 英语学习页两栏布局                         | 目标：clamp + @media            |
 | english-side     | 英语页右侧栏，固定 300px                   | 目标：clamp(220px, 20vw, 320px) |
-| bili-grid        | B 站搜索结果卡片网格                       | 目标：clamp gap + min()         |
+| bili-grid        | 视频学习搜索结果卡片网格                       | 目标：clamp gap + min()         |
 | mode-grid        | 首页模式卡片网格                           | 目标：同 bili-grid              |
 | settings-layout  | 设置页卡片网格                             | 目标：同 bili-grid              |
 | DesignToken      | CSS 自定义属性，定义间距/字号/尺寸流体尺度 | 新增                            |
@@ -780,15 +780,15 @@ main.tsx ConfigProvider 扩展，使 antd 内置组件的响应式行为与项�
 
 | 范围             | 内容                                                                                                                                      |
 | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| **In scope**     | 全部 7 个页面、主窗口布局、B 站视频窗口、4 个核心原则、3 层策略架构、组件级适配、流体 token 系统、global.css 重构                         |
+| **In scope**     | 全部 7 个页面、主窗口布局、学习视频窗口、4 个核心原则、3 层策略架构、组件级适配、流体 token 系统、global.css 重构                         |
 | **Out of scope** | 实际代码实现（本轮仅设计）、悬浮面板窗口（固定尺寸）、940px 以下窄屏/移动端、antd 主题色变更、主进程窗口管理变更、ScrollArea.tsx 内部重构 |
 
 ## 假设
 
 1. Electron 33 内置 Chromium ≥ 130，完全支持 CSS Container Queries、clamp()、min()/max()——无需 polyfill
 2. 主窗口实际宽度范围：940px–2560px+（minWidth: 940）
-3. B 站视频窗口实际宽度范围：900px–全屏（min 900x560）
-4. 设计文档的 Compact 断点（< 768px）对主窗口和 B 站窗口均不触发，但保留在 token 系统中
+3. 学习视频窗口实际宽度范围：900px–全屏（min 900x560）
+4. 设计文档的 Compact 断点（< 768px）对主窗口和 视频学习窗口均不触发，但保留在 token 系统中
 5. 单文件 global.css 保持为唯一样式文件——不引入 CSS Modules / CSS-in-JS / Tailwind
 6. antd Sider 可通过内置 `collapsible` + `collapsedWidth` 属性实现折叠
 7. antd ConfigProvider 可通过 `theme.token` 覆盖内置断点

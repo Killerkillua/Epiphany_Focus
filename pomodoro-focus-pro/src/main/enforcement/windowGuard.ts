@@ -1,5 +1,6 @@
-import { BrowserWindow } from 'electron'
 import { spawn } from 'child_process'
+import { BrowserWindow } from 'electron'
+import { isWindows, spawnQuiet } from './spawnQuiet'
 import type { DistractionPolicy } from '../../shared/types'
 import type { LockLevel } from '../../shared/settings'
 import { LEVEL_CAPS } from './level'
@@ -33,6 +34,7 @@ function normalize(name: string): string {
 
 /** 枚举当前有可见窗口的进程名 */
 function listWindowProcessNames(): Promise<string[]> {
+  if (!isWindows()) return Promise.resolve([])
   return new Promise((resolve, reject) => {
     const child = spawn('tasklist', ['/FI', 'WINDOWTITLE ne N/A', '/FO', 'CSV', '/NH'], {
       windowsHide: true
@@ -58,7 +60,7 @@ function listWindowProcessNames(): Promise<string[]> {
 
 export interface WindowGuardStartOpts {
   /**
-   * 失焦拉回豁免：聚焦窗口命中时（如 B 站悬浮面板）不拉回本窗口。
+   * 失焦拉回豁免：聚焦窗口命中时（如 视频学习悬浮面板）不拉回本窗口。
    * 用于悬浮面板交互场景——点击面板（AI 输入 / 记事本）时视频窗口会失焦，
    * 若不豁免会被 400ms 后 show()+focus() 抢回焦点并置前，导致面板不可用。
    */
@@ -68,6 +70,8 @@ export interface WindowGuardStartOpts {
 export class WindowGuard {
   private killTimer: NodeJS.Timeout | null = null
   private blurHandler: (() => void) | null = null
+  /** 失焦监听实际挂上的窗口。换目标时必须从这里摘掉，不能只看 this.win */
+  private blurTarget: BrowserWindow | null = null
   private policy: DistractionPolicy = { enabled: false, blacklist: [], whitelist: [] }
   private win: BrowserWindow | null = null
   /** 失焦拉回暂停（P-2：紧急退出弹窗期间由渲染层置 true，避免视频窗口抢焦点导致输入不了恢复码） */
@@ -94,31 +98,43 @@ export class WindowGuard {
 
     const caps = LEVEL_CAPS[level]
 
-    if (caps.killDistractions && this.policy.enabled && !this.killTimer) {
+    if (isWindows() && caps.killDistractions && this.policy.enabled && !this.killTimer) {
       this.killTimer = setInterval(() => {
         void this.killCheck()
       }, 2000)
     }
 
-    if (caps.pullBackForeground && !this.blurHandler) {
-      this.blurHandler = (): void => {
-        // 失焦 400ms 后拉回（紧急退出弹窗期间由渲染层暂停，避免抢焦点）
-        setTimeout(() => {
-          const w = this.win
-          if (w && !w.isDestroyed() && !w.isFocused()) {
-            if (this.paused) return
-            // P2-1：全屏切换过渡期（applyLevelWindow 进入/退出全屏）暂停拉回，
-            // 避免 show()+focus() 干扰系统全屏状态正确应用（如任务栏覆盖）
-            if (isLevelWindowTransitioning(w)) return
-            // 聚焦窗口命中豁免（如悬浮面板）→ 不拉回，避免抢走面板交互
-            if (opts?.exemptFromPullBack?.(BrowserWindow.getFocusedWindow())) return
-            w.show()
-            w.focus()
-          }
-        }, 400)
+    if (caps.pullBackForeground) {
+      if (this.blurHandler && this.blurTarget !== win) this.unbindBlur()
+      if (!this.blurHandler) {
+        this.blurTarget = win
+        this.blurHandler = (): void => {
+          // 失焦 400ms 后拉回（紧急退出弹窗期间由渲染层暂停，避免抢焦点）
+          setTimeout(() => {
+            const w = this.win
+            if (w && !w.isDestroyed() && !w.isFocused()) {
+              if (this.paused) return
+              // P2-1：全屏切换过渡期（applyLevelWindow 进入/退出全屏）暂停拉回，
+              // 避免 show()+focus() 干扰系统全屏状态正确应用（如任务栏覆盖）
+              if (isLevelWindowTransitioning(w)) return
+              // 聚焦窗口命中豁免（如悬浮面板）→ 不拉回，避免抢走面板交互
+              if (opts?.exemptFromPullBack?.(BrowserWindow.getFocusedWindow())) return
+              w.show()
+              w.focus()
+            }
+          }, 400)
+        }
+        win.on('blur', this.blurHandler)
       }
-      win.on('blur', this.blurHandler)
     }
+  }
+
+  private unbindBlur(): void {
+    if (this.blurHandler && this.blurTarget && !this.blurTarget.isDestroyed()) {
+      this.blurTarget.removeListener('blur', this.blurHandler)
+    }
+    this.blurHandler = null
+    this.blurTarget = null
   }
 
   stop(): void {
@@ -126,10 +142,7 @@ export class WindowGuard {
       clearInterval(this.killTimer)
       this.killTimer = null
     }
-    if (this.blurHandler && this.win && !this.win.isDestroyed()) {
-      this.win.removeListener('blur', this.blurHandler)
-      this.blurHandler = null
-    }
+    this.unbindBlur()
     this.win = null
   }
 
@@ -149,7 +162,7 @@ export class WindowGuard {
   }
 
   private killProcess(name: string): void {
-    if (NEVER_KILL.has(name)) return
-    spawn('taskkill', ['/F', '/IM', `${name}.exe`], { stdio: 'ignore', windowsHide: true }).unref()
+    if (!isWindows() || NEVER_KILL.has(name)) return
+    spawnQuiet('taskkill', ['/F', '/IM', `${name}.exe`])
   }
 }

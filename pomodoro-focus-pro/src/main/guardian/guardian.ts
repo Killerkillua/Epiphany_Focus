@@ -5,6 +5,9 @@
  * - 真实 Windows Service 注册：以管理员执行 node guardian.js --install-service
  *   （sc create PomodoroGuardian；卸载 --uninstall-service）
  *
+ * 注意：守护进程是普通进程，用户可用 PowerShell / wmic / Process Explorer / taskkill 同时结束它与主进程；
+ * --install-service 仅 sc create，未限定运行账户与权限。属"自律辅助"，不是安全边界（见 README 威胁模型）。
+ *
  * 用法：
  *   node guardian.js --watch <pidFile> [--kill-taskmgr] [--interval 2000]
  *   node guardian.js --install-service --watch <pidFile> --kill-taskmgr
@@ -12,6 +15,7 @@
  */
 
 import { spawn } from 'child_process'
+import { isWindows, spawnQuiet } from '../enforcement/spawnQuiet'
 import { readFileSync, existsSync } from 'fs'
 import { createHmac } from 'crypto'
 
@@ -29,7 +33,8 @@ function parseArgs(): Record<string, string> {
 }
 
 function killTaskmgr(): void {
-  spawn('taskkill', ['/F', '/IM', 'taskmgr.exe'], { stdio: 'ignore', windowsHide: true }).unref()
+  if (!isWindows()) return
+  spawnQuiet('taskkill', ['/F', '/IM', 'taskmgr.exe'])
 }
 
 /**
@@ -105,6 +110,7 @@ function tryRelaunch(): void {
     stdio: 'ignore',
     windowsHide: true
   })
+  child.on('error', () => undefined)
   child.unref()
 }
 
@@ -119,17 +125,27 @@ function run(): void {
 }
 
 function installService(): void {
+  if (!isWindows()) {
+    console.warn('[guardian] 服务安装仅支持 Windows')
+    return
+  }
   const nodeExe = process.execPath
   const script = process.argv[1]
   const binPath = `"${nodeExe}" "${script}" --watch "${pidFile}" --kill-taskmgr --interval ${intervalMs}`
-  spawn('sc.exe', ['create', 'PomodoroGuardian', `binPath= ${binPath}`, 'start= auto'], {
+  const child = spawn('sc.exe', ['create', 'PomodoroGuardian', `binPath= ${binPath}`, 'start= auto'], {
     stdio: 'inherit',
     windowsHide: true
   })
+  child.on('error', () => undefined)
 }
 
 function uninstallService(): void {
-  spawn('sc.exe', ['delete', 'PomodoroGuardian'], { stdio: 'inherit', windowsHide: true })
+  if (!isWindows()) {
+    console.warn('[guardian] 服务卸载仅支持 Windows')
+    return
+  }
+  const child = spawn('sc.exe', ['delete', 'PomodoroGuardian'], { stdio: 'inherit', windowsHide: true })
+  child.on('error', () => undefined)
 }
 
 if (args['install-service']) {

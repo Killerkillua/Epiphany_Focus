@@ -14,6 +14,7 @@ import {
 } from 'antd'
 import { CloudDownloadOutlined, CloudUploadOutlined, FolderOpenOutlined } from '@ant-design/icons'
 import type { BackupMeta, ImportPreview } from '../../../../shared/backup'
+import type { StatsExportFormat, VocabExportFormat } from '../../../../shared/export'
 import RestorePreviewModal from './RestorePreviewModal'
 import type { LocalForm, UpdateFn } from './types'
 
@@ -73,6 +74,35 @@ export default function DataManagementCard({
     }
   }
 
+  const reportExport = async (
+    task: () => Promise<{ ok: boolean; canceled?: boolean; error?: string }>,
+    okText: string
+  ): Promise<void> => {
+    try {
+      const res = await task()
+      if (res.canceled) return
+      if (res.ok) message.success(okText)
+      else message.error(res.error ?? '导出失败')
+    } catch (err) {
+      message.error(err instanceof Error ? err.message : '导出失败')
+    }
+  }
+
+  const exportStats = (format: StatsExportFormat): Promise<void> =>
+    reportExport(
+      () => window.api.export.stats({ format }),
+      format === 'csv' ? '已导出 CSV' : '已导出 Excel'
+    )
+
+  const exportNotes = (): Promise<void> =>
+    reportExport(() => window.api.export.notesMarkdown(), '已导出全部笔记')
+
+  const exportVocab = (format: VocabExportFormat): Promise<void> =>
+    reportExport(
+      () => window.api.export.vocab({ format }),
+      format === 'apkg' ? '已导出 Anki 卡包' : '已导出 Anki 文本'
+    )
+
   const handlePickBackupDir = async (): Promise<void> => {
     try {
       const dir = await window.api.settings.pickBackupDir()
@@ -119,9 +149,32 @@ export default function DataManagementCard({
         </div>
       )}
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-        备份内容：学习记录（含标签）+ 笔记 + 学习会话 + 学习目标。跨设备同步 =
-        导出后到另一台设备导入（轻量方案）。
+        JSON 用于在本应用里恢复。CSV、Excel、Markdown、Anki 用于把数据带走。
       </Typography.Text>
+      <div className="settings-row">
+        <span className="settings-label">会话与番茄</span>
+        <Button size="small" onClick={() => void exportStats('csv')}>
+          导出 CSV
+        </Button>
+        <Button size="small" onClick={() => void exportStats('xlsx')}>
+          导出 Excel
+        </Button>
+      </div>
+      <div className="settings-row">
+        <span className="settings-label">全部笔记</span>
+        <Button size="small" onClick={() => void exportNotes()}>
+          导出 Markdown 压缩包
+        </Button>
+      </div>
+      <div className="settings-row">
+        <span className="settings-label">生词本</span>
+        <Button size="small" onClick={() => void exportVocab('apkg')}>
+          导出 Anki 卡包
+        </Button>
+        <Button size="small" onClick={() => void exportVocab('txt')}>
+          导出 Anki 文本
+        </Button>
+      </div>
       <Divider style={{ margin: '10px 0' }} />
       <div className="settings-row">
         <span className="settings-label">自动备份</span>
@@ -181,7 +234,7 @@ export default function DataManagementCard({
         <Input
           style={{ width: 240 }}
           size="small"
-          value={form.backupDirectory || '默认（文档/番茄专注备份）'}
+          value={form.backupDirectory || '默认（文档/静界专注备份）'}
           disabled
         />
         <Button

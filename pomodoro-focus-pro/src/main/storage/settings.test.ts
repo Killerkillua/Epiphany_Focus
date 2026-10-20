@@ -10,7 +10,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // electron-store / 本模块依赖 electron，测试中用空实现替换
 vi.mock('electron', () => ({
   ipcMain: { handle: vi.fn(), on: vi.fn() },
-  BrowserWindow: { getAllWindows: () => [] }
+  BrowserWindow: { getAllWindows: () => [] },
+  dialog: {},
+  safeStorage: undefined
 }))
 
 import { getSettings, setSettings } from './settings'

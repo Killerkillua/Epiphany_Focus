@@ -46,7 +46,7 @@ type EmergencyExitModule = typeof import('./emergencyExit')
 let exit: EmergencyExitModule
 
 /** 初始设置：有恢复码哈希（setRecoveryCode 经 mock 的 setSettings 写入 state），默认 4h 上限 */
-async function seedHash(code = 'secret1'): Promise<void> {
+async function seedHash(code = 'Secret12'): Promise<void> {
   await exit.setRecoveryCode(code)
 }
 
@@ -79,21 +79,28 @@ function advance(ms: number): void {
 describe('hasRecoveryCode / setRecoveryCode', () => {
   it('未设置时返回 false；设置后返回 true', async () => {
     expect(exit.hasRecoveryCode()).toBe(false)
-    await exit.setRecoveryCode('secret1')
+    await exit.setRecoveryCode('Secret12')
     expect(exit.hasRecoveryCode()).toBe(true)
   })
 
-  it('setRecoveryCode 长度 <6 位抛错，且不写入存储', async () => {
-    await expect(exit.setRecoveryCode('12345')).rejects.toThrow('至少 6 位')
-    await expect(exit.setRecoveryCode('')).rejects.toThrow('至少 6 位')
+  it('setRecoveryCode 长度 <8 位抛错，且不写入存储', async () => {
+    await expect(exit.setRecoveryCode('Ab1!234')).rejects.toThrow('至少 8 位')
+    await expect(exit.setRecoveryCode('')).rejects.toThrow('至少 8 位')
+    expect(mockSettings.setSettings).not.toHaveBeenCalled()
+  })
+
+  it('setRecoveryCode 拒绝弱码：单一重复字符 / 仅一类字符', async () => {
+    await expect(exit.setRecoveryCode('aaaaaaaa')).rejects.toThrow('重复')
+    await expect(exit.setRecoveryCode('abcdefgh')).rejects.toThrow('两类')
+    await expect(exit.setRecoveryCode('12345678')).rejects.toThrow('两类')
     expect(mockSettings.setSettings).not.toHaveBeenCalled()
   })
 
   it('存储的是 bcrypt 哈希而非明文（不可逆存储）', async () => {
-    await exit.setRecoveryCode('secret1')
+    await exit.setRecoveryCode('Secret12')
     const stored = mockSettings.setSettings.mock.calls.at(-1)![0] as { recoveryCodeHash: string }
     expect(stored.recoveryCodeHash).toBeTruthy()
-    expect(stored.recoveryCodeHash).not.toContain('secret1')
+    expect(stored.recoveryCodeHash).not.toContain('Secret12')
     expect(stored.recoveryCodeHash).toMatch(/^\$2[aby]\$/)
   })
 })
@@ -104,31 +111,31 @@ describe('verifyOldCode（修改恢复码前的旧码校验，CR-02）', () => {
   })
 
   it('已设置：旧码正确返回 true，错误/空返回 false', async () => {
-    await seedHash('secret1')
-    expect(await exit.verifyOldCode('secret1')).toBe(true)
+    await seedHash('Secret12')
+    expect(await exit.verifyOldCode('Secret12')).toBe(true)
     expect(await exit.verifyOldCode('wrong')).toBe(false)
     expect(await exit.verifyOldCode('')).toBe(false)
   })
 
   it('纯比对：错误旧码不触发失败计数 / 冷却（区别于紧急退出路径）', async () => {
-    await seedHash('secret1')
+    await seedHash('Secret12')
     await exit.verifyOldCode('wrong')
     await exit.verifyOldCode('wrong')
     // 若走了失败计数路径，第 3 次会锁定；此处应仍可正常比对
-    expect(await exit.verifyOldCode('secret1')).toBe(true)
+    expect(await exit.verifyOldCode('Secret12')).toBe(true)
   })
 })
 
 describe('verifyRecoveryCode（紧急退出验证）', () => {
   it('未设置恢复码：返回失败提示', async () => {
-    const r = await exit.verifyRecoveryCode('secret1', 'L1')
+    const r = await exit.verifyRecoveryCode('Secret12', 'L1')
     expect(r.ok).toBe(false)
     expect(r.error).toContain('尚未设置')
   })
 
   it('正确恢复码 → ok；成功不触发冷却', async () => {
     await seedHash()
-    const r = await exit.verifyRecoveryCode('secret1', 'L1')
+    const r = await exit.verifyRecoveryCode('Secret12', 'L1')
     expect(r).toEqual({ ok: true })
   })
 
@@ -143,7 +150,7 @@ describe('verifyRecoveryCode（紧急退出验证）', () => {
     expect(third.retryInSec).toBe(60)
 
     // 锁定期间即使输入正确码也拒绝
-    const locked = await exit.verifyRecoveryCode('secret1', 'L1')
+    const locked = await exit.verifyRecoveryCode('Secret12', 'L1')
     expect(locked.ok).toBe(false)
     expect(locked.error).toContain('尝试次数过多')
     expect(locked.retryInSec).toBeLessThanOrEqual(60)
@@ -155,13 +162,13 @@ describe('verifyRecoveryCode（紧急退出验证）', () => {
     await exit.verifyRecoveryCode('bad2', 'L1')
     await exit.verifyRecoveryCode('bad3', 'L1') // 锁定
     advance(60_000) // 1 分钟冷却结束
-    expect(await exit.verifyRecoveryCode('secret1', 'L1')).toEqual({ ok: true })
+    expect(await exit.verifyRecoveryCode('Secret12', 'L1')).toEqual({ ok: true })
   })
 
   it('验证成功清零失败计数（失败计数不跨成功累计）', async () => {
     await seedHash()
     await exit.verifyRecoveryCode('bad1', 'L1')
-    expect(await exit.verifyRecoveryCode('secret1', 'L1')).toEqual({ ok: true })
+    expect(await exit.verifyRecoveryCode('Secret12', 'L1')).toEqual({ ok: true })
     // 计数已清零：接下来连续 2 次错误不锁定，第 3 次才锁定
     expect((await exit.verifyRecoveryCode('bad1', 'L1')).error).toContain('还可尝试 2 次')
     expect((await exit.verifyRecoveryCode('bad2', 'L1')).error).toContain('还可尝试 1 次')
@@ -171,21 +178,87 @@ describe('verifyRecoveryCode（紧急退出验证）', () => {
   it('L2 额外 30s 冷却（startL2CoolDown 后即使正确码也拒绝）', async () => {
     await seedHash()
     exit.startL2CoolDown()
-    const r = await exit.verifyRecoveryCode('secret1', 'L2')
+    const r = await exit.verifyRecoveryCode('Secret12', 'L2')
     expect(r.ok).toBe(false)
     expect(r.error).toContain('L2 冷却中')
     expect(r.retryInSec).toBe(30)
     // 冷却到期后正常
     advance(30_000)
-    expect(await exit.verifyRecoveryCode('secret1', 'L2')).toEqual({ ok: true })
+    expect(await exit.verifyRecoveryCode('Secret12', 'L2')).toEqual({ ok: true })
   })
 
   it('L2 冷却判定与 level 参数无关（当前实现对所有级别生效，level 由调用方配合 startL2CoolDown 控制）', async () => {
     await seedHash()
     exit.startL2CoolDown()
-    const r = await exit.verifyRecoveryCode('secret1', 'L0')
+    const r = await exit.verifyRecoveryCode('Secret12', 'L0')
     expect(r.ok).toBe(false)
     expect(r.error).toContain('L2 冷却中')
+  })
+})
+
+describe('失败计数 / 锁定持久化与指数退避', () => {
+  /** 模拟杀进程重启：重新加载模块，但存储状态（mockSettings.state）保留 */
+  async function restart(): Promise<void> {
+    vi.resetModules()
+    exit = await import('./emergencyExit')
+  }
+
+  it('重启后失败计数不清零：重启前错 2 次，重启后再错 1 次即锁定', async () => {
+    await seedHash()
+    await exit.verifyRecoveryCode('bad1', 'L1')
+    await exit.verifyRecoveryCode('bad2', 'L1')
+    await restart()
+    const third = await exit.verifyRecoveryCode('bad3', 'L1')
+    expect(third.error).toContain('已锁定')
+  })
+
+  it('重启后锁定仍然有效，且即使输入正确码也被拒绝', async () => {
+    await seedHash()
+    for (const c of ['bad1', 'bad2', 'bad3']) await exit.verifyRecoveryCode(c, 'L1')
+    await restart()
+    const r = await exit.verifyRecoveryCode('Secret12', 'L1')
+    expect(r.ok).toBe(false)
+    expect(r.error).toContain('尝试次数过多')
+  })
+
+  it('重启后 L2 冷却仍然有效', async () => {
+    await seedHash()
+    exit.startL2CoolDown()
+    await restart()
+    const r = await exit.verifyRecoveryCode('Secret12', 'L2')
+    expect(r.error).toContain('L2 冷却中')
+  })
+
+  it('指数退避：第 1/2/3 轮锁定依次为 1 / 2 / 4 分钟', async () => {
+    await seedHash()
+    const expected = [60, 120, 240]
+    for (const sec of expected) {
+      await exit.verifyRecoveryCode('bad', 'L1')
+      await exit.verifyRecoveryCode('bad', 'L1')
+      const r = await exit.verifyRecoveryCode('bad', 'L1')
+      expect(r.retryInSec).toBe(sec)
+      advance(sec * 1000)
+    }
+  })
+
+  it('锁定时长封顶 6 小时', () => {
+    expect(exit.lockDurationMs(0)).toBe(60_000)
+    expect(exit.lockDurationMs(30)).toBe(6 * 3_600_000)
+  })
+
+  it('验证成功后退避轮数清零', async () => {
+    await seedHash()
+    for (const c of ['b1', 'b2', 'b3']) await exit.verifyRecoveryCode(c, 'L1')
+    advance(60_000)
+    expect(await exit.verifyRecoveryCode('Secret12', 'L1')).toEqual({ ok: true })
+    for (const c of ['b1', 'b2']) await exit.verifyRecoveryCode(c, 'L1')
+    expect((await exit.verifyRecoveryCode('b3', 'L1')).retryInSec).toBe(60)
+  })
+
+  it('失败计数写入持久化存储', async () => {
+    await seedHash()
+    await exit.verifyRecoveryCode('bad', 'L1')
+    expect((mockSettings.state.emergencyGuard as { failCount: number }).failCount).toBe(1)
   })
 })
 
@@ -202,6 +275,31 @@ describe('isSessionExpired（会话上限，默认 4h）', () => {
     mockSettings.state.sessionMaxHours = 1
     expect(exit.isSessionExpired(now() - 2 * 3_600_000)).toBe(true)
     expect(exit.isSessionExpired(now() - 30 * 60_000)).toBe(false)
+  })
+})
+
+describe('capToSessionMax / msUntilSessionExpiry', () => {
+  it('计划时长与会话上限取较小值；专注 10h 在 4h 上限下被截断', () => {
+    mockSettings.state.sessionMaxHours = 4
+    expect(exit.capToSessionMax(25 * 60_000)).toBe(25 * 60_000)
+    expect(exit.capToSessionMax(10 * 3_600_000)).toBe(4 * 3_600_000)
+    expect(exit.capToSessionMax(24 * 3_600_000)).toBe(4 * 3_600_000)
+    expect(exit.capToSessionMax(0)).toBe(0)
+    expect(exit.capToSessionMax(Number.NaN)).toBe(0)
+  })
+
+  it('上限改成 1h 后，托盘最长 24h 的请求也被截断', () => {
+    mockSettings.state.sessionMaxHours = 1
+    const trayMax = Math.min(24 * 3_600_000, Math.max(60_000, 600 * 60_000))
+    expect(exit.capToSessionMax(trayMax)).toBe(3_600_000)
+  })
+
+  it('到期等待落到上限之后 1ms；已过期则尽快触发', () => {
+    mockSettings.state.sessionMaxHours = 4
+    const start = now()
+    expect(exit.msUntilSessionExpiry(start, start)).toBe(4 * 3_600_000 + 1)
+    expect(exit.msUntilSessionExpiry(start, start + 4 * 3_600_000)).toBe(1)
+    expect(exit.msUntilSessionExpiry(start - 5 * 3_600_000, start)).toBe(1)
   })
 })
 

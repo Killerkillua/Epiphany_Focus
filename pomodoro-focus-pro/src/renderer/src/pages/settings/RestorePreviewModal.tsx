@@ -31,7 +31,9 @@ export default function RestorePreviewModal({
       const res = await window.api.playRecords.importData(filePath, restoreMode)
       if (res.ok) {
         message.success(
-          `恢复完成：${res.records} 条记录、${res.notes} 条笔记、${res.sessions} 条会话`
+          `恢复完成：${res.records} 条记录、${res.notes} 条笔记、${res.sessions} 条会话${
+            res.tasks ? `、${res.tasks} 条任务` : ''
+          }`
         )
         onClose()
       } else {
@@ -68,6 +70,7 @@ export default function RestorePreviewModal({
             <span className="restore-preview-value">
               {preview.recordCount} 条学习记录、{preview.noteCount} 条笔记、
               {preview.sessionCount} 条学习会话
+              {preview.taskCount ? `、${preview.taskCount} 条任务` : ''}
             </span>
           </div>
           <div className="settings-row" style={{ marginTop: 10 }}>

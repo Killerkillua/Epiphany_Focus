@@ -1,5 +1,6 @@
 import { BrowserWindow } from 'electron'
 import { spawn } from 'child_process'
+import { acquireTaskbarCover, releaseTaskbarCover } from './taskbarWin'
 
 /**
  * 锁定窗口形态（方案 2.5 L1/L2）：
@@ -16,7 +17,7 @@ import { spawn } from 'child_process'
  * - #38020 Windows 任务栏：置顶窗口与任务栏同为 topmost，z-order 竞争导致任务栏露出在
  *   遮罩之上；且 setAlwaysOnTop 的 level 参数在 Windows 未实现（#18933）。Windows 上
  *   遮罩不设置顶——前台全屏窗口本身盖住屏幕，shell 会为"前台全屏窗口"隐藏任务栏
- *   （B 站视频窗口不置顶，全屏一直正常，正是不置顶才正常）。跨应用压制由
+ *   （学习视频窗口不置顶，全屏一直正常，正是不置顶才正常）。跨应用压制由
  *   windowGuard 失焦拉回承担。
  * - 激活兜底：setFullScreen 后强制 show/focus/moveTop，复现"Alt+Tab 之后任务栏才隐藏"
  *   的效果（shell 只为前台全屏窗口隐藏任务栏）。
@@ -44,8 +45,10 @@ interface OverlayState {
   usingSimpleFullscreen: boolean
   /** 本次 apply 是否设置过置顶（Windows 不设置；释放时只还原自己设置的，避免清掉用户手动置顶） */
   usingAlwaysOnTop: boolean
-  /** B 站视频窗口（跳过置顶）标记：兜底拉回复用同一进入序列时保持一致 */
+  /** 学习视频窗口（跳过置顶）标记：兜底拉回复用同一进入序列时保持一致 */
   skipAlwaysOnTop: boolean
+  /** 本窗口是否已计入 Windows 任务栏隐藏（销毁与释放都要成对归还） */
+  taskbarHeld: boolean
 }
 
 /** 各窗口的遮罩引用计数（key：BrowserWindow 实例） */
@@ -84,7 +87,7 @@ function scheduleSimpleFullscreenFallback(win: BrowserWindow, state: OverlayStat
 /**
  * 进入全屏遮罩序列（apply 与 P2-2 兜底拉回共用）。
  * #8166 关键：必须仍可缩放时 setFullScreen(true)，之后再禁缩放（钳制为全屏尺寸）。
- * 已全屏时（如 B 站视频窗口由 attachFullscreenLock 先行全屏）跳过全屏调用，仅补齐其余属性。
+ * 已全屏时（如 学习视频窗口由 attachFullscreenLock 先行全屏）跳过全屏调用，仅补齐其余属性。
  */
 function enterOverlayFullscreen(win: BrowserWindow, state: OverlayState): void {
   if (win.isDestroyed()) return
@@ -119,12 +122,17 @@ export function applyLevelWindow(win: BrowserWindow, opts?: { skipAlwaysOnTop?: 
     fullscreenFallbackTimer: null,
     usingSimpleFullscreen: false,
     usingAlwaysOnTop: false,
-    skipAlwaysOnTop: opts?.skipAlwaysOnTop === true
+    skipAlwaysOnTop: opts?.skipAlwaysOnTop === true,
+    taskbarHeld: false
   }
   state.count += 1
   if (state.count === 1) {
     // 任务栏按钮先于全屏隐藏（Windows；macOS 无任务栏按钮概念，无害）
     win.setSkipTaskbar(true)
+    if (!state.taskbarHeld) {
+      state.taskbarHeld = true
+      acquireTaskbarCover()
+    }
 
     // P0-1：先显示再全屏（未显示窗口直接全屏 → Windows 显示异常 / 任务栏不覆盖）。
     // 最小化窗口 restore() 不触发 'show'，故同时监听 'show' 与 'restore'（先触发者生效，重复触发无害）
@@ -160,6 +168,10 @@ export function applyLevelWindow(win: BrowserWindow, opts?: { skipAlwaysOnTop?: 
     win.once('closed', () => {
       overlayStates.delete(win)
       transitioningWindows.delete(win)
+      if (state.taskbarHeld) {
+        state.taskbarHeld = false
+        releaseTaskbarCover()
+      }
       if (state.fullscreenFallbackTimer) {
         clearTimeout(state.fullscreenFallbackTimer)
         state.fullscreenFallbackTimer = null
@@ -192,6 +204,10 @@ export function releaseLevelWindow(win: BrowserWindow): void {
     clearTimeout(state.fullscreenFallbackTimer)
     state.fullscreenFallbackTimer = null
   }
+  if (state.taskbarHeld) {
+    state.taskbarHeld = false
+    releaseTaskbarCover()
+  }
 
   // P2-1：标记过渡期，退出全屏瞬间的失焦不会触发 WindowGuard 拉回干扰还原
   markTransitioning(win)
@@ -212,10 +228,13 @@ export function releaseLevelWindow(win: BrowserWindow): void {
   overlayStates.delete(win)
 }
 
-/** 到点动作：锁屏 */
+/** 到点动作：锁屏。仅 Windows 提供 LockWorkStation。 */
 export function lockWorkstation(): void {
-  spawn('rundll32.exe', ['user32.dll,LockWorkStation'], {
+  if (process.platform !== 'win32') return
+  const child = spawn('rundll32.exe', ['user32.dll,LockWorkStation'], {
     stdio: 'ignore',
     windowsHide: true
-  }).unref()
+  })
+  child.on('error', () => undefined)
+  child.unref()
 }

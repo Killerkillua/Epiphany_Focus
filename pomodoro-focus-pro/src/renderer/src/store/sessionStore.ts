@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import type { SessionMode, TimerSnapshot } from '../../../shared/types'
 
 /**
- * 学习会话计时状态（渲染层，B 站学习 / 英语学习模式共用）。
+ * 学习会话计时状态（渲染层，视频学习 / 英语学习模式共用）。
  * 权威计时状态在主进程 SessionTimerService，本 store 通过 IPC 同步快照。
  * 与 focusStore 的区别：不触发强制引擎（锁屏 / 遮罩 / 快捷键拦截）。
  */

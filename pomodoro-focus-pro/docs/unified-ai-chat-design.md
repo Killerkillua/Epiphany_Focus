@@ -11,8 +11,8 @@
 | 消费方                                    | 状态管理                  | 消息类型      | 流式订阅                     | 请求方法                     |
 | ----------------------------------------- | ------------------------- | ------------- | ---------------------------- | ---------------------------- |
 | 英语模式 `EnglishModePage`                | Zustand `useEnglishStore` | `ChatMessage` | 全局 `globalThis` 标志防重复 | `window.api.ai.englishAsk()` |
-| B站悬浮面板 `OverlayApp`                  | `useReducer`              | `ChatMsg`     | 每次请求注册/取消            | `window.api.ai.biliAsk()`    |
-| B站学习助手抽屉 `LearningAssistantDrawer` | `useState`                | `ChatMsg`     | 每次请求注册/取消            | `window.api.ai.biliAsk()`    |
+| 视频学习悬浮面板 `OverlayApp`                  | `useReducer`              | `ChatMsg`     | 每次请求注册/取消            | `window.api.ai.biliAsk()`    |
+| 视频学习助手抽屉 `LearningAssistantDrawer` | `useState`                | `ChatMsg`     | 每次请求注册/取消            | `window.api.ai.biliAsk()`    |
 
 ### 1.2 两种消息类型定义
 
@@ -37,7 +37,7 @@ interface ChatMsg {
 }
 ```
 
-> **问题**：字段不统一——英语模式有 `sources` / `queryWord`，B站模式有 `welcome`。两个类型无法互换，导致组件无法复用。
+> **问题**：字段不统一——英语模式有 `sources` / `queryWord`，视频学习模式有 `welcome`。两个类型无法互换，导致组件无法复用。
 
 ### 1.3 MessageItem 组件重复定义
 
@@ -70,7 +70,7 @@ buildMessages() 组装：
 
 ## 二、设计目标
 
-1. **统一消息类型**：一套 `ChatMessage` 类型覆盖英语/B站所有场景，字段可选化兼容差异
+1. **统一消息类型**：一套 `ChatMessage` 类型覆盖英语/视频学习所有场景，字段可选化兼容差异
 2. **统一对话 Hook**：一个 `useAiChat` hook 替代 Zustand store / useReducer / useState 三套实现
 3. **统一 MessageItem 组件**：移入 `components/`，通过 `actions` props 注入模式特有按钮
 4. **四模式独立 Prompt**：每个英语 AI 模式拥有独立的 System Prompt，定义角色、职责、输出格式、交互规则
@@ -148,7 +148,7 @@ buildMessages() 组装：
 ```typescript
 // src/shared/ai.ts — 新增
 
-/** 统一对话消息（英语模式 / B站模式共用） */
+/** 统一对话消息（英语模式 / 视频学习模式共用） */
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
@@ -159,12 +159,12 @@ export interface ChatMessage {
   streaming?: boolean
   /** 词汇场景关联的查询词（英语模式一键入本） */
   queryWord?: string
-  /** 欢迎语等系统消息：不显示操作按钮（B站模式） */
+  /** 欢迎语等系统消息：不显示操作按钮（视频学习模式） */
   welcome?: boolean
 }
 ```
 
-> **设计**：所有字段可选化（`?`），英语模式用到 `sources` / `queryWord`，B站模式用到 `welcome`，互不冲突。
+> **设计**：所有字段可选化（`?`），英语模式用到 `sources` / `queryWord`，视频学习模式用到 `welcome`，互不冲突。
 
 ### 4.2 统一对话 Hook `useAiChat`
 
@@ -190,14 +190,14 @@ interface UseAiChatOptions {
   profile: AiProfile
   /** 英语模式场景（profile='english' 时必填） */
   scenario?: AiScenario
-  /** B站模式学习上下文（profile='bili' 时使用） */
+  /** 视频学习模式学习上下文（profile='bili' 时使用） */
   context?: BiliContext
 }
 
 interface UseAiChatReturn {
   messages: ChatMessage[]
   isStreaming: boolean
-  /** 发送消息（英语模式走 englishAsk，B站走 biliAsk） */
+  /** 发送消息（英语模式走 englishAsk，视频学习走 biliAsk） */
   ask: (message: string, opts?: { word?: string }) => Promise<void>
   /** 清空消息（切换模式/场景时调用） */
   clear: () => void
@@ -338,7 +338,7 @@ export function useAiChat(options: UseAiChatOptions): UseAiChatReturn {
 | 状态管理     | `useState`                | 每个消费者独立实例，无全局 store 竞争                                             |
 | 流式订阅     | `useEffect` + `useRef`    | 组件 mount 时订阅一次，unmount 时自动取消；`activeRequestId` 过滤确保增量路由正确 |
 | HMR 安全     | `useEffect` cleanup       | 热更新时自动取消旧订阅，新组件实例干净订阅                                        |
-| 多轮历史     | 从 `messages` 取最近 8 轮 | 英语 `conversation`/`free` 和 B站模式均自动携带                                   |
+| 多轮历史     | 从 `messages` 取最近 8 轮 | 英语 `conversation`/`free` 和 视频学习模式均自动携带                                   |
 | profile 分流 | `options.profile`         | `'english'` 走 `englishAsk`，`'bili'` 走 `biliAsk`                                |
 
 ### 4.3 统一 `MessageItem` 组件
@@ -733,13 +733,13 @@ OpenAI SDK stream → onDelta → ai:chunk → 渲染层
 
 **Phase 3：提取 MessageItem 组件**（提取+适配）
 
-从 `EnglishModePage.tsx` 提取 `MessageList` 到 `components/MessageItem.tsx`，支持 `actions` props 注入和 `classNamePrefix` 适配英语/B站两套 CSS。
+从 `EnglishModePage.tsx` 提取 `MessageList` 到 `components/MessageItem.tsx`，支持 `actions` props 注入和 `classNamePrefix` 适配英语/视频学习两套 CSS。
 
 **Phase 4：EnglishModePage 接入**（第一个消费方迁移）
 
 `EnglishModePage` 用 `useAiChat` 替代 `useEnglishStore` 的对话部分；`MessageList` 替代内联 `MessageItem`；`englishStore` 仅保留 config/usage/vocab/grammar。验证英语模式四个 Tab 功能完整。
 
-**Phase 5：B站消费方接入**（OverlayApp + LearningAssistantDrawer 迁移）
+**Phase 5：视频学习消费方接入**（OverlayApp + LearningAssistantDrawer 迁移）
 
 `OverlayApp` 用 `useAiChat({ profile: 'bili', context })` 替代 `useReducer`；`LearningAssistantDrawer` 用同一 hook 替代 `useState`；两处均用 `MessageList` 替代 `ChatPane` 的渲染部分。
 
@@ -767,7 +767,7 @@ OpenAI SDK stream → onDelta → ai:chunk → 渲染层
 | 风险                                        | 影响 | 缓解措施                                                                       |
 | ------------------------------------------- | ---- | ------------------------------------------------------------------------------ |
 | useAiChat 替代 Zustand 后丢失跨组件状态共享 | 中   | 英语模式消息列表只需页面级生命周期，无需跨组件共享；vocab/grammar 仍在 Zustand |
-| B站 Overlay 和 Drawer 同时挂载时事件竞争    | 低   | `activeRequestId` 过滤确保增量只路由到活跃消费者；实际两者互斥使用             |
+| 视频学习 Overlay 和 Drawer 同时挂载时事件竞争    | 低   | `activeRequestId` 过滤确保增量只路由到活跃消费者；实际两者互斥使用             |
 | Prompt 重构后 AI 回复风格变化               | 中   | Phase 6 独立实施，可在设置页增加"Prompt 版本"开关，支持回退到旧 Prompt         |
 | ChatPane 删除后输入框逻辑迁移遗漏           | 低   | ChatPane 的输入框+发送按钮可保留为独立组件 `ChatInput`，仅删除消息渲染部分     |
 
@@ -777,5 +777,5 @@ OpenAI SDK stream → onDelta → ai:chunk → 渲染层
 
 - **Phase 1-3** 是纯新增/提取，不破坏现有功能 → 安全
 - **Phase 4** 是第一个破坏性变更，需完整测试英语模式 5 个 Tab → 回滚仅需恢复 `EnglishModePage` 引用 `englishStore`
-- **Phase 5** 迁移 B站两个消费方 → 回滚仅需恢复 `useReducer`/`useState`
+- **Phase 5** 迁移 视频学习两个消费方 → 回滚仅需恢复 `useReducer`/`useState`
 - **Phase 6** Prompt 重构独立于前端，可单独部署/回滚 → 保留 `SYSTEM_PROMPT` 作为 `free` 模式的 Prompt

@@ -59,7 +59,8 @@ export function useSettingsLoader(): SettingsLoader {
       backupFrequency: s.backup?.frequency ?? 'daily',
       backupTime: s.backup?.time ?? '03:00',
       backupKeepCount: s.backup?.keepCount ?? 7,
-      backupDirectory: s.backup?.directory ?? ''
+      backupDirectory: s.backup?.directory ?? '',
+      launchAtLogin: s.launchAtLogin === true
     })
   }, [])
 

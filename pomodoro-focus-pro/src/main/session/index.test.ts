@@ -5,7 +5,7 @@ import type { SessionHandle } from './index'
 import type { SessionStartOptions, SessionState } from '../../shared/types'
 
 /**
- * 学习会话模块测试（B 站 / 英语学习计时，方案 2.2）。
+ * 学习会话模块测试（视频学习 / 英语学习计时，方案 2.2）。
  * 会话模块与强制引擎解耦：复用 TimerService 但不施加锁屏/守护。
  * 可测的纯逻辑：时长钳制（1s–8h，默认 1h）、模式选择、计时状态机、
  * 主窗口遮罩联动（start 施加 / 视频窗口挂起 / 恢复）。

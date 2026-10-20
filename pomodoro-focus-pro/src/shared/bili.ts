@@ -1,5 +1,5 @@
 /**
- * B 站模式共享类型（主进程 / preload / 渲染层共用）。
+ * 视频学习模式共享类型（主进程 / preload / 渲染层共用）。
  * 仅类型定义，不引入任何运行时依赖。
  */
 
@@ -48,7 +48,7 @@ export type NavCategory = '直播' | '番剧' | '影视' | '动态' | '外部' |
 /** 四层判定层级 */
 export type NavVerdictLevel = 'L1' | 'L2' | 'L3' | 'L4'
 
-/** B 站导航守卫上下文（跨模块传递） */
+/** 视频学习导航守卫上下文（跨模块传递） */
 export interface BiliGuardContext {
   /** 学习主题（来自搜索关键词） */
   topic: string
@@ -80,7 +80,7 @@ export interface OpenVideoPayload {
   title?: string
   /** 会话上限时长（毫秒，来自首页时长浮层） */
   plannedMs?: number
-  /** 打开后跳转到指定进度（秒，续学入口；B 站原生 ?t= 参数，加载即定位） */
+  /** 打开后跳转到指定进度（秒，续学入口；视频学习原生 ?t= 参数，加载即定位） */
   seekSeconds?: number
   /** 打开来源：manual / resume（续学）/ search（搜索结果）；写入 study_sessions.source（M3） */
   source?: SessionSource
@@ -104,6 +104,9 @@ export interface VideoState {
 
 export interface BiliContext {
   bvid?: string
+  /** 稳定资源键。本地与网站笔记按它归档，不包含文件系统路径 */
+  resourceKey?: string
+  resourceKind?: 'bili' | 'local' | 'web'
   topic?: string
   /** 当前视频标题（搜索结果页快照，导航守卫提取到更精确标题时更新） */
   videoTitle?: string
@@ -152,14 +155,14 @@ export interface OverlaySnapshot {
   notice?: string
 }
 
-/* ===== B 站封面图代理（防盗链修复） ===== */
+/* ===== 视频学习封面图代理（防盗链修复） ===== */
 
 /** 封面代理自定义协议（主进程 protocol.handle，渲染层 <img> 直接使用） */
 export const BILI_IMAGE_SCHEME = 'bili-image'
 
 /**
  * 把 CDN 封面原始 URL 转成 bili-image:// 代理地址。
- * 主进程按此协议用 net.fetch + Referer 拉图（解决 B 站 CDN 防盗链 403）。
+ * 主进程按此协议用 net.fetch + Referer 拉图（解决 视频学习 CDN 防盗链 403）。
  */
 export function getProxiedPicUrl(rawPic: string): string {
   const url = rawPic.startsWith('//') ? `https:${rawPic}` : rawPic
@@ -167,7 +170,7 @@ export function getProxiedPicUrl(rawPic: string): string {
   return `${BILI_IMAGE_SCHEME}://img/?url=${encodeURIComponent(url)}`
 }
 
-/* ===== AI 学习助手（B 站悬浮面板） ===== */
+/* ===== AI 学习助手（视频学习悬浮面板） ===== */
 
 export interface AiMessage {
   role: 'user' | 'assistant' | 'system'
@@ -182,14 +185,17 @@ export interface AiAskRequest {
     /** 学习主题（来自搜索关键词） */
     topic?: string
     videoTitle?: string
-    /** 当前视频 BV 号 */
+    /** 当前视频 BV 号。本地文件与网站不传，避免把路径或完整 URL 送进模型 */
     bvid?: string
+    resourceKind?: 'bili' | 'local' | 'web'
   }
   /** 最近多轮历史（按时间升序，仅 user/assistant 参与组装） */
   history?: AiMessage[]
+  /** 流中断后续写：已生成的助手文本 */
+  continueFrom?: string
 }
 
-/** B 站学习助手完整回复（与英语模式 shared/ai.ts 的 AiReply 命名区分，避免同名异构冲突） */
+/** 视频学习助手完整回复（与英语模式 shared/ai.ts 的 AiReply 命名区分，避免同名异构冲突） */
 export interface BiliAiReply {
   role: 'assistant'
   content: string
@@ -206,8 +212,10 @@ export interface NoteEntry {
   id: string
   createdAt: number
   content: string
-  /** 关联视频 BV 号（按视频归档 / 回看定位） */
+  /** 关联视频 BV 号或通用记录 id（按视频归档 / 回看定位） */
   bvid?: string
+  /** 稳定资源键。旧笔记可只存在 bvid，读取时再补齐 */
+  resourceKey?: string
   /** 视频标题快照（笔记页展示所属视频） */
   videoTitle?: string
   /** 视频内进度秒（时间点标记，点击可跳转播放器到该位置） */

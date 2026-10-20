@@ -73,7 +73,7 @@ function OverlayApp(): JSX.Element {
   const getContext = useCallback(() => contextRef.current, [])
 
   // H-07：AI 问答与笔记逻辑复用共享 hook（悬浮面板 source='overlay'）
-  const { aiLog, aiInput, asking, setAiInput, setWelcome, askAi, logRef } = useAiChat({
+  const { aiLog, aiInput, asking, setAiInput, setWelcome, askAi, continueAi, logRef } = useAiChat({
     requestIdPrefix: 'bili',
     getContext
   })
@@ -111,7 +111,7 @@ function OverlayApp(): JSX.Element {
   useEffect(() => {
     void window.api.bili.getContext().then((ctx) => {
       dispatch({ type: 'set-context', context: ctx })
-      const lines = ['已进入 B 站学习模式。']
+      const lines = ['已进入视频学习模式。']
       if (ctx?.topic) lines.push(`学习主题「${ctx.topic}」`)
       if (ctx?.videoTitle) lines.push(`正在观看《${ctx.videoTitle}》`)
       lines.push('学习中有疑问随时提问：概念讲解、要点总结、随堂测验都可以。')
@@ -317,6 +317,7 @@ function OverlayApp(): JSX.Element {
             logRef={logRef}
             onInput={setAiInput}
             onSend={() => void askAi()}
+            onContinue={(id) => void continueAi(id)}
             onSaveToNotes={saveReplyToNotes}
           />
         )}

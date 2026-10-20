@@ -10,7 +10,7 @@ import type { BiliGuardContext, NavVerdict } from '../../shared/bili'
 import type { WebContents } from 'electron'
 
 /**
- * B 站导航管控测试（四层判定）。
+ * 视频学习导航管控测试（四层判定）。
  * - isAllowedBiliUrl：L1 域名白名单 / L2 路径类别拦截 / 严格档 BV 白名单
  * - isRelevantContent / isBvAllowed：L4 内容相关性（同义词表）与严格档白名单纯函数
  * - buildBlockPageHtml：拦截提示页（HTML 转义 / 档位文案）
@@ -275,7 +275,7 @@ describe('attachNavigationGuard（WebContents 挂载）', () => {
     return { wc, emit }
   }
 
-  it('will-navigate：外部 URL 拦截（preventDefault + onBlocked），B 站 URL 放行', () => {
+  it('will-navigate：外部 URL 拦截（preventDefault + onBlocked），视频学习 URL 放行', () => {
     const { wc, emit } = makeWebContents()
     const onBlocked = vi.fn()
     attachNavigationGuard(wc as unknown as WebContents, ctx(), { onBlocked })

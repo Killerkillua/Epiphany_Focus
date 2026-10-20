@@ -1,4 +1,4 @@
-import { spawn } from 'child_process'
+import { isWindows, spawnQuiet } from './spawnQuiet'
 
 /**
  * 进程级防护（方案 2.5 L2）：
@@ -9,9 +9,9 @@ import { spawn } from 'child_process'
 let taskmgrTimer: NodeJS.Timeout | null = null
 
 export function startTaskmgrKill(): void {
-  if (taskmgrTimer) return
+  if (!isWindows() || taskmgrTimer) return
   taskmgrTimer = setInterval(() => {
-    spawn('taskkill', ['/F', '/IM', 'taskmgr.exe'], { stdio: 'ignore', windowsHide: true }).unref()
+    spawnQuiet('taskkill', ['/F', '/IM', 'taskmgr.exe'])
   }, 2000)
 }
 

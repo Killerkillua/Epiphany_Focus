@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { BILI_IMAGE_SCHEME } from '../../shared/bili'
 
 /**
- * B 站封面图代理（修复防盗链 403，方案 A1/A1'/A2）：
+ * 视频学习封面图代理（修复防盗链 403，方案 A1/A1'/A2）：
  * - bili-image:// 自定义协议：主进程 net.fetch + Referer 拉图，失败降级为 SVG 占位
  * - webRequest.onBeforeSendHeaders：渲染层 <img> 直连 hdslb/bilibili 图片时注入 Referer（双保险）
  * - 磁盘缓存：userData/image-cache，LRU 上限 500 张 / 200MB，二次搜索不重复拉图
@@ -24,6 +24,51 @@ interface CacheMeta {
   mime: string
   size: number
   mtime: number
+}
+
+/** 单张图片大小上限 */
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024
+const MAX_REDIRECTS = 3
+const ALLOWED_IMAGE_MIMES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'image/avif'
+])
+/** 允许代理的图片域名（含子域） */
+const ALLOWED_IMAGE_HOSTS = ['hdslb.com', 'bilibili.com', 'biliimg.com']
+
+/** 仅允许 https + 白名单域名，防止代理被用作 SSRF 跳板 */
+function isAllowedImageUrl(raw: string): boolean {
+  try {
+    const u = new URL(raw)
+    if (u.protocol !== 'https:' || u.username || u.password) return false
+    const host = u.hostname.toLowerCase()
+    return ALLOWED_IMAGE_HOSTS.some((d) => host === d || host.endsWith(`.${d}`))
+  } catch {
+    return false
+  }
+}
+
+/** 手动跟随重定向，每一跳都重新校验域名；失败返回 null */
+async function fetchImageSafely(start: string): Promise<Response | null> {
+  let current = start
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    if (!isAllowedImageUrl(current)) return null
+    const res = await net.fetch(current, {
+      headers: { Referer: REFERER, 'User-Agent': USER_AGENT },
+      redirect: 'manual'
+    })
+    if (res.status >= 300 && res.status < 400) {
+      const loc = res.headers.get('location')
+      if (!loc) return null
+      current = new URL(loc, current).toString()
+      continue
+    }
+    return res.ok ? res : null
+  }
+  return null
 }
 
 let cacheDir = ''
@@ -142,7 +187,7 @@ export function installBiliImageProxy(): void {
     try {
       const parsed = new URL(request.url)
       const raw = parsed.searchParams.get('url')
-      if (!raw || !/^https:\/\//i.test(raw)) return fallbackResponse()
+      if (!raw || !isAllowedImageUrl(raw)) return fallbackResponse()
 
       // 1. 缓存命中直接返回
       const hit = await cacheGet(raw)
@@ -153,14 +198,18 @@ export function installBiliImageProxy(): void {
       }
 
       // 2. 主进程带 Referer 拉图（绕过 CDN 防盗链 403）
-      const res = await net.fetch(raw, {
-        headers: { Referer: REFERER, 'User-Agent': USER_AGENT },
-        redirect: 'follow'
-      })
-      if (!res.ok) return fallbackResponse()
+      const res = await fetchImageSafely(raw)
+      if (!res) return fallbackResponse()
 
+      const declared = Number(res.headers.get('content-length') ?? 0)
+      if (declared > MAX_IMAGE_BYTES) return fallbackResponse()
       const data = Buffer.from(await res.arrayBuffer())
-      const mime = res.headers.get('content-type')?.split(';')[0] ?? guessMime(raw)
+      if (data.byteLength > MAX_IMAGE_BYTES) return fallbackResponse()
+      const mime = (res.headers.get('content-type')?.split(';')[0] ?? guessMime(raw))
+        .trim()
+        .toLowerCase()
+      // 仅接受位图类型（SVG 可携带脚本，一并拒绝）
+      if (!ALLOWED_IMAGE_MIMES.has(mime)) return fallbackResponse()
       void cachePut(raw, data, mime).catch(() => undefined)
       return new Response(data, {
         headers: { 'Content-Type': mime, 'Cache-Control': 'public, max-age=86400' }

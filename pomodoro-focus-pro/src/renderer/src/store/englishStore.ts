@@ -7,6 +7,7 @@ import type {
   AiQuestion,
   AiScenario,
   AiSource,
+  AiStreamChunk,
   AiUsage,
   GrammarPoint,
   VocabEntry
@@ -24,8 +25,14 @@ export interface ChatMessage {
   sources: AiSource[]
   /** 是否正在流式输出 */
   streaming?: boolean
+  /** 流中断，正文是半成品，不能当作完整回复写入下一轮历史 */
+  incomplete?: boolean
+  /** 中断原因，不覆盖正文 */
+  error?: string
   /** 该条关联的提问词（用于一键入本） */
   queryWord?: string
+  /** 生成这条回复时的场景，续写时复用 */
+  scenario?: AiScenario
 }
 
 /**
@@ -55,9 +62,13 @@ interface EnglishStore {
   /** 取消全部 IPC 事件订阅（HMR 热替换 / 窗口销毁时清理） */
   destroy: () => void
   ask: (scenario: AiScenario, message: string, word?: string) => Promise<void>
+  /** 从半成品气泡继续生成，不重复扣提问额度 */
+  continue: (messageId: string) => Promise<void>
   refreshConfig: () => Promise<void>
   refreshLists: () => Promise<void>
-  addVocab: (payload: AddVocabPayload) => Promise<void>
+  /** 返回该词加入前是否已在生词本 */
+  addVocab: (payload: AddVocabPayload) => Promise<boolean>
+  updateVocab: (id: number, definition: string) => Promise<void>
   deleteVocab: (id: number) => Promise<void>
   addGrammar: (payload: AddGrammarPayload) => Promise<void>
   deleteGrammar: (id: number) => Promise<void>
@@ -99,23 +110,29 @@ export const useEnglishStore = create<EnglishStore>((set, get) => ({
     if (!g.__pomodoroEnglishChunkSubscribed) {
       g.__pomodoroEnglishChunkSubscribed = true
       unsubscribeFns.push(
-        window.api.on<{
-          requestId: string
-          delta: string
-          done: boolean
-          content?: string
-          sources?: AiSource[]
-        }>('ai:chunk', (chunk) => {
+        window.api.on<AiStreamChunk>('ai:chunk', (chunk) => {
           if (!chunk.requestId || !get().isStreaming) return
           set((state) => {
             const messages = state.messages.map((m) => {
               if (m.id !== chunk.requestId) return m
+              if (chunk.aborted) return { ...m, streaming: false }
+              if (chunk.done && chunk.incomplete) {
+                return {
+                  ...m,
+                  content: m.content || chunk.content || '',
+                  streaming: false,
+                  incomplete: true,
+                  error: chunk.error
+                }
+              }
               if (chunk.done) {
                 return {
                   ...m,
                   content: chunk.content ?? m.content,
                   sources: chunk.sources ?? m.sources,
-                  streaming: false
+                  streaming: false,
+                  incomplete: false,
+                  error: undefined
                 }
               }
               return { ...m, content: m.content + chunk.delta }
@@ -155,7 +172,11 @@ export const useEnglishStore = create<EnglishStore>((set, get) => ({
     const history = HISTORY_SCENARIOS.includes(scenario)
       ? get()
           .messages.filter(
-            (m) => !m.streaming && (m.role === 'user' || m.role === 'assistant') && m.content.trim()
+            (m) =>
+              !m.streaming &&
+              !m.incomplete &&
+              (m.role === 'user' || m.role === 'assistant') &&
+              m.content.trim()
           )
           .slice(-8)
           .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
@@ -174,7 +195,8 @@ export const useEnglishStore = create<EnglishStore>((set, get) => ({
       content: '',
       sources: [],
       streaming: true,
-      queryWord: word ?? trimmed
+      queryWord: word ?? trimmed,
+      scenario
     }
 
     set((state) => ({
@@ -195,12 +217,88 @@ export const useEnglishStore = create<EnglishStore>((set, get) => ({
       const usage = await window.api.ai.usage()
       set({ usage })
     } catch (err) {
-      // 提取主进程中文错误（401 等），写入气泡并向上抛友好错误供 Toast 展示
+      const friendly = extractErrorMessage(err)
+      if (friendly === '已取消') {
+        set((state) => ({
+          messages: state.messages.map((m) =>
+            m.id === requestId ? { ...m, streaming: false } : m
+          ),
+          isStreaming: false
+        }))
+        return
+      }
+      set((state) => ({
+        messages: state.messages.map((m) =>
+          m.id === requestId
+            ? {
+                ...m,
+                content: m.content || `⚠️ ${friendly}`,
+                streaming: false,
+                incomplete: m.content.trim().length > 0,
+                error: friendly
+              }
+            : m
+        ),
+        isStreaming: false
+      }))
+      throw new Error(friendly)
+    }
+  },
+
+  continue: async (messageId) => {
+    if (get().isStreaming) return
+    const messages = get().messages
+    const idx = messages.findIndex((m) => m.id === messageId)
+    const target = messages[idx]
+    if (!target || target.role !== 'assistant' || !target.incomplete) return
+    const userIdx = messages[idx - 1]?.role === 'user' ? idx - 1 : -1
+    const user = userIdx >= 0 ? messages[userIdx] : undefined
+    if (!user) return
+    const scenario = target.scenario ?? 'free'
+    const history = HISTORY_SCENARIOS.includes(scenario)
+      ? messages
+          .slice(0, userIdx)
+          .filter(
+            (m) =>
+              !m.streaming &&
+              !m.incomplete &&
+              (m.role === 'user' || m.role === 'assistant') &&
+              m.content.trim()
+          )
+          .slice(-8)
+          .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
+      : undefined
+    const requestId = target.id
+    const question: AiQuestion = {
+      requestId,
+      scenario,
+      message: user.content,
+      word: target.queryWord,
+      history,
+      continueFrom: target.content
+    }
+    set((state) => ({
+      messages: state.messages.map((m) =>
+        m.id === requestId ? { ...m, streaming: true, incomplete: false, error: undefined } : m
+      ),
+      isStreaming: true
+    }))
+    try {
+      const reply = await window.api.ai.englishAsk(question)
+      set((state) => ({
+        messages: state.messages.map((m) =>
+          m.id === requestId
+            ? { ...m, content: reply.content || m.content, sources: reply.sources, streaming: false, incomplete: false }
+            : m
+        ),
+        isStreaming: false
+      }))
+    } catch (err) {
       const friendly = extractErrorMessage(err)
       set((state) => ({
         messages: state.messages.map((m) =>
           m.id === requestId
-            ? { ...m, content: m.content || `⚠️ ${friendly}`, streaming: false }
+            ? { ...m, streaming: false, incomplete: true, error: friendly }
             : m
         ),
         isStreaming: false
@@ -224,7 +322,14 @@ export const useEnglishStore = create<EnglishStore>((set, get) => ({
   },
 
   addVocab: async (payload) => {
-    await window.api.ai.addVocab(payload)
+    const result = await window.api.ai.addVocab(payload)
+    const vocab = await window.api.ai.listVocab()
+    set({ vocab })
+    return result.existed
+  },
+
+  updateVocab: async (id, definition) => {
+    await window.api.ai.updateVocab({ id, definition })
     const vocab = await window.api.ai.listVocab()
     set({ vocab })
   },

@@ -43,6 +43,8 @@ export interface AiQuestion {
   word?: string
   /** 最近多轮历史（conversation/free 场景携带，主进程注入 messages 保持连贯） */
   history?: AiChatTurn[]
+  /** 流中断后续写：已生成的助手文本，不重复扣提问额度 */
+  continueFrom?: string
 }
 
 /** 流式推送块（主进程 → 渲染层，经 ai:chunk 事件） */
@@ -56,9 +58,15 @@ export interface AiStreamChunk {
   content?: string
   /** done=true 时携带 RAG 参考来源 */
   sources?: AiSource[]
+  /** 流中断，content 是半成品，界面应保留并允许继续生成 */
+  incomplete?: boolean
+  /** 用户取消或窗口关闭，不当成失败 */
+  aborted?: boolean
+  /** incomplete 时的友好错误，不覆盖已生成正文 */
+  error?: string
 }
 
-/** 完整回复（invoke 返回值，英语模式）。与 B 站 shared/bili.ts 的 BiliAiReply 命名区分。 */
+/** 完整回复（invoke 返回值，英语模式）。与 视频学习 shared/bili.ts 的 BiliAiReply 命名区分。 */
 export interface AiReply {
   content: string
   sources: AiSource[]
@@ -111,6 +119,18 @@ export interface AddVocabPayload {
   phonetic?: string
   definition?: string
   example?: string
+}
+
+/** 加入生词本的结果。已存在的词不会覆盖音标、释义、例句。 */
+export interface AddVocabResult {
+  entry: VocabEntry
+  existed: boolean
+}
+
+/** 只更新释义 */
+export interface UpdateVocabPayload {
+  id: number
+  definition: string
 }
 
 /** 加入语法要点 */
