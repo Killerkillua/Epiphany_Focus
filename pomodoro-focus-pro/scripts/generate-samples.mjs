@@ -13,7 +13,7 @@ import { join, dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const SR = 44100
-const DUR = 45          // 45s 循环素材
+const DUR = 45 // 45s 循环素材
 const N = SR * DUR
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const OUT = join(__dirname, '..', 'resources', 'audio')
@@ -27,7 +27,9 @@ function white(n = N) {
 function pink(n = N) {
   // Paul Kellet 三极近似
   const out = new Float32Array(n)
-  let b0 = 0, b1 = 0, b2 = 0
+  let b0 = 0,
+    b1 = 0,
+    b2 = 0
   for (let i = 0; i < n; i++) {
     const w = Math.random() * 2 - 1
     b0 = 0.99765 * b0 + w * 0.099046
@@ -57,22 +59,40 @@ function biquad(src, { type, fc, q = 0.707 }) {
   const cw = Math.cos(w0)
   let b0, b1, b2, a0, a1, a2
   if (type === 'lowpass') {
-    b0 = (1 - cw) / 2; b1 = 1 - cw; b2 = b0
-    a0 = 1 + alpha; a1 = -2 * cw; a2 = 1 - alpha
+    b0 = (1 - cw) / 2
+    b1 = 1 - cw
+    b2 = b0
+    a0 = 1 + alpha
+    a1 = -2 * cw
+    a2 = 1 - alpha
   } else if (type === 'highpass') {
-    b0 = (1 + cw) / 2; b1 = -(1 + cw); b2 = b0
-    a0 = 1 + alpha; a1 = -2 * cw; a2 = 1 - alpha
+    b0 = (1 + cw) / 2
+    b1 = -(1 + cw)
+    b2 = b0
+    a0 = 1 + alpha
+    a1 = -2 * cw
+    a2 = 1 - alpha
   } else {
     // bandpass（peak 增益 = 1）
-    b0 = alpha; b1 = 0; b2 = -alpha
-    a0 = 1 + alpha; a1 = -2 * cw; a2 = 1 - alpha
+    b0 = alpha
+    b1 = 0
+    b2 = -alpha
+    a0 = 1 + alpha
+    a1 = -2 * cw
+    a2 = 1 - alpha
   }
   const out = new Float32Array(src.length)
-  let x1 = 0, x2 = 0, y1 = 0, y2 = 0
+  let x1 = 0,
+    x2 = 0,
+    y1 = 0,
+    y2 = 0
   for (let i = 0; i < src.length; i++) {
     const x = src[i]
     const y = (b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2) / a0
-    x2 = x1; x1 = x; y2 = y1; y1 = y
+    x2 = x1
+    x1 = x
+    y2 = y1
+    y1 = y
     out[i] = y
   }
   return out
@@ -86,7 +106,10 @@ function mix(dest, src, gain = 1) {
 
 function makeRng(seed) {
   let s = seed
-  return () => { s = (s * 16807) % 2147483647; return s / 2147483647 }
+  return () => {
+    s = (s * 16807) % 2147483647
+    return s / 2147483647
+  }
 }
 
 /** 在 1.6s ~ DUR-1.6s 区间随机放置瞬态（避开首尾接缝） */
@@ -112,13 +135,13 @@ function writeWav(name, samples) {
 
   // fmt chunk
   buf.write('fmt ', 12, 'ascii')
-  buf.writeUInt32LE(16, 16)       // chunk size
-  buf.writeUInt16LE(1, 20)        // PCM
-  buf.writeUInt16LE(1, 22)        // mono
+  buf.writeUInt32LE(16, 16) // chunk size
+  buf.writeUInt16LE(1, 20) // PCM
+  buf.writeUInt16LE(1, 22) // mono
   buf.writeUInt32LE(SR, 24)
-  buf.writeUInt32LE(SR * 2, 28)   // byte rate
-  buf.writeUInt16LE(2, 32)        // block align
-  buf.writeUInt16LE(16, 34)       // bits per sample
+  buf.writeUInt32LE(SR * 2, 28) // byte rate
+  buf.writeUInt16LE(2, 32) // block align
+  buf.writeUInt16LE(16, 34) // bits per sample
 
   // data chunk
   buf.write('data', 36, 'ascii')
@@ -138,7 +161,9 @@ function writeWav(name, samples) {
   const outPath = join(OUT, name + '.wav')
   writeFileSync(outPath, buf)
   const peakDb = 20 * Math.log10(Math.max(peak * scale, 0.0001))
-  console.log(`  ✓ ${name}.wav (${(dataSize / 1024 / 1024).toFixed(1)}MB, peak ${peakDb.toFixed(1)}dB)`)
+  console.log(
+    `  ✓ ${name}.wav (${(dataSize / 1024 / 1024).toFixed(1)}MB, peak ${peakDb.toFixed(1)}dB)`
+  )
   return peak * scale
 }
 
@@ -147,9 +172,11 @@ function writeWav(name, samples) {
 function maybeToOgg(name) {
   const wavPath = join(OUT, name + '.wav')
   const oggPath = join(OUT, name + '.ogg')
-  const result = spawnSync('ffmpeg', [
-    '-y', '-i', wavPath, '-c:a', 'libvorbis', '-q:a', '4', oggPath
-  ], { stdio: 'pipe' })
+  const result = spawnSync(
+    'ffmpeg',
+    ['-y', '-i', wavPath, '-c:a', 'libvorbis', '-q:a', '4', oggPath],
+    { stdio: 'pipe' }
+  )
   if (result.status === 0) {
     unlinkSync(wavPath)
     return true
@@ -174,15 +201,20 @@ function synthRain() {
   mix(out, curtains, 0.9)
   mix(out, rumble, 0.5)
 
-  placeEvents(out, 90, (o, i, rand) => {
-    // 雨滴：8ms 白噪脉冲，带通 3–6kHz
-    const len = Math.floor(SR * 0.008)
-    const fc = 3000 + rand() * 3000
-    for (let j = i; j < Math.min(i + len, o.length); j++) {
-      const t = (j - i) / len
-      o[j] += (Math.random() * 2 - 1) * 0.35 * Math.exp(-t * 12)
-    }
-  }, 7)
+  placeEvents(
+    out,
+    90,
+    (o, i, rand) => {
+      // 雨滴：8ms 白噪脉冲，带通 3–6kHz
+      const len = Math.floor(SR * 0.008)
+      const fc = 3000 + rand() * 3000
+      for (let j = i; j < Math.min(i + len, o.length); j++) {
+        const t = (j - i) / len
+        o[j] += (Math.random() * 2 - 1) * 0.35 * Math.exp(-t * 12)
+      }
+    },
+    7
+  )
   return out
 }
 
@@ -194,20 +226,25 @@ function synthCafe() {
   const out = new Float32Array(N)
   // LFO 0.5Hz 调制 babble 音量
   for (let i = 0; i < N; i++) {
-    const lfo = 0.7 + 0.3 * Math.sin(2 * Math.PI * 0.5 * i / SR)
+    const lfo = 0.7 + 0.3 * Math.sin((2 * Math.PI * 0.5 * i) / SR)
     out[i] = babbleRaw[i] * 0.7 * lfo + hum[i] * 0.3
   }
 
   // 杯碟 clink 瞬态
-  placeEvents(out, 25, (o, i, rand) => {
-    const len = Math.floor(SR * 0.06)
-    const freq = 2000 + rand() * 3000
-    for (let j = i; j < Math.min(i + len, o.length); j++) {
-      const t = (j - i) / len
-      const s = Math.sin(2 * Math.PI * freq * (j - i) / SR) * 0.15 * Math.exp(-t * 30)
-      o[j] += s
-    }
-  }, 13)
+  placeEvents(
+    out,
+    25,
+    (o, i, rand) => {
+      const len = Math.floor(SR * 0.06)
+      const freq = 2000 + rand() * 3000
+      for (let j = i; j < Math.min(i + len, o.length); j++) {
+        const t = (j - i) / len
+        const s = Math.sin((2 * Math.PI * freq * (j - i)) / SR) * 0.15 * Math.exp(-t * 30)
+        o[j] += s
+      }
+    },
+    13
+  )
   return out
 }
 
@@ -225,18 +262,23 @@ function synthForest() {
   }
 
   // 合成鸟鸣（FM 上扫 1.5→3.5kHz）
-  placeEvents(out, 40, (o, i, rand) => {
-    const len = Math.floor(SR * (0.15 + rand() * 0.25))
-    const startFreq = 1500 + rand() * 500
-    const endFreq = 2500 + rand() * 1500
-    for (let j = i; j < Math.min(i + len, o.length); j++) {
-      const t = (j - i) / len
-      const freq = startFreq + (endFreq - startFreq) * t
-      const phase = 2 * Math.PI * freq * (j - i) / SR
-      const env = Math.sin(t * Math.PI) // 自然包络
-      o[j] += Math.sin(phase) * 0.2 * env
-    }
-  }, 11)
+  placeEvents(
+    out,
+    40,
+    (o, i, rand) => {
+      const len = Math.floor(SR * (0.15 + rand() * 0.25))
+      const startFreq = 1500 + rand() * 500
+      const endFreq = 2500 + rand() * 1500
+      for (let j = i; j < Math.min(i + len, o.length); j++) {
+        const t = (j - i) / len
+        const freq = startFreq + (endFreq - startFreq) * t
+        const phase = (2 * Math.PI * freq * (j - i)) / SR
+        const env = Math.sin(t * Math.PI) // 自然包络
+        o[j] += Math.sin(phase) * 0.2 * env
+      }
+    },
+    11
+  )
   return out
 }
 
@@ -247,14 +289,19 @@ function synthLibrary() {
   mix(out, hum, 0.5)
 
   // 翻页瞬态：60ms 带通 1–2kHz 噪声包络
-  placeEvents(out, 5, (o, i, rand) => {
-    const len = Math.floor(SR * 0.06)
-    for (let j = i; j < Math.min(i + len, o.length); j++) {
-      const t = (j - i) / len
-      const s = (Math.random() * 2 - 1) * 0.12 * Math.sin(t * Math.PI)
-      o[j] += s
-    }
-  }, 19)
+  placeEvents(
+    out,
+    5,
+    (o, i, rand) => {
+      const len = Math.floor(SR * 0.06)
+      for (let j = i; j < Math.min(i + len, o.length); j++) {
+        const t = (j - i) / len
+        const s = (Math.random() * 2 - 1) * 0.12 * Math.sin(t * Math.PI)
+        o[j] += s
+      }
+    },
+    19
+  )
   return out
 }
 
@@ -264,7 +311,7 @@ function synthWaves() {
   const out = new Float32Array(N)
   // LFO 0.1Hz = 周期 10s，45s 恰 4.5 周期
   for (let i = 0; i < N; i++) {
-    const lfo = 0.15 + 0.85 * Math.max(0, Math.sin(2 * Math.PI * 0.1 * i / SR))
+    const lfo = 0.15 + 0.85 * Math.max(0, Math.sin((2 * Math.PI * 0.1 * i) / SR))
     out[i] = noise[i] * lfo
   }
   return out
@@ -277,14 +324,19 @@ function synthFire() {
   mix(out, base, 0.8)
 
   // 爆裂瞬态：5ms 白噪脉冲 + 指数衰减
-  placeEvents(out, 80, (o, i, rand) => {
-    const len = Math.floor(SR * (0.003 + rand() * 0.008))
-    const amp = 0.3 + rand() * 0.6
-    for (let j = i; j < Math.min(i + len, o.length); j++) {
-      const t = (j - i) / len
-      o[j] += (Math.random() * 2 - 1) * amp * Math.exp(-t * 20)
-    }
-  }, 23)
+  placeEvents(
+    out,
+    80,
+    (o, i, rand) => {
+      const len = Math.floor(SR * (0.003 + rand() * 0.008))
+      const amp = 0.3 + rand() * 0.6
+      for (let j = i; j < Math.min(i + len, o.length); j++) {
+        const t = (j - i) / len
+        o[j] += (Math.random() * 2 - 1) * amp * Math.exp(-t * 20)
+      }
+    },
+    23
+  )
   return out
 }
 
@@ -294,7 +346,7 @@ function synthFan() {
   const out = new Float32Array(N)
   // 0.2Hz LFO = 周期 5s，45s 恰 9 周期
   for (let i = 0; i < N; i++) {
-    const am = 0.92 + 0.08 * Math.sin(2 * Math.PI * 0.2 * i / SR)
+    const am = 0.92 + 0.08 * Math.sin((2 * Math.PI * 0.2 * i) / SR)
     out[i] = noise[i] * am
   }
   return out
@@ -307,21 +359,26 @@ function synthBirds() {
   mix(out, ambience, 0.08)
 
   // 鸟鸣：2–4 个音节的 1.5–4kHz 上扫
-  placeEvents(out, 30, (o, i, rand) => {
-    const syllables = 2 + Math.floor(rand() * 3)
-    const syllLen = Math.floor(SR * (0.08 + rand() * 0.12))
-    for (let s = 0; s < syllables; s++) {
-      const start = i + s * syllLen
-      const startFreq = 1500 + rand() * 1500
-      const endFreq = 2000 + rand() * 2500
-      for (let j = start; j < Math.min(start + syllLen, o.length); j++) {
-        const t = (j - start) / syllLen
-        const freq = startFreq + (endFreq - startFreq) * t
-        const env = Math.sin(t * Math.PI)
-        o[j] += Math.sin(2 * Math.PI * freq * (j - start) / SR) * 0.12 * env
+  placeEvents(
+    out,
+    30,
+    (o, i, rand) => {
+      const syllables = 2 + Math.floor(rand() * 3)
+      const syllLen = Math.floor(SR * (0.08 + rand() * 0.12))
+      for (let s = 0; s < syllables; s++) {
+        const start = i + s * syllLen
+        const startFreq = 1500 + rand() * 1500
+        const endFreq = 2000 + rand() * 2500
+        for (let j = start; j < Math.min(start + syllLen, o.length); j++) {
+          const t = (j - start) / syllLen
+          const freq = startFreq + (endFreq - startFreq) * t
+          const env = Math.sin(t * Math.PI)
+          o[j] += Math.sin((2 * Math.PI * freq * (j - start)) / SR) * 0.12 * env
+        }
       }
-    }
-  }, 17)
+    },
+    17
+  )
   return out
 }
 

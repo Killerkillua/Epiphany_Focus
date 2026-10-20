@@ -13,7 +13,15 @@
  *   → （可选）首尾 1.5s 交叉淡化做无缝循环接缝
  */
 
-import { existsSync, mkdirSync, readdirSync, copyFileSync, unlinkSync } from 'node:fs'
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  copyFileSync,
+  unlinkSync,
+  statSync,
+  rmdirSync
+} from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { join, dirname, extname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -21,21 +29,21 @@ import { fileURLToPath } from 'node:url'
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const RAW_DIR = join(__dirname, '..', 'resources', 'audio_raw')
 const OUT_DIR = join(__dirname, '..', 'resources', 'audio')
-const TARGET_DURATION = 45       // 目标时长 45s
+const TARGET_DURATION = 45 // 目标时长 45s
 const TARGET_SR = 44100
-const TARGET_PEAK_DB = -3        // 峰值归一化目标
-const XFADE_SEC = 1.5            // 首尾交叉淡化秒数（无缝循环接缝）
+const TARGET_PEAK_DB = -3 // 峰值归一化目标
+const XFADE_SEC = 1.5 // 首尾交叉淡化秒数（无缝循环接缝）
 
 /* ---- 8 种素材的关键词匹配规则（原始文件名包含即匹配） ---- */
 const MATCH_RULES = [
-  { key: 'rain',    keywords: ['rain', '雨', 'raindrop', 'rainfall', 'shower', 'storm'] },
-  { key: 'cafe',    keywords: ['cafe', 'caf', 'coffee', 'restaurant', '咖啡', '餐厅', 'babble'] },
-  { key: 'forest',  keywords: ['forest', 'wood', '树', '森', 'jungle', 'woods'] },
+  { key: 'rain', keywords: ['rain', '雨', 'raindrop', 'rainfall', 'shower', 'storm'] },
+  { key: 'cafe', keywords: ['cafe', 'caf', 'coffee', 'restaurant', '咖啡', '餐厅', 'babble'] },
+  { key: 'forest', keywords: ['forest', 'wood', '树', '森', 'jungle', 'woods'] },
   { key: 'library', keywords: ['library', '图书', 'book', 'study', 'quiet', 'silent'] },
-  { key: 'waves',   keywords: ['wave', '海', 'ocean', 'beach', 'surf', 'tide', '浪'] },
-  { key: 'fire',    keywords: ['fire', 'campfire', 'bonfire', 'flame', '篝火', '火', 'crackle'] },
-  { key: 'fan',     keywords: ['fan', '风扇', 'hvac', 'aircon', 'vent', '空调', 'hum'] },
-  { key: 'birds',   keywords: ['bird', '鸟鸣', 'chirp', 'sing', 'warble', 'tweet', '雀'] }
+  { key: 'waves', keywords: ['wave', '海', 'ocean', 'beach', 'surf', 'tide', '浪'] },
+  { key: 'fire', keywords: ['fire', 'campfire', 'bonfire', 'flame', '篝火', '火', 'crackle'] },
+  { key: 'fan', keywords: ['fan', '风扇', 'hvac', 'aircon', 'vent', '空调', 'hum'] },
+  { key: 'birds', keywords: ['bird', '鸟鸣', 'chirp', 'sing', 'warble', 'tweet', '雀'] }
 ]
 
 /* ---- 工具 ---- */
@@ -53,10 +61,19 @@ function runFfmpeg(args, label) {
 }
 
 function probeDuration(file) {
-  const r = spawnSync('ffprobe', [
-    '-v', 'error', '-show_entries', 'format=duration',
-    '-of', 'default=noprint_wrappers=1:nokey=1', file
-  ], { stdio: 'pipe' })
+  const r = spawnSync(
+    'ffprobe',
+    [
+      '-v',
+      'error',
+      '-show_entries',
+      'format=duration',
+      '-of',
+      'default=noprint_wrappers=1:nokey=1',
+      file
+    ],
+    { stdio: 'pipe' }
+  )
   if (r.status !== 0) return null
   const d = parseFloat(r.stdout.toString().trim())
   return isNaN(d) ? null : d
@@ -133,25 +150,28 @@ for (const rule of MATCH_RULES) {
 
   // 步骤 1：基础预处理 → 单声道 / 44.1k / 截取中段 / 归一化
   const step1 = join(tmpDir, `${rule.key}_step1.wav`)
-  const trimFilter = duration && duration > TARGET_DURATION + 4
-    // 从 (总时长-目标)/2 处开始截取 TARGET_DURATION 秒（去掉开头结尾可能的不自然部分）
-    ? `atrim=start=${((duration - TARGET_DURATION) / 2).toFixed(3)}:duration=${TARGET_DURATION},asetpts=PTS-STARTPTS`
-    : duration && duration >= TARGET_DURATION * 0.6
-      // 时长基本够用，不裁（短于 30s 后面 validate 会警告）
-      : null
-    : null
+  const trimFilter =
+    duration && duration > TARGET_DURATION + 4
+      ? // 从 (总时长-目标)/2 处开始截取 TARGET_DURATION 秒（去掉开头结尾可能的不自然部分）
+        `atrim=start=${((duration - TARGET_DURATION) / 2).toFixed(3)}:duration=${TARGET_DURATION},asetpts=PTS-STARTPTS`
+      : duration && duration >= TARGET_DURATION * 0.6
+        ? // 时长基本够用，不裁（短于 30s 后面 validate 会警告）
+          null
+        : null
 
   const afFilters1 = [
-    'pan=mono|c0=0.5*c0+0.5*c1',              // 立体声→单声道（等功率混合）
-    `aformat=sample_rates=${TARGET_SR}`,        // 44.1k 重采样
+    'pan=mono|c0=0.5*c0+0.5*c1', // 立体声→单声道（等功率混合）
+    `aformat=sample_rates=${TARGET_SR}`, // 44.1k 重采样
     trimFilter,
     `loudnorm=I=-16:TP=${TARGET_PEAK_DB}:LRA=11:print_format=json` // EBU R128 归一化
-  ].filter(Boolean).join(',')
+  ]
+    .filter(Boolean)
+    .join(',')
 
-  const ok1 = runFfmpeg([
-    '-i', src, '-af', afFilters1,
-    '-acodec', 'pcm_s16le', step1
-  ], `${rule.key} step1`)
+  const ok1 = runFfmpeg(
+    ['-i', src, '-af', afFilters1, '-acodec', 'pcm_s16le', step1],
+    `${rule.key} step1`
+  )
   if (!ok1) continue
 
   // 步骤 2：首尾交叉淡化做无缝循环接缝
@@ -173,22 +193,27 @@ for (const rule of MATCH_RULES) {
 
   // 步骤 3：OGG Vorbis q4 编码输出
   const outPath = join(OUT_DIR, `${rule.key}.ogg`)
-  const ok3 = runFfmpeg([
-    '-i', step2, '-c:a', 'libvorbis', '-q:a', '4', outPath
-  ], `${rule.key} → ogg`)
+  const ok3 = runFfmpeg(
+    ['-i', step2, '-c:a', 'libvorbis', '-q:a', '4', outPath],
+    `${rule.key} → ogg`
+  )
   if (!ok3) continue
 
   const finalDur = probeDuration(outPath) ?? dur2
-  const sizeMB = (existsSync(outPath) ? require('node:fs').statSync(outPath).size : 0) / 1048576
-  console.log(`    ✓ 输出: ${rule.key}.ogg (${finalDur ? finalDur.toFixed(1) + 's' : '??s'}, ${sizeMB.toFixed(1)}MB)`)
+  const sizeMB = (existsSync(outPath) ? statSync(outPath).size : 0) / 1048576
+  console.log(
+    `    ✓ 输出: ${rule.key}.ogg (${finalDur ? finalDur.toFixed(1) + 's' : '??s'}, ${sizeMB.toFixed(1)}MB)`
+  )
   results.push(rule.key)
 }
 
 /* 3. 清理临时文件 */
 try {
   for (const f of readdirSync(tmpDir)) unlinkSync(join(tmpDir, f))
-  require('node:fs').rmdirSync(tmpDir)
-} catch { /* 忽略清理错误 */ }
+  rmdirSync(tmpDir)
+} catch {
+  /* 忽略清理错误 */
+}
 
 console.log(`\n完成！共处理 ${results.length}/${MATCH_RULES.length} 种素材：${results.join(', ')}`)
 console.log(`下一步：运行 npm run samples:validate 验证规格合规性`)

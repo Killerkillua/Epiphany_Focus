@@ -1,0 +1,8 @@
+out/
+node_modules/
+package-lock.json
+*.tsbuildinfo
+# 设计参考文档（含未闭合 HTML 标签，非源码，不参与格式化）
+docs/
+resources/
+scripts/samples/

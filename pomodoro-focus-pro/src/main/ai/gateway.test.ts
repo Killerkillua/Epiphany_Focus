@@ -12,7 +12,16 @@ import type { AiConfig, AiQuestion } from '../../shared/ai'
 /** 记录 OpenAI 客户端实例与调用参数（在 vi.mock 工厂与测试间共享） */
 const mockState = vi.hoisted(() => ({
   instances: [] as Array<{ apiKey: string; baseURL?: string }>,
-  calls: [] as Array<{ model: string; stream: boolean; temperature: number }>
+  calls: [] as Array<{
+    model: string
+    stream: boolean
+    temperature: number
+    top_p?: number
+    frequency_penalty?: number
+    presence_penalty?: number
+  }>,
+  /** 注入下一次 create 抛出的错误（模拟 401 / 网络故障等） */
+  nextError: null as null | Error
 }))
 
 vi.mock('openai', () => {
@@ -48,8 +57,16 @@ vi.mock('openai', () => {
             mockState.calls.push({
               model: opts.model,
               stream: opts.stream,
-              temperature: opts.temperature
+              temperature: opts.temperature,
+              top_p: (opts as { top_p?: number }).top_p,
+              frequency_penalty: (opts as { frequency_penalty?: number }).frequency_penalty,
+              presence_penalty: (opts as { presence_penalty?: number }).presence_penalty
             })
+            if (mockState.nextError) {
+              const err = mockState.nextError
+              mockState.nextError = null
+              throw err
+            }
             // openai SDK 在 stream:true 时直接返回可异步迭代的 Stream 对象
             return fakeStream()
           }
@@ -79,7 +96,9 @@ function makeConfig(overrides: Partial<AiConfig> = {}): AiConfig {
 }
 
 /** 发起一次 chat 并收集流式增量 */
-async function collectDeltas(gateway: EnglishGateway): Promise<{ content: string; deltas: string[] }> {
+async function collectDeltas(
+  gateway: EnglishGateway
+): Promise<{ content: string; deltas: string[] }> {
   const deltas: string[] = []
   const reply = await gateway.chat(QUESTION, [], (delta) => deltas.push(delta))
   return { content: reply.content, deltas }
@@ -89,6 +108,7 @@ describe('EnglishGateway 演示模式 / 真实模式判定', () => {
   beforeEach(() => {
     mockState.instances.length = 0
     mockState.calls.length = 0
+    mockState.nextError = null
   })
 
   it('apiKey 为空（空字符串）时返回演示模板回复，且不创建 OpenAI 客户端', async () => {
@@ -113,8 +133,32 @@ describe('EnglishGateway 演示模式 / 真实模式判定', () => {
     expect(mockState.calls[0]).toEqual({
       model: 'Qwen/Qwen3.5-4B',
       stream: true,
-      temperature: 0.7
+      temperature: 0.2,
+      top_p: 0.85,
+      frequency_penalty: 0.1,
+      presence_penalty: undefined
     })
+  })
+
+  it('场景超参数自适应：词汇模式 0.1，对话模式 0.75 + penalty', async () => {
+    const gateway = new EnglishGateway(() => makeConfig())
+    // 词汇场景
+    await gateway.chat(
+      { requestId: 'r1', scenario: 'vocabulary', message: 'apple' },
+      [],
+      () => {}
+    )
+    expect(mockState.calls[0].temperature).toBe(0.1)
+    expect(mockState.calls[0].top_p).toBe(0.8)
+
+    // 对话场景
+    await gateway.chat(
+      { requestId: 'r2', scenario: 'conversation', message: 'Hello' },
+      [],
+      () => {}
+    )
+    expect(mockState.calls[1].temperature).toBe(0.75)
+    expect(mockState.calls[1].presence_penalty).toBe(0.4)
   })
 
   it('客户端缓存：配置不变复用实例，apiKey/baseURL 变化时重建（无需重启生效）', async () => {
@@ -136,5 +180,30 @@ describe('EnglishGateway 演示模式 / 真实模式判定', () => {
     await collectDeltas(gateway)
     expect(mockState.instances).toHaveLength(3)
     expect(mockState.instances[2].baseURL).toBe('https://api.openai.com/v1')
+  })
+
+  it('HTTP 401：抛出中文、可操作、指向「设置 → AI 设置」的错误（不再裸抛 SDK 原文）', async () => {
+    mockState.nextError = Object.assign(new Error('401 status code (no body)'), { status: 401 })
+    const gateway = new EnglishGateway(() => makeConfig())
+    const err = await collectDeltas(gateway).then(
+      () => null,
+      (e: unknown) => e
+    )
+    expect(err).toBeInstanceOf(Error)
+    expect((err as Error).message).toContain('API Key')
+    expect((err as Error).message).toContain('设置 → AI 设置')
+    expect((err as Error).message).not.toContain('401 status code (no body)')
+  })
+
+  it('网络错误（fetch failed）：抛出中文「无法连接 AI 服务」提示', async () => {
+    mockState.nextError = new Error('fetch failed')
+    const gateway = new EnglishGateway(() => makeConfig())
+    const err = await collectDeltas(gateway).then(
+      () => null,
+      (e: unknown) => e
+    )
+    expect(err).toBeInstanceOf(Error)
+    expect((err as Error).message).toContain('无法连接 AI 服务')
+    expect((err as Error).message).toContain('设置 → AI 设置')
   })
 })

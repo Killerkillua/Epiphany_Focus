@@ -9,7 +9,7 @@ export type LockLevel = 'L0' | 'L1' | 'L2'
 /** 到点动作：锁屏 / 全屏遮罩 / 仅提示 */
 export type EndAction = 'lock' | 'overlay' | 'notify'
 
-/** B 站内容相关度档位（方案 2.6） */
+/** 视频学习内容相关度档位（方案 2.6） */
 export type BiliStrictness = 'strict' | 'standard' | 'loose'
 
 export interface PomodoroSettings {
@@ -50,6 +50,33 @@ export interface EnforcedState {
   startedAt: number
   plannedMs: number
   sessionId: number
+  /** 专注会话关联任务；学习会话为空 */
+  taskId?: string | null
+  taskTitle?: string | null
+  /** 重启恢复时区分倒计时结算与正序不计番茄 */
+  timerMode?: 'countdown' | 'countup'
+}
+
+/** 学习目标设置（M3：全局粒度；课程级目标 = 精读遍数 + 截止日期，存 play_records） */
+export interface StudyGoalSettings {
+  /** 每日学习时长目标（分钟），0 = 未设定 */
+  dailyMinutes: number
+  /** 每周学习天数目标，0 = 未设定 */
+  weeklyDays: number
+}
+
+/** 自动备份设置（M5：本地 JSON 备份到指定目录，保留最近 N 份） */
+export interface BackupSettings {
+  /** 启用自动备份（默认开启） */
+  enabled: boolean
+  /** 备份频率：每日 / 每周（每周在目标时刻所在的那一天执行） */
+  frequency: 'daily' | 'weekly'
+  /** 备份时刻 HH:mm（24 小时制，默认 03:00） */
+  time: string
+  /** 保留份数（0 = 全部保留，默认 7） */
+  keepCount: number
+  /** 备份目录（空 = 默认 文档/静界专注备份） */
+  directory: string
 }
 
 export interface AppSettings {
@@ -58,6 +85,8 @@ export interface AppSettings {
   endAction: EndAction
   /** 会话时长上限（小时），默认 4，防止误锁过久 */
   sessionMaxHours: number
+  /** 学习会话全屏遮罩（英语 / 视频学习计时开始后对主窗口施加与专注模式一致的遮罩；默认开启） */
+  sessionOverlay: boolean
   bili: BiliSettings
   ai: AiSettings
   /** 白噪音预设 key（audio 模块清单） */
@@ -66,6 +95,30 @@ export interface AppSettings {
   recoveryCodeHash: string | null
   /** 强制会话持久化状态 */
   enforced: EnforcedState | null
+  /** 紧急退出防暴力破解状态（持久化，重启不清零） */
+  emergencyGuard: EmergencyGuardState
+  /** 学习目标（M3：全局每日时长 / 每周天数） */
+  studyGoals: StudyGoalSettings
+  /** 自动备份（M5） */
+  backup: BackupSettings
+  /**
+   * 匿名使用统计（R-2）：默认关闭；开启后仅记录本地计数/时长事件
+   * （打开视频数、会话时长、提问数、导航拦截次数、面板显隐次数），
+   * 不上送任何内容 / URL / 笔记文本，可随时一键关闭。
+   */
+  telemetryEnabled: boolean
+}
+
+/** 紧急退出防暴力破解状态 */
+export interface EmergencyGuardState {
+  /** 当前轮连续失败次数（尝试前即写入，进程被杀也不丢） */
+  failCount: number
+  /** 失败锁定截止时间戳（ms） */
+  failLockedUntil: number
+  /** 累计锁定轮数（指数退避指数；验证成功清零） */
+  lockoutStrikes: number
+  /** L2 额外冷却截止时间戳（ms） */
+  l2CoolDownUntil: number
 }
 
 /** 紧急退出结果 */
@@ -82,6 +135,7 @@ export const SETTINGS_DEFAULTS: AppSettings = {
   pomodoro: { focusMin: 25, shortBreakMin: 5, longBreakMin: 15, longBreakEvery: 4 },
   endAction: 'overlay',
   sessionMaxHours: 4,
+  sessionOverlay: true,
   bili: { strictness: 'standard', autoFullscreen: true },
   ai: {
     baseURL: 'https://api.siliconflow.cn/v1',
@@ -92,5 +146,9 @@ export const SETTINGS_DEFAULTS: AppSettings = {
   },
   noisePreset: 'rain',
   recoveryCodeHash: null,
-  enforced: null
+  enforced: null,
+  emergencyGuard: { failCount: 0, failLockedUntil: 0, lockoutStrikes: 0, l2CoolDownUntil: 0 },
+  studyGoals: { dailyMinutes: 60, weeklyDays: 5 },
+  backup: { enabled: true, frequency: 'daily', time: '03:00', keepCount: 7, directory: '' },
+  telemetryEnabled: false
 }

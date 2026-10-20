@@ -35,7 +35,11 @@ interface FocusStore {
   justCompleted: boolean
   /** 初始化：订阅事件 + 拉取当前状态 */
   init: () => Promise<void>
-  start: (mode: TimerMode, durationMs: number) => Promise<void>
+  /** 取消全部 IPC 事件订阅（HMR 热替换 / 窗口销毁时清理） */
+  destroy: () => void
+  start: (mode: TimerMode, durationMs: number, taskId?: string | null) => Promise<void>
+  markInterruption: (type: 'internal' | 'external') => Promise<string>
+  saveInterruptionNote: (id: string, note: string) => Promise<void>
   pause: () => Promise<void>
   resume: () => Promise<void>
   stop: () => Promise<void>
@@ -44,7 +48,26 @@ interface FocusStore {
   clearCompleted: () => void
 }
 
-let subscribed = false
+/**
+ * CR-07：订阅生命周期管理。
+ * - 模块级 subscribed 标志在 HMR 热更新时会重置（模块重新执行）导致重复订阅，
+ *   改用 globalThis 持久标志防重；
+ * - 订阅句柄统一收进 unsubscribeFns，destroy() 一次性取消，
+ *   避免 timer:tick（每秒）/ timer:complete 高频事件在热更新或多窗口下泄漏。
+ */
+const g = globalThis as unknown as { __pomodoroFocusEventsSubscribed?: boolean }
+let unsubscribeFns: Array<() => void> = []
+
+function unsubscribeAll(): void {
+  for (const fn of unsubscribeFns) fn()
+  unsubscribeFns = []
+  g.__pomodoroFocusEventsSubscribed = false
+}
+
+// HMR：模块被热替换前先取消订阅 + 复位标志，新模块实例可干净地重新订阅
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => unsubscribeAll())
+}
 
 export const useFocusStore = create<FocusStore>((set, get) => ({
   snapshot: DEFAULT_SNAPSHOT,
@@ -53,45 +76,65 @@ export const useFocusStore = create<FocusStore>((set, get) => ({
   justCompleted: false,
 
   init: async () => {
-    if (!subscribed) {
-      subscribed = true
-      window.api.on<TimerSnapshot>('timer:tick', (snap) => set({ snapshot: snap }))
-      window.api.on<TimerSnapshot>('timer:complete', (snap) =>
-        set({ snapshot: snap, justCompleted: true })
+    if (!g.__pomodoroFocusEventsSubscribed) {
+      g.__pomodoroFocusEventsSubscribed = true
+      unsubscribeFns.push(
+        window.api.on<TimerSnapshot>(window.api.events.timer.tick, (snap) =>
+          set({ snapshot: snap })
+        ),
+        window.api.on<TimerSnapshot>(window.api.events.timer.complete, (snap) =>
+          set({ snapshot: snap, justCompleted: true })
+        )
       )
     }
-    const snap = await window.api.invoke<TimerSnapshot>('timer:get-state')
+    const snap = await window.api.timer.getState()
     set({ snapshot: snap })
   },
 
-  start: async (mode, durationMs) => {
-    const snap = await window.api.invoke<TimerSnapshot>('timer:start', { mode, durationMs })
+  destroy: unsubscribeAll,
+
+  start: async (mode, durationMs, taskId) => {
+    const snap = await window.api.timer.start({
+      mode,
+      durationMs,
+      taskId: taskId || null
+    })
     set({ snapshot: snap, justCompleted: false, alwaysOnTop: true })
   },
 
+  markInterruption: async (type) => {
+    const res = await window.api.interruptions.add({ type })
+    set({ snapshot: res.snapshot })
+    return res.eventId
+  },
+
+  saveInterruptionNote: async (id, note) => {
+    await window.api.interruptions.updateNote(id, note)
+  },
+
   pause: async () => {
-    const snap = await window.api.invoke<TimerSnapshot>('timer:pause')
+    const snap = await window.api.timer.pause()
     set({ snapshot: snap })
   },
 
   resume: async () => {
-    const snap = await window.api.invoke<TimerSnapshot>('timer:resume')
+    const snap = await window.api.timer.resume()
     set({ snapshot: snap })
   },
 
   stop: async () => {
-    const snap = await window.api.invoke<TimerSnapshot>('timer:stop')
+    const snap = await window.api.timer.stop()
     set({ snapshot: snap, alwaysOnTop: false })
   },
 
   setAlwaysOnTop: async (on) => {
-    await window.api.invoke<boolean>('enforce:set-always-on-top', on)
+    await window.api.enforce.setAlwaysOnTop(on)
     set({ alwaysOnTop: on })
   },
 
   setDistraction: async (patch) => {
     const next = { ...get().distraction, ...patch }
-    await window.api.invoke<DistractionPolicy>('enforce:apply-distraction-policy', next)
+    await window.api.enforce.applyDistractionPolicy(next)
     set({ distraction: next })
   },
 

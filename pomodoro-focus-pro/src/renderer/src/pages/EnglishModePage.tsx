@@ -13,16 +13,13 @@ import {
   Typography,
   message
 } from 'antd'
-import {
-  DeleteOutlined,
-  BookOutlined,
-  BulbOutlined,
-  FileImageOutlined
-} from '@ant-design/icons'
+import { DeleteOutlined, BookOutlined, BulbOutlined, FileImageOutlined } from '@ant-design/icons'
 import MarkdownView from '../components/MarkdownView'
+import ScrollArea, { type ScrollAreaHandle } from '../components/ScrollArea'
 import SourcesPanel from '../components/SourcesPanel'
 import SessionTimerBar from '../components/SessionTimerBar'
 import { useEnglishStore, type ChatMessage } from '../store/englishStore'
+import { extractErrorMessage } from '../utils/errorMessage'
 import type { AiScenario } from '../../../shared/ai'
 
 const { TextArea } = Input
@@ -116,12 +113,22 @@ function MessageItem({ msg }: { msg: ChatMessage }): JSX.Element {
             {!msg.streaming && msg.content && (
               <div className="chat-msg-actions">
                 <Tooltip title="从该回复提取单词加入生词本">
-                  <Button size="small" type="text" icon={<BookOutlined />} onClick={() => void handleAddVocab()}>
+                  <Button
+                    size="small"
+                    type="text"
+                    icon={<BookOutlined />}
+                    onClick={() => void handleAddVocab()}
+                  >
                     加入生词本
                   </Button>
                 </Tooltip>
                 <Tooltip title="将该回复要点加入语法要点">
-                  <Button size="small" type="text" icon={<BulbOutlined />} onClick={() => void handleAddGrammar()}>
+                  <Button
+                    size="small"
+                    type="text"
+                    icon={<BulbOutlined />}
+                    onClick={() => void handleAddGrammar()}
+                  >
                     语法要点
                   </Button>
                 </Tooltip>
@@ -135,13 +142,24 @@ function MessageItem({ msg }: { msg: ChatMessage }): JSX.Element {
 }
 
 function EnglishModePage(): JSX.Element {
-  const { messages, isStreaming, config, usage, vocab, grammar, init, ask, refreshLists, deleteVocab, deleteGrammar } =
-    useEnglishStore()
+  const {
+    messages,
+    isStreaming,
+    config,
+    usage,
+    vocab,
+    grammar,
+    init,
+    ask,
+    refreshLists,
+    deleteVocab,
+    deleteGrammar
+  } = useEnglishStore()
 
   const [scenario, setScenario] = useState<AiScenario>('grammar')
   const [input, setInput] = useState('')
   const [ocrBusy, setOcrBusy] = useState(false)
-  const listRef = useRef<HTMLDivElement>(null)
+  const listRef = useRef<ScrollAreaHandle>(null)
   const ocrFileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -150,7 +168,7 @@ function EnglishModePage(): JSX.Element {
 
   // 新消息自动滚到底部
   useEffect(() => {
-    const el = listRef.current
+    const el = listRef.current?.viewport
     if (el) el.scrollTop = el.scrollHeight
   }, [messages])
 
@@ -163,7 +181,7 @@ function EnglishModePage(): JSX.Element {
     try {
       await ask(scenario, text, word)
     } catch (err) {
-      message.error(err instanceof Error ? err.message : '请求失败')
+      message.error(extractErrorMessage(err))
     }
   }
 
@@ -190,7 +208,7 @@ function EnglishModePage(): JSX.Element {
       setInput(text.length > 4000 ? text.slice(0, 4000) : text)
       message.success('识别完成，文字已填入输入框')
     } catch (err) {
-      message.error(err instanceof Error ? err.message : 'OCR 失败')
+      message.error(extractErrorMessage(err))
     } finally {
       setOcrBusy(false)
     }
@@ -203,7 +221,9 @@ function EnglishModePage(): JSX.Element {
       <h1 className="page-title">英语学习模式</h1>
       <p className="page-sub">
         AI 母语者陪练 · 分层 Prompt · RAG 权威词典增强
-        {config.apiKey ? ` · 模型 ${config.model}` : ' · 演示模式（未配置 API Key，请到 设置 → AI 设置 配置后生效）'}
+        {config.apiKey
+          ? ` · 模型 ${config.model}`
+          : ' · 演示模式（未配置 API Key，请到 设置 → AI 设置 配置后生效）'}
       </p>
 
       {/* 学习会话计时（倒计时 + 进度 + 学习时长统计） */}
@@ -212,7 +232,7 @@ function EnglishModePage(): JSX.Element {
       <div className="english-layout">
         {/* ===== 对话区 ===== */}
         <div className="english-chat">
-          <div className="chat-list" ref={listRef}>
+          <ScrollArea className="chat-list" ref={listRef}>
             {messages.length === 0 ? (
               <Empty
                 style={{ marginTop: 80 }}
@@ -221,7 +241,7 @@ function EnglishModePage(): JSX.Element {
             ) : (
               messages.map((m) => <MessageItem key={m.id} msg={m} />)
             )}
-          </div>
+          </ScrollArea>
 
           <div className="chat-input-bar">
             <Segmented
@@ -284,7 +304,7 @@ function EnglishModePage(): JSX.Element {
         />
 
         {/* ===== 侧栏：生词本 + 语法要点 ===== */}
-        <div className="english-side">
+        <ScrollArea className="english-side">
           <Card
             size="small"
             title="📖 生词本"
@@ -295,37 +315,39 @@ function EnglishModePage(): JSX.Element {
               </Typography.Text>
             }
           >
-            {vocab.length === 0 ? (
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                回复下点击"加入生词本"收藏单词
-              </Typography.Text>
-            ) : (
-              <List
-                size="small"
-                dataSource={vocab}
-                renderItem={(v) => (
-                  <List.Item
-                    actions={[
-                      <DeleteOutlined
-                        key="del"
-                        style={{ color: 'var(--muted)' }}
-                        onClick={() => void deleteVocab(v.id)}
+            <ScrollArea style={{ maxHeight: 216 }}>
+              {vocab.length === 0 ? (
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  回复下点击"加入生词本"收藏单词
+                </Typography.Text>
+              ) : (
+                <List
+                  size="small"
+                  dataSource={vocab}
+                  renderItem={(v) => (
+                    <List.Item
+                      actions={[
+                        <DeleteOutlined
+                          key="del"
+                          style={{ color: 'var(--muted)' }}
+                          onClick={() => void deleteVocab(v.id)}
+                        />
+                      ]}
+                    >
+                      <List.Item.Meta
+                        title={
+                          <Space size={6}>
+                            <span>{v.word}</span>
+                            {v.phonetic && <Tag style={{ marginInlineEnd: 0 }}>{v.phonetic}</Tag>}
+                          </Space>
+                        }
+                        description={<span className="vocab-def">{v.definition.slice(0, 60)}</span>}
                       />
-                    ]}
-                  >
-                    <List.Item.Meta
-                      title={
-                        <Space size={6}>
-                          <span>{v.word}</span>
-                          {v.phonetic && <Tag style={{ marginInlineEnd: 0 }}>{v.phonetic}</Tag>}
-                        </Space>
-                      }
-                      description={<span className="vocab-def">{v.definition.slice(0, 60)}</span>}
-                    />
-                  </List.Item>
-                )}
-              />
-            )}
+                    </List.Item>
+                  )}
+                />
+              )}
+            </ScrollArea>
           </Card>
 
           <Card
@@ -338,39 +360,41 @@ function EnglishModePage(): JSX.Element {
               </Typography.Text>
             }
           >
-            {grammar.length === 0 ? (
-              <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-                回复下点击"语法要点"收藏讲解
-              </Typography.Text>
-            ) : (
-              <Collapse
-                size="small"
-                ghost
-                items={grammar.map((g) => ({
-                  key: String(g.id),
-                  label: (
-                    <Space size={4}>
-                      <span>{g.title}</span>
-                      <DeleteOutlined
-                        style={{ color: 'var(--muted)', fontSize: 12 }}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          void deleteGrammar(g.id)
-                        }}
-                      />
-                    </Space>
-                  ),
-                  children: <div className="grammar-summary">{g.summary}</div>
-                }))}
-              />
-            )}
+            <ScrollArea style={{ maxHeight: 216 }}>
+              {grammar.length === 0 ? (
+                <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                  回复下点击"语法要点"收藏讲解
+                </Typography.Text>
+              ) : (
+                <Collapse
+                  size="small"
+                  ghost
+                  items={grammar.map((g) => ({
+                    key: String(g.id),
+                    label: (
+                      <Space size={4}>
+                        <span>{g.title}</span>
+                        <DeleteOutlined
+                          style={{ color: 'var(--muted)', fontSize: 12 }}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            void deleteGrammar(g.id)
+                          }}
+                        />
+                      </Space>
+                    ),
+                    children: <div className="grammar-summary">{g.summary}</div>
+                  }))}
+                />
+              )}
+            </ScrollArea>
           </Card>
 
           <Typography.Text type="secondary" style={{ fontSize: 11, lineHeight: 1.6 }}>
             提示：语法/写作讲解使用 Chain-of-Thought 逐步推理；词汇查询自动触发 RAG 检索
             Merriam-Webster / Cambridge / Oxford 权威词典并标注来源。
           </Typography.Text>
-        </div>
+        </ScrollArea>
       </div>
     </div>
   )

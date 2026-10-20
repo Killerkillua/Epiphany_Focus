@@ -13,13 +13,9 @@ import { ENV_KEY_API_KEY, parseEnvFile } from './env'
 
 describe('parseEnvFile 轻量 .env 解析', () => {
   it('解析 KEY=VALUE、注释与空行', () => {
-    const vars = parseEnvFile([
-      '# 注释行',
-      '',
-      `POMODORO_AI_API_KEY=sk-abc123`,
-      'EMPTY=',
-      '  带空格键 = 值  '
-    ].join('\n'))
+    const vars = parseEnvFile(
+      ['# 注释行', '', `POMODORO_AI_API_KEY=sk-abc123`, 'EMPTY=', '  带空格键 = 值  '].join('\n')
+    )
     expect(vars[ENV_KEY_API_KEY]).toBe('sk-abc123')
     expect(vars.EMPTY).toBe('')
     expect(vars['带空格键']).toBe('值')

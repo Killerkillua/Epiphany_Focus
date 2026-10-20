@@ -27,8 +27,8 @@ function NotesPage(): JSX.Element {
     try {
       const list = await window.api.notes.load()
       setEntries(list)
-      // 聚焦最新一条；空库则创建一条草稿
-      const target = list[list.length - 1] ?? { id: 'main', createdAt: Date.now(), content: '' }
+      // 聚焦最新一条（新模型按 created_at DESC 返回，list[0] 为最新）；空库则创建一条草稿
+      const target = list[0] ?? { id: 'main', createdAt: Date.now(), content: '' }
       setCurrentId(target.id)
       setDraft(target.content)
     } catch (err) {
@@ -42,9 +42,17 @@ function NotesPage(): JSX.Element {
 
   const save = async (tip = true): Promise<void> => {
     try {
+      // 保留既有笔记的元数据（bvid / videoTitle / isKey / timestampS / source），
+      // 否则整份保存会把这些属性清空（编辑后按视频归档 / 重点标记丢失）
+      const existing = entries.find((e) => e.id === currentId)
       const next: NoteEntry[] = [
         ...entries.filter((e) => e.id !== currentId),
-        { id: currentId, createdAt: Date.now(), content: draft }
+        {
+          ...existing,
+          id: currentId,
+          createdAt: existing?.createdAt ?? Date.now(),
+          content: draft
+        }
       ]
       await window.api.notes.save(next)
       setEntries(next)
@@ -66,7 +74,7 @@ function NotesPage(): JSX.Element {
     await window.api.notes.save(next)
     setEntries(next)
     if (id === currentId) {
-      const target = next[next.length - 1] ?? { id: 'main', createdAt: Date.now(), content: '' }
+      const target = next[0] ?? { id: 'main', createdAt: Date.now(), content: '' }
       setCurrentId(target.id)
       setDraft(target.content)
     }
@@ -79,7 +87,9 @@ function NotesPage(): JSX.Element {
     a.href = url
     a.download = `笔记-${new Date().toISOString().slice(0, 10)}.md`
     a.click()
-    URL.revokeObjectURL(url)
+    // 推迟到下载触发后再释放：a.click() 的下载由浏览器异步接管，
+    // 同步栈内 revokeObjectURL 可能导致部分浏览器取消下载
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
     message.success('已导出 Markdown')
   }
 
@@ -126,9 +136,7 @@ function NotesPage(): JSX.Element {
   return (
     <div>
       <h1 className="page-title">记事本</h1>
-      <p className="page-sub">
-        学习笔记 · 自动保存 · 图片 OCR 识别 · Markdown 导出
-      </p>
+      <p className="page-sub">学习笔记 · 自动保存 · 图片 OCR 识别 · Markdown 导出</p>
 
       <Card size="small" className="notes-card">
         {/* 工具栏 */}
@@ -136,7 +144,12 @@ function NotesPage(): JSX.Element {
           <Button type="primary" size="small" icon={<SaveOutlined />} onClick={() => void save()}>
             保存
           </Button>
-          <Button size="small" icon={<FileImageOutlined />} loading={ocrBusy} onClick={() => fileRef.current?.click()}>
+          <Button
+            size="small"
+            icon={<FileImageOutlined />}
+            loading={ocrBusy}
+            onClick={() => fileRef.current?.click()}
+          >
             图片 OCR
           </Button>
           <Button size="small" icon={<ScanOutlined />} onClick={() => void newNote()}>
@@ -184,7 +197,9 @@ function NotesPage(): JSX.Element {
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={() => void save(false)}
-          placeholder={'记录学习要点…\n\n提示：复制任意截图/图片后直接 Ctrl+V，将自动调用 OCR 识别并插入文字。'}
+          placeholder={
+            '记录学习要点…\n\n提示：复制任意截图/图片后直接 Ctrl+V，将自动调用 OCR 识别并插入文字。'
+          }
           autoSize={{ minRows: 14, maxRows: 26 }}
           className="notes-editor"
         />

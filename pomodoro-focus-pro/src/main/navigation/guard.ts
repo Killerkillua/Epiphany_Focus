@@ -2,7 +2,7 @@ import type { WebContents } from 'electron'
 import type { NavCategory, NavVerdict, BiliGuardContext } from '../../shared/bili'
 
 /**
- * B 站导航管控（四层判定：L1 域名 / L2 路径 / L3 历史 / L4 内容相关性）。
+ * 视频学习导航管控（四层判定：L1 域名 / L2 路径 / L3 历史 / L4 内容相关性）。
  *
  * L1 域名：仅放行 bilibili.com 及其子域（www./search./api./space. 等）。
  * L2 路径：拦截 直播 / 番剧 / 影视 / 动态 四类内容；严格档额外开启 BV 白名单。
@@ -48,17 +48,38 @@ const HISTORY_TRAP = `
   })()
 `
 
-/* ===== L4 内容提取脚本 ===== */
+/* ===== L4 内容提取脚本（C-1：多候选选择器降级链，抗 视频学习前端改版） ===== */
 const CONTENT_EXTRACTOR = `
   (() => {
-    var title = document.title || (document.querySelector('h1') || {}).textContent || ''
-    var tags = Array.from(document.querySelectorAll('a[href*="tag"]'))
-      .map(function(a) { return a.textContent }).join(' ')
+    function text(sel) {
+      var el = document.querySelector(sel)
+      return el ? (el.textContent || '').trim() : ''
+    }
+    var title =
+      text('h1') ||                       // 视频页主标题（常见）
+      text('.video-title') ||             // 老版视频标题
+      text('.video-info-title') ||        // 新版视频标题容器
+      text('h1.title') ||                 // 部分页面的 h1 类名变体
+      (document.title || '')              // 文档标题兜底
+    if (!title) {
+      var og = document.querySelector('meta[property="og:title"]')
+      title = og ? (og.content || '') : ''
+    }
+    var tags = Array.from(
+      document.querySelectorAll('a[href*="tag"], a[href*="/tag/"], .tag-link, .tag-item')
+    ).map(function(a) { return a.textContent || '' }).join(' ')
     return { title: title, tags: tags }
   })()
 `
 
-function deny(url: string, level: 'L1' | 'L2' | 'L3' | 'L4', category: NavCategory, reason: string, host = '', path = ''): NavVerdict {
+function deny(
+  url: string,
+  level: 'L1' | 'L2' | 'L3' | 'L4',
+  category: NavCategory,
+  reason: string,
+  host = '',
+  path = ''
+): NavVerdict {
   return { allowed: false, level, category, reason, url, host, path }
 }
 
@@ -79,11 +100,7 @@ function tokenize(text: string): string[] {
 }
 
 /** 内容相关性判定：主题 token 命中标题/标签 */
-export function isRelevantContent(
-  title: string,
-  tags: string,
-  ctx: BiliGuardContext
-): boolean {
+export function isRelevantContent(title: string, tags: string, ctx: BiliGuardContext): boolean {
   const tokens = tokenize(ctx.topic)
   const hay = (title + ' ' + tags).toLowerCase()
   for (const t of tokens) {
@@ -133,7 +150,11 @@ export function isAllowedBiliUrl(rawUrl: string, ctx?: BiliGuardContext): NavVer
     return deny(rawUrl, 'L2', '番剧', '番剧内容已拦截', host, path)
   }
   // 影视：movie.bilibili.com 或 /movie 路径
-  if (host.startsWith('movie.') || path.startsWith('/movie') || path.startsWith('/bili_channel/movie')) {
+  if (
+    host.startsWith('movie.') ||
+    path.startsWith('/movie') ||
+    path.startsWith('/bili_channel/movie')
+  ) {
     return deny(rawUrl, 'L2', '影视', '影视内容已拦截', host, path)
   }
   // 动态：t.bilibili.com 或 /opus 动态详情、用户空间动态 tab
@@ -156,13 +177,16 @@ export function isAllowedBiliUrl(rawUrl: string, ctx?: BiliGuardContext): NavVer
 /** 生成拦截提示页 HTML（data URL 用） */
 export function buildBlockPageHtml(verdict: NavVerdict): string {
   const title =
-    verdict.level === 'L1' ? '外部站点已拦截'
-    : verdict.level === 'L4' ? '内容不相关已拦截'
-    : `「${verdict.category}」内容已拦截`
+    verdict.level === 'L1'
+      ? '外部站点已拦截'
+      : verdict.level === 'L4'
+        ? '内容不相关已拦截'
+        : `「${verdict.category}」内容已拦截`
   const host = verdict.host || '(无法解析)'
-  const markBtn = verdict.level === 'L4'
-    ? `<button class="mark-btn" onclick="window.__markRelevant?.()">标记为与主题相关</button>`
-    : ''
+  const markBtn =
+    verdict.level === 'L4'
+      ? `<button class="mark-btn" onclick="window.__markRelevant?.()">标记为与主题相关</button>`
+      : ''
   return `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -189,7 +213,7 @@ export function buildBlockPageHtml(verdict: NavVerdict): string {
     <h1>${title}</h1>
     <p>原因：${verdict.reason}</p>
     <p class="url">${escapeHtml(verdict.url)}</p>
-    <p class="hint">学习模式仅允许 bilibili.com 子域内的点播内容。<br/>请关闭本窗口，回到搜索结果页重新选择视频。</p>
+    <p class="hint">学习模式仅允许视频站点内的点播内容。<br/>请关闭本窗口，回到搜索结果页重新选择视频。</p>
     ${markBtn}
   </div>
 </body>
@@ -209,6 +233,8 @@ export interface GuardCallbacks {
   onBlocked?: (verdict: NavVerdict, webContents: WebContents) => void
   /** L4 无关内容时回调（标准档仅警告，严格档拦截） */
   onIrrelevant?: (verdict: NavVerdict, webContents: WebContents) => void
+  /** L4 提取到视频标题时回调（回填当前上下文，供 AI 基于正在观看的视频作答，I-2） */
+  onTitleExtracted?: (title: string) => void
 }
 
 /**
@@ -267,28 +293,46 @@ export function attachNavigationGuard(
 
     // L4 内容相关性（宽松档跳过）
     if (ctx.strictness === 'loose') return
-    try {
-      const extracted = await target.executeJavaScript(CONTENT_EXTRACTOR) as { title: string; tags: string } | null
-      if (!extracted) return
-      const { title, tags } = extracted
-      if (!isRelevantContent(title, tags, ctx)) {
-        const verdict: NavVerdict = {
-          allowed: false,
-          level: 'L4',
-          category: '无关内容',
-          reason: `视频内容与学习主题「${ctx.topic}」不相关`,
-          url: target.getURL(),
-          host: new URL(target.getURL()).hostname,
-          path: new URL(target.getURL()).pathname
-        }
-        if (ctx.strictness === 'strict') {
-          callbacks?.onBlocked?.(verdict, target)
-        } else {
-          callbacks?.onIrrelevant?.(verdict, target)
-        }
+
+    /** 构造并分发 L4 无关内容判定（严格档拦截 / 标准档警告）；标题回调由调用方负责 */
+    const judgeIrrelevant = (title: string, relevant: boolean): void => {
+      if (relevant) return
+      const verdict: NavVerdict = {
+        allowed: false,
+        level: 'L4',
+        category: '无关内容',
+        reason: `视频内容与学习主题「${ctx.topic}」不相关`,
+        url: target.getURL(),
+        host: new URL(target.getURL()).hostname,
+        path: new URL(target.getURL()).pathname
       }
+      if (ctx.strictness === 'strict') {
+        callbacks?.onBlocked?.(verdict, target)
+      } else {
+        callbacks?.onIrrelevant?.(verdict, target)
+      }
+    }
+
+    try {
+      const extracted = (await target.executeJavaScript(CONTENT_EXTRACTOR)) as {
+        title: string
+        tags: string
+      } | null
+      if (!extracted) return
+      if (extracted.title) callbacks?.onTitleExtracted?.(extracted.title)
+      judgeIrrelevant(extracted.title, isRelevantContent(extracted.title, extracted.tags, ctx))
     } catch {
-      /* 提取失败 → 容错降级，不误拦 */
+      // C-2：CSP 拦截 executeJavaScript → 降级用 document.title（webContents.getTitle
+      // 不经注入即可拿到页面标题）做弱相关判定，保住标准档的 L4 兜底。
+      try {
+        const fallbackTitle = target.getTitle() || ''
+        if (fallbackTitle) {
+          callbacks?.onTitleExtracted?.(fallbackTitle)
+          judgeIrrelevant(fallbackTitle, isRelevantContent(fallbackTitle, '', ctx))
+        }
+      } catch {
+        /* 标题也拿不到 → 不误拦，仅靠 will-navigate 兜底 */
+      }
     }
   })
 }

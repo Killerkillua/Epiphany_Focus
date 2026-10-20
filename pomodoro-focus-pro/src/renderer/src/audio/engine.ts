@@ -2,7 +2,12 @@ import { CrossfadeLoop } from './seamlessLoop'
 import { createNoiseBuffer } from './synth'
 import { loadSettings, saveSettings } from './presets'
 import { CROSSFADE_SEC, SYNTH_BUFFER_SEC, getNoisePreset } from '../../../shared/audio'
-import type { NoisePreset, NoiseSettings, SampleKind, SyntheticNoiseKind } from '../../../shared/audio'
+import type {
+  NoisePreset,
+  NoiseSettings,
+  SampleKind,
+  SyntheticNoiseKind
+} from '../../../shared/audio'
 
 /**
  * 白噪音混音引擎（渲染层，Web Audio API）。
@@ -38,6 +43,10 @@ class NoiseEngine {
   private listeners = new Set<Listener>()
   private assetsCache: Record<string, { exists: boolean; url?: string }> | null = null
   private bufferCache = new Map<string, AudioBuffer>()
+  // H-08：emit 节流状态（rAF 合并同一帧内的多次通知）
+  private emitPending = false
+  private emitHandle: number | null = null
+  private emitUsesRaf = false
 
   /* ===== 只读状态 ===== */
 
@@ -64,8 +73,37 @@ class NoiseEngine {
     return () => this.listeners.delete(listener)
   }
 
+  /**
+   * H-08：通知节流。拖拽音量 Slider 时 onChange 每帧触发 setMasterVolume → emit，
+   * 用 requestAnimationFrame 把同一帧内的多次 emit 合并为一次通知（无 rAF 环境回退 setTimeout 16ms）。
+   * 内部状态始终同步更新（getSettings/readonly 取值为同步语义，不受影响），仅通知被合并；
+   * flush 时读取最新状态，因此最后一次变化一定被通知到（最终一致性）。
+   * 引擎销毁 / 组件卸载时调用 dispose() 取消挂起的通知。
+   */
   private emit(): void {
-    for (const listener of this.listeners) listener()
+    if (this.emitPending) return
+    this.emitPending = true
+    const raf = typeof requestAnimationFrame === 'function'
+    this.emitUsesRaf = raf
+    const flush = (): void => {
+      this.emitPending = false
+      this.emitHandle = null
+      for (const listener of this.listeners) listener()
+    }
+    this.emitHandle = raf ? requestAnimationFrame(flush) : setTimeout(flush, 16)
+  }
+
+  /** 取消挂起的节流通知。引擎无 destroy 方法，此为可选的清理入口；全局单例正常生命周期无需调用 */
+  dispose(): void {
+    if (this.emitHandle !== null) {
+      if (this.emitUsesRaf) {
+        cancelAnimationFrame(this.emitHandle)
+      } else {
+        clearTimeout(this.emitHandle)
+      }
+      this.emitHandle = null
+    }
+    this.emitPending = false
   }
 
   /* ===== 上下文 / 主音量 ===== */
@@ -205,9 +243,7 @@ class NoiseEngine {
   /** 采样素材可用性（主进程解析路径 + exists + url），进程内缓存 */
   private async getSampleAvailability(): Promise<Record<string, boolean>> {
     if (this.assetsCache) {
-      return Object.fromEntries(
-        Object.entries(this.assetsCache).map(([k, v]) => [k, v.exists])
-      )
+      return Object.fromEntries(Object.entries(this.assetsCache).map(([k, v]) => [k, v.exists]))
     }
     try {
       const assets = await window.api.audio.getAssets()
@@ -217,25 +253,54 @@ class NoiseEngine {
     } catch {
       this.assetsCache = {}
     }
-    return Object.fromEntries(
-      Object.entries(this.assetsCache).map(([k, v]) => [k, v.exists])
-    )
+    return Object.fromEntries(Object.entries(this.assetsCache).map(([k, v]) => [k, v.exists]))
   }
 
   /**
-   * 解码采样素材。经 tomato-audio:// 协议 fetch → decodeAudioData，按 key 缓存。
-   * 素材不可用时返回 null，调用方自动跳过采样轨（降级逻辑）。
+   * 解码采样素材。优先经 tomato-audio:// 协议 fetch，若失败自动走 IPC getBuffer 兜底。
+   * 解码后按 key 缓存。素材不可用时返回 null，调用方自动跳过采样轨（降级逻辑）。
    */
   private async decodeSample(ctx: AudioContext, key: SampleKind): Promise<AudioBuffer | null> {
     if (this.bufferCache.has(key)) return this.bufferCache.get(key)!
     // 确保 assetsCache 已初始化
     await this.getSampleAvailability()
     const info = this.assetsCache?.[key]
-    if (!info || !info.exists || !info.url) return null
+
+    let arrayBuf: ArrayBuffer | null = null
+
+    // 1. 优先走 tomato-audio:// 自定义协议 fetch
+    if (info && info.exists && info.url) {
+      try {
+        const res = await fetch(info.url)
+        if (res.ok) {
+          arrayBuf = await res.arrayBuffer()
+        }
+      } catch (err) {
+        console.warn(`[audio] fetch 采样素材失败，将尝试 IPC 兜底 (${key}):`, err)
+      }
+    }
+
+    // 2. 若协议 fetch 失败或不可用，通过 IPC 直接读取素材文件 Buffer（双保险）
+    if (!arrayBuf && window.api?.audio?.getBuffer) {
+      try {
+        const bytes = await window.api.audio.getBuffer(key)
+        if (bytes && bytes.byteLength > 0) {
+          const copy = new Uint8Array(bytes.byteLength)
+          copy.set(bytes)
+          arrayBuf = copy.buffer
+        }
+      } catch (err) {
+        console.warn(`[audio] IPC 读取采样素材失败 (${key}):`, err)
+      }
+    }
+
+    if (!arrayBuf) {
+      console.warn(`[audio] 未获取到采样素材音频数据 (${key})`)
+      return null
+    }
+
     try {
-      const res = await fetch(info.url)
-      if (!res.ok) return null
-      const buf = await ctx.decodeAudioData(await res.arrayBuffer())
+      const buf = await ctx.decodeAudioData(arrayBuf)
       this.bufferCache.set(key, buf)
       return buf
     } catch (err) {

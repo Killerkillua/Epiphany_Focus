@@ -1,8 +1,10 @@
 import { net } from 'electron'
 import { createHash } from 'node:crypto'
+import { logger } from '../logger'
+import { getBiliCookieHeader } from './biliFingerprint'
 
 /**
- * B 站 WBI 签名（核心版）。
+ * 视频学习 WBI 签名（核心版）。
  *
  * 流程：启动/失效时调 GET /x/web-interface/nav 取当日 img-key / sub-key，
  * 按 MIXIN_KEY_ENC_TAB 重排映射表生成 mixin-key（取拼接串前 32 位），
@@ -19,7 +21,7 @@ const NAV_URL = 'https://api.bilibili.com/x/web-interface/nav'
 export const WBI_KEY_TTL_MS = 4 * 60 * 60 * 1000
 
 /**
- * B 站前端内置的全局默认密钥对（公开、长期稳定、与登录状态无关）。
+ * 视频学习前端内置的全局默认密钥对（公开、长期稳定、与登录状态无关）。
  * 当 nav 未返回 wbi_img（如未登录 code=-101 且无密钥字段）时回退使用。
  */
 const FALLBACK_WBI_KEYS: WbiKeys = {
@@ -29,9 +31,9 @@ const FALLBACK_WBI_KEYS: WbiKeys = {
 
 /** bilibili-API-collect 标准重排映射表 */
 const MIXIN_KEY_ENC_TAB = [
-  46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35, 27, 43, 5, 49, 33, 9, 42, 19, 29, 28, 14, 39,
-  12, 38, 41, 13, 37, 48, 7, 16, 24, 55, 40, 61, 26, 17, 0, 1, 60, 51, 30, 4, 22, 25, 54, 21, 56, 59, 6, 63,
-  57, 62, 11, 36, 20, 34, 44, 52
+  46, 47, 18, 2, 53, 8, 23, 32, 15, 50, 10, 31, 58, 3, 45, 35, 27, 43, 5, 49, 33, 9, 42, 19, 29, 28,
+  14, 39, 12, 38, 41, 13, 37, 48, 7, 16, 24, 55, 40, 61, 26, 17, 0, 1, 60, 51, 30, 4, 22, 25, 54,
+  21, 56, 59, 6, 63, 57, 62, 11, 36, 20, 34, 44, 52
 ]
 
 const COMMON_HEADERS = {
@@ -71,11 +73,18 @@ function buildMixinKey(imgKey: string, subKey: string): string {
 async function fetchKeysFromNav(): Promise<WbiKeyCache> {
   let res: Response
   try {
-    res = await net.fetch(NAV_URL, { headers: COMMON_HEADERS })
+    const cookieHeader = await getBiliCookieHeader().catch(() => '')
+    const headers: Record<string, string> = { ...COMMON_HEADERS }
+    if (cookieHeader) headers['Cookie'] = cookieHeader
+    res = await net.fetch(NAV_URL, { headers, signal: AbortSignal.timeout(8000) })
   } catch (err) {
-    throw new Error(`WBI 密钥获取失败（nav 请求异常）: ${err instanceof Error ? err.message : String(err)}`)
+    logger.error('wbi', 'WBI 密钥获取失败（nav 请求异常）', err)
+    throw new Error(
+      `WBI 密钥获取失败（nav 请求异常）: ${err instanceof Error ? err.message : String(err)}`
+    )
   }
   if (!res.ok) {
+    logger.error('wbi', `WBI 密钥获取失败（nav HTTP ${res.status}）`)
     throw new Error(`WBI 密钥获取失败（nav HTTP ${res.status}）`)
   }
   const json = (await res.json()) as {
@@ -88,10 +97,13 @@ async function fetchKeysFromNav(): Promise<WbiKeyCache> {
   // 注意：未登录（code=-101）时 nav 仍会返回 wbi_img 全局密钥，因此不能因 code!==0 直接抛错，
   // 只要拿到了密钥即可用于签名；仅当 nav 未返回 wbi_img 时才回退内置默认密钥对。
   if (imgUrl && subUrl) {
-    return { imgKey: extractKey(imgUrl), subKey: extractKey(subUrl), fetchedAt: Date.now() }
+    const keys = { imgKey: extractKey(imgUrl), subKey: extractKey(subUrl), fetchedAt: Date.now() }
+    logger.info('wbi', `成功从 nav 获取实时 WBI 密钥: imgKey=${keys.imgKey.slice(0, 8)}...`)
+    return keys
   }
-  console.warn(
-    `[wbi] nav 未返回 wbi_img（code=${json.code ?? ''} message=${json.message ?? ''}），回退内置默认密钥对`
+  logger.warn(
+    'wbi',
+    `nav 未返回 wbi_img（code=${json.code ?? ''} message=${json.message ?? ''}），回退内置默认密钥对`
   )
   return { ...FALLBACK_WBI_KEYS, fetchedAt: Date.now() }
 }
@@ -120,7 +132,7 @@ export async function getWbiKeys(force = false): Promise<WbiKeys> {
 /** 应用启动时预热缓存（失败静默，待首次搜索时再拉取） */
 export function warmupWbiCache(): void {
   getWbiKeys().catch((err) => {
-    console.warn('[wbi] 预热密钥失败，首次搜索时将重试:', err instanceof Error ? err.message : err)
+    logger.warn('wbi', '预热密钥失败，首次搜索时将重试:', err instanceof Error ? err.message : err)
   })
 }
 
@@ -128,7 +140,9 @@ export function warmupWbiCache(): void {
  * 对请求参数签名：追加 wts / w_rid。
  * @returns 可直接拼入 query 的完整参数（含 wts 与 w_rid）
  */
-export async function signParams(params: Record<string, string | number>): Promise<Record<string, string>> {
+export async function signParams(
+  params: Record<string, string | number>
+): Promise<Record<string, string>> {
   const { imgKey, subKey } = await getWbiKeys()
   const mixinKey = buildMixinKey(imgKey, subKey)
   const wts = Math.floor(Date.now() / 1000)
@@ -143,10 +157,15 @@ export async function signParams(params: Record<string, string | number>): Promi
   const query = Object.keys(merged)
     .sort()
     .filter((key) => key !== 'w_rid')
-    .map((key) => `${encodeURIComponent(key)}=${encodeURIComponent(merged[key].replace(/[!'()*]/g, ''))}`)
+    .map(
+      (key) =>
+        `${encodeURIComponent(key)}=${encodeURIComponent(merged[key].replace(/[!'()*]/g, ''))}`
+    )
     .join('&')
 
-  merged['w_rid'] = createHash('md5').update(query + mixinKey).digest('hex')
+  merged['w_rid'] = createHash('md5')
+    .update(query + mixinKey)
+    .digest('hex')
   return merged
 }
 

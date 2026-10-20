@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react'
 import { Button, Card, InputNumber, Progress, Space, message } from 'antd'
 import { PauseCircleOutlined, CaretRightOutlined, StopOutlined } from '@ant-design/icons'
 import { useSessionStore } from '../store/sessionStore'
+import { useShallow } from 'zustand/react/shallow'
 import { noiseEngine } from '../audio'
 import { playChime } from '../audio/chime'
+import { getNoisePreset } from '../../../shared/audio'
 import type { SessionMode } from '../../../shared/types'
 
 const MINUTE = 60 * 1000
@@ -11,7 +13,7 @@ const PRESETS = [15, 30, 60, 120]
 
 const MODE_META: Record<SessionMode, { title: string; icon: string; hint: string }> = {
   bili: {
-    title: 'B 站学习会话',
+    title: '视频学习会话',
     icon: '📺',
     hint: '倒计时结束将自动关闭视频窗口并休息'
   },
@@ -44,14 +46,27 @@ interface Props {
 }
 
 /**
- * 学习会话计时条（B 站学习 / 英语学习模式）。
+ * 学习会话计时条（视频学习 / 英语学习模式）。
  * - 空闲：预设时长 + 开始按钮（首页进入时已由时长弹窗启动，此处用于直达页面）
  * - 进行中：倒计时 + 进度条 + 暂停/继续/结束
  * - 到点：提示音 + 消息 + 白噪音联动；主进程同步桌面通知与统计落库
  */
 function SessionTimerBar({ mode }: Props): JSX.Element {
-  const { snapshot, mode: storeMode, justCompleted, init, start, pause, resume, stop, clearCompleted } =
-    useSessionStore()
+  // H-06：细粒度 selector 订阅，只订阅所需字段；snapshot 每秒变化，其余字段不受其连带重渲染
+  const snapshot = useSessionStore((s) => s.snapshot)
+  const storeMode = useSessionStore((s) => s.mode)
+  const justCompleted = useSessionStore((s) => s.justCompleted)
+  // 动作引用稳定（Zustand 不随 tick 重建），用 useShallow 合并取整组动作，避免对象字面量触发重渲染
+  const { init, start, pause, resume, stop, clearCompleted } = useSessionStore(
+    useShallow((s) => ({
+      init: s.init,
+      start: s.start,
+      pause: s.pause,
+      resume: s.resume,
+      stop: s.stop,
+      clearCompleted: s.clearCompleted
+    }))
+  )
 
   const [pendingMin, setPendingMin] = useState(60)
 
@@ -67,22 +82,25 @@ function SessionTimerBar({ mode }: Props): JSX.Element {
     void init()
   }, [init])
 
-  // 到点：提示音 + 消息 + 白噪音休息联动（与专注模式一致）
+  // 到点：提示音 + 消息 + 白噪音休息联动（视频学习不联动白噪音）
   useEffect(() => {
     if (justCompleted) {
       playChime()
-      const restAction = noiseEngine.getSettings().restAction
-      if (restAction === 'stop') {
-        noiseEngine.stopAll()
-      } else if (restAction === 'duck') {
-        noiseEngine.duck()
+      if (currentMode !== 'bili') {
+        const restAction = noiseEngine.getSettings().restAction
+        if (restAction === 'stop') {
+          noiseEngine.stopAll()
+        } else if (restAction === 'duck') {
+          noiseEngine.duck()
+        }
       }
       void message.success(`🍅 ${meta.title}完成，休息一下吧！`)
       clearCompleted()
     }
-  }, [justCompleted, meta.title, clearCompleted])
+  }, [justCompleted, meta.title, clearCompleted, currentMode])
 
-  const percent = snapshot.durationMs > 0 ? Math.min(100, (snapshot.elapsedMs / snapshot.durationMs) * 100) : 0
+  const percent =
+    snapshot.durationMs > 0 ? Math.min(100, (snapshot.elapsedMs / snapshot.durationMs) * 100) : 0
   const statusText = finished
     ? '本轮完成 🎉'
     : running
@@ -93,9 +111,28 @@ function SessionTimerBar({ mode }: Props): JSX.Element {
 
   const handleStart = (): void => {
     const minutes = Math.max(1, Math.min(480, Math.round(pendingMin) || 60))
-    void start(currentMode, minutes * MINUTE).catch((err: unknown) => {
-      void message.error(err instanceof Error ? err.message : '开始失败')
-    })
+    void start(currentMode, minutes * MINUTE)
+      .then(() => {
+        if (currentMode === 'bili') {
+          // 视频学习不需要白噪音开启，且确保立即停止当前可能播放的白噪音
+          noiseEngine.stopAll()
+        } else {
+          // 白噪音联动：英语学习会话开始自动播放（可配）+ 恢复音量（解除休息降音量）
+          noiseEngine.restore()
+          if (noiseEngine.getSettings().autoPlayOnStart) {
+            void noiseEngine
+              .playPreset(getNoisePreset(noiseEngine.getSettings().preset))
+              .then((result) => {
+                if (result.started === 0 && result.skipped.length > 0) {
+                  void message.info(`白噪音：${result.skipped.join('、')} 素材未打包，已跳过`)
+                }
+              })
+          }
+        }
+      })
+      .catch((err: unknown) => {
+        void message.error(err instanceof Error ? err.message : '开始失败')
+      })
   }
 
   return (
@@ -140,7 +177,10 @@ function SessionTimerBar({ mode }: Props): JSX.Element {
         ) : (
           /* ===== 进行中 / 完成态 ===== */
           <>
-            <div className={`session-bar-timer${running ? ' active' : ''}`} style={{ color: running ? accent : undefined }}>
+            <div
+              className={`session-bar-timer${running ? ' active' : ''}`}
+              style={{ color: running ? accent : undefined }}
+            >
               {formatMs(snapshot.remainingMs)}
             </div>
             <div className="session-bar-progress">
@@ -160,12 +200,28 @@ function SessionTimerBar({ mode }: Props): JSX.Element {
                 </Button>
               )}
               {paused && (
-                <Button size="small" type="primary" icon={<CaretRightOutlined />} onClick={() => void resume()}>
+                <Button
+                  size="small"
+                  type="primary"
+                  icon={<CaretRightOutlined />}
+                  onClick={() => void resume()}
+                >
                   继续
                 </Button>
               )}
               {(running || paused) && (
-                <Button size="small" danger icon={<StopOutlined />} onClick={() => void stop()}>
+                <Button
+                  size="small"
+                  danger
+                  icon={<StopOutlined />}
+                  onClick={() => {
+                    // 白噪音闭环：非视频模式手动结束时停止播放
+                    if (currentMode !== 'bili') {
+                      noiseEngine.stopAll()
+                    }
+                    void stop()
+                  }}
+                >
                   结束
                 </Button>
               )}

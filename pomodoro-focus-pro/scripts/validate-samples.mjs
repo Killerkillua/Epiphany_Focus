@@ -19,14 +19,14 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 const OUT = join(__dirname, '..', 'resources', 'audio')
 
 const SPECS = [
-  { key: 'rain', file: 'rain.ogg' },
-  { key: 'cafe', file: 'cafe.ogg' },
-  { key: 'forest', file: 'forest.ogg' },
-  { key: 'library', file: 'library.ogg' },
-  { key: 'waves', file: 'waves.ogg' },
-  { key: 'fire', file: 'fire.ogg' },
-  { key: 'fan', file: 'fan.ogg' },
-  { key: 'birds', file: 'birds.ogg' }
+  { key: 'rain', base: 'rain' },
+  { key: 'cafe', base: 'cafe' },
+  { key: 'forest', base: 'forest' },
+  { key: 'library', base: 'library' },
+  { key: 'waves', base: 'waves' },
+  { key: 'fire', base: 'fire' },
+  { key: 'fan', base: 'fan' },
+  { key: 'birds', base: 'birds' }
 ]
 
 /** 解析 WAV 头获取时长和峰值 */
@@ -60,12 +60,11 @@ function parseWav(filePath) {
   throw new Error('WAV 中未找到 data chunk')
 }
 
-/** 用 ffmpeg 探测 OGG 时长 */
-function probeOgg(filePath) {
+/** 用 ffmpeg 探测音频时长（支持 MP3/OGG） */
+function probeAudioDuration(filePath) {
   const result = spawnSync('ffmpeg', ['-i', filePath, '-f', 'null', '-'], {
     stdio: 'pipe'
   })
-  // ffmpeg 输出到 stderr
   const output = result.stderr.toString()
   const durMatch = output.match(/Duration:\s*(\d+):(\d+):(\d+)\.(\d+)/)
   if (!durMatch) return null
@@ -78,12 +77,11 @@ function probeOgg(filePath) {
 
 /** 用 ffmpeg 探测文件峰值 */
 function probePeak(filePath) {
-  const result = spawnSync('ffmpeg', [
-    '-i', filePath,
-    '-af', 'volumedetect',
-    '-vn', '-sn', '-dn',
-    '-f', 'null', '-'
-  ], { stdio: 'pipe' })
+  const result = spawnSync(
+    'ffmpeg',
+    ['-i', filePath, '-af', 'volumedetect', '-vn', '-sn', '-dn', '-f', 'null', '-'],
+    { stdio: 'pipe' }
+  )
   const output = result.stderr.toString()
   const match = output.match(/max_volume:\s*([-\d.]+)\s*dB/)
   if (match) return parseFloat(match[1])
@@ -97,13 +95,20 @@ let totalErrors = 0
 let totalWarnings = 0
 
 for (const spec of SPECS) {
-  const oggPath = join(OUT, spec.file)
-  const wavPath = join(OUT, spec.file.replace(/\.ogg$/, '.wav'))
-  const actualPath = existsSync(oggPath) ? oggPath : existsSync(wavPath) ? wavPath : null
-  const isOgg = actualPath === oggPath
+  const mp3Path = join(OUT, `${spec.base}.mp3`)
+  const oggPath = join(OUT, `${spec.base}.ogg`)
+  const wavPath = join(OUT, `${spec.base}.wav`)
+  const actualPath = existsSync(mp3Path)
+    ? mp3Path
+    : existsSync(oggPath)
+      ? oggPath
+      : existsSync(wavPath)
+        ? wavPath
+        : null
+  const ext = actualPath ? actualPath.split('.').pop() : ''
 
   if (!actualPath) {
-    console.log(`✗ ${spec.key}: 文件缺失 (${spec.file} / ${spec.file.replace('.ogg', '.wav')})`)
+    console.log(`✗ ${spec.key}: 文件缺失 (${spec.base}.mp3 / ${spec.base}.ogg / ${spec.base}.wav)`)
     totalErrors++
     continue
   }
@@ -118,10 +123,10 @@ for (const spec of SPECS) {
   // 时长检查
   let duration = null
   let peak = null
-  if (isOgg) {
-    duration = probeOgg(actualPath)
+  if (ext === 'mp3' || ext === 'ogg') {
+    duration = probeAudioDuration(actualPath)
     if (duration === null) {
-      errors.push('无法探测 OGG 时长（需要 ffmpeg）')
+      errors.push(`无法探测 ${ext.toUpperCase()} 时长（需要 ffmpeg）`)
       totalWarnings++
     }
   } else {
@@ -142,12 +147,9 @@ for (const spec of SPECS) {
     if (duration > 60) errors.push(`时长过长: ${duration.toFixed(1)}s > 60s`)
   }
 
-  // 峰值检查（WAV 可以直接读取，OGG 需要 ffmpeg）
-  if (isOgg) {
+  // 峰值检查
+  if (ext === 'mp3' || ext === 'ogg') {
     peak = probePeak(actualPath)
-    if (peak === null) {
-      // 不影响判定，只是提示
-    }
   }
   if (peak !== null && peak > -3) {
     errors.push(`峰值过高: ${peak.toFixed(1)}dB > -3dB`)
@@ -156,12 +158,16 @@ for (const spec of SPECS) {
   if (errors.length === 0) {
     const durStr = duration !== null ? ` ${duration.toFixed(1)}s` : ''
     const peakStr = peak !== null ? ` ${peak.toFixed(1)}dB` : ''
-    console.log(`✓ ${spec.key} (${isOgg ? 'ogg' : 'wav'}${durStr}${peakStr} ${sizeMB.toFixed(1)}MB)`)
+    console.log(
+      `✓ ${spec.key} (${ext}${durStr}${peakStr} ${sizeMB.toFixed(1)}MB)`
+    )
   } else {
     console.log(`✗ ${spec.key}: ${errors.join('; ')}`)
     totalErrors += errors.length
   }
 }
 
-console.log(`\n${totalErrors === 0 ? '✓ 全部通过' : `✗ ${totalErrors} 个错误, ${totalWarnings} 个警告`}`)
+console.log(
+  `\n${totalErrors === 0 ? '✓ 全部通过' : `✗ ${totalErrors} 个错误, ${totalWarnings} 个警告`}`
+)
 process.exit(totalErrors > 0 ? 1 : 0)

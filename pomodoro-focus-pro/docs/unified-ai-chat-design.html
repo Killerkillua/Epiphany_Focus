@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>统一 AI 对话数据流 + 四模式 Prompt 职责设计方案</title>
+<style>
+:root {
+  --bg: #0d1117;
+  --card: #161b22;
+  --border: #30363d;
+  --text: #c9d1d9;
+  --text-dim: #8b949e;
+  --accent: #58a6ff;
+  --accent2: #f0883e;
+  --green: #3fb950;
+  --red: #f85149;
+  --purple: #bc8cff;
+  --yellow: #d29922;
+  --code-bg: #1c2128;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  line-height: 1.7;
+  padding: 0;
+}
+.container { max-width: 960px; margin: 0 auto; padding: 40px 24px 80px; }
+h1 {
+  font-size: 28px; font-weight: 700; color: #fff;
+  border-bottom: 2px solid var(--border); padding-bottom: 16px; margin-bottom: 8px;
+}
+.subtitle { color: var(--text-dim); font-size: 14px; margin-bottom: 40px; }
+h2 {
+  font-size: 22px; font-weight: 600; color: var(--accent);
+  margin-top: 48px; margin-bottom: 20px; padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+h3 { font-size: 17px; font-weight: 600; color: #fff; margin-top: 32px; margin-bottom: 12px; }
+h4 { font-size: 15px; font-weight: 600; color: var(--accent2); margin-top: 24px; margin-bottom: 8px; }
+p { margin-bottom: 12px; color: var(--text); }
+ul, ol { margin-left: 20px; margin-bottom: 16px; }
+li { margin-bottom: 6px; }
+code {
+  background: var(--code-bg); color: var(--purple);
+  padding: 2px 6px; border-radius: 4px; font-size: 13px;
+  font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
+}
+pre {
+  background: var(--code-bg); border: 1px solid var(--border);
+  border-radius: 8px; padding: 16px; overflow-x: auto; margin-bottom: 16px;
+}
+pre code { background: none; color: var(--text); padding: 0; font-size: 13px; }
+.card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: 8px; padding: 20px; margin-bottom: 20px;
+}
+.card-accent { border-left: 3px solid var(--accent); }
+.card-red { border-left: 3px solid var(--red); }
+.card-green { border-left: 3px solid var(--green); }
+.card-yellow { border-left: 3px solid var(--yellow); }
+.card-purple { border-left: 3px solid var(--purple); }
+.badge {
+  display: inline-block; padding: 2px 10px; border-radius: 12px;
+  font-size: 12px; font-weight: 600; margin-right: 6px;
+}
+.badge-red { background: rgba(248,81,73,0.15); color: var(--red); }
+.badge-green { background: rgba(63,185,80,0.15); color: var(--green); }
+.badge-yellow { background: rgba(210,153,34,0.15); color: var(--yellow); }
+.badge-blue { background: rgba(88,166,255,0.15); color: var(--accent); }
+.badge-purple { background: rgba(188,140,255,0.15); color: var(--purple); }
+table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+th, td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; font-size: 13px; }
+th { background: var(--code-bg); color: #fff; font-weight: 600; }
+tr:nth-child(even) { background: rgba(255,255,255,0.02); }
+.arch-box {
+  background: var(--code-bg); border: 1px solid var(--border);
+  border-radius: 8px; padding: 20px; margin-bottom: 20px;
+  font-family: "JetBrains Mono", monospace; font-size: 13px; line-height: 1.5;
+  white-space: pre; overflow-x: auto;
+}
+.diff-add { color: var(--green); }
+.diff-del { color: var(--red); }
+.diff-same { color: var(--text-dim); }
+.highlight { background: rgba(88,166,255,0.1); padding: 2px 4px; border-radius: 3px; }
+.tag {
+  display: inline-block; padding: 1px 8px; border-radius: 3px;
+  font-size: 12px; font-weight: 500; margin-right: 4px;
+  border: 1px solid var(--border);
+}
+.prompt-block {
+  background: var(--code-bg); border: 1px solid var(--border); border-left: 3px solid var(--purple);
+  border-radius: 8px; padding: 16px 20px; margin-bottom: 20px; font-size: 14px; line-height: 1.8;
+  white-space: pre-wrap;
+}
+.prompt-label { color: var(--accent2); font-weight: 600; }
+.summary-box {
+  background: linear-gradient(135deg, rgba(88,166,255,0.08), rgba(188,140,255,0.08));
+  border: 1px solid var(--border); border-radius: 8px; padding: 20px; margin-bottom: 24px;
+}
+.step-num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; border-radius: 50%;
+  background: var(--accent); color: #fff; font-weight: 700; font-size: 14px;
+  margin-right: 8px; flex-shrink: 0;
+}
+.step-item { display: flex; align-items: flex-start; margin-bottom: 16px; }
+.step-content { flex: 1; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>统一 AI 对话数据流 + 四模式 Prompt 职责设计方案</h1>
+<p class="subtitle">番茄专注 Pro · 技术方案 · 2026-08-22</p>
+
+<!-- ===================== 1. 问题诊断 ===================== -->
+<h2>一、现状问题诊断</h2>
+
+<div class="card card-red">
+<h3>1.1 三套独立的消息状态管理</h3>
+<table>
+<tr><th>消费方</th><th>状态管理</th><th>消息类型</th><th>流式订阅</th><th>请求方法</th></tr>
+<tr><td>英语模式 <code>EnglishModePage</code></td><td>Zustand <code>useEnglishStore</code></td><td><code>ChatMessage</code></td><td>全局 <code>globalThis</code> 标志防重复</td><td><code>window.api.ai.englishAsk()</code></td></tr>
+<tr><td>视频学习悬浮面板 <code>OverlayApp</code></td><td><code>useReducer</code></td><td><code>ChatMsg</code></td><td>每次请求注册/取消</td><td><code>window.api.ai.biliAsk()</code></td></tr>
+<tr><td>视频学习助手抽屉 <code>LearningAssistantDrawer</code></td><td><code>useState</code></td><td><code>ChatMsg</code></td><td>每次请求注册/取消</td><td><code>window.api.ai.biliAsk()</code></td></tr>
+</table>
+</div>
+
+<div class="card card-red">
+<h3>1.2 两种消息类型定义</h3>
+<pre><code>// src/renderer/src/store/englishStore.ts
+interface <span style="color:var(--green)">ChatMessage</span> {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  sources: AiSource[]          // RAG 来源
+  streaming?: boolean
+  queryWord?: string           // 词汇一键入本
+}
+
+// src/renderer/src/overlay/ChatPane.tsx
+interface <span style="color:var(--accent2)">ChatMsg</span> {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  streaming?: boolean
+  welcome?: boolean           // 欢迎语（不显示操作按钮）
+}</code></pre>
+<p><span class="badge badge-red">问题</span> 字段不统一：英语模式有 <code>sources</code> / <code>queryWord</code>，视频学习模式有 <code>welcome</code>。两个类型无法互换，导致组件无法复用。</p>
+</div>
+
+<div class="card card-red">
+<h3>1.3 MessageItem 组件重复定义</h3>
+<table>
+<tr><th>组件</th><th>位置</th><th>功能</th></tr>
+<tr><td><code>MessageItem</code></td><td><code>EnglishModePage.tsx</code> 内联</td><td>MarkdownView + SourcesPanel + 流式光标 + "加入生词本"/"语法要点" 按钮</td></tr>
+<tr><td><code>ChatPane</code> 内联渲染</td><td><code>ChatPane.tsx</code></td><td>MarkdownView + 流式 + "记入笔记" 按钮</td></tr>
+</table>
+<p><span class="badge badge-red">问题</span> 两处消息渲染逻辑 80% 相同（MarkdownView、流式光标、用户/助手气泡），但操作按钮各自硬编码，无法通过 props 注入。</p>
+</div>
+
+<div class="card card-yellow">
+<h3>1.4 四个英语模式 Prompt 现状</h3>
+<p>当前采用 <strong>"1 个通用 System Prompt + 4 个场景模板追加到用户消息前"</strong> 的分层架构：</p>
+<pre><code>// src/main/ai/prompts.ts 现状
+
+SYSTEM_PROMPT        → 所有场景共用，定义通用 TESOL 教师角色
+SCENARIO_TEMPLATES  → 短指令追加在用户消息前（如 "【场景：语法讲解】请按...结构讲解"）
+COT_INSTRUCTION      → 复杂场景追加 CoT 指令
+
+buildMessages() 组装：
+  system: SYSTEM_PROMPT + 参考资料
+  user:   SCENARIO_TEMPLATES[scenario] + 查询词 + 用户消息 + COT_INSTRUCTION</code></pre>
+<p><span class="badge badge-yellow">不足</span> 场景模板只是追加在用户消息前的短指令，<strong>没有为每个模式定义独立角色、核心职责、输出格式约束和交互规则</strong>。切换模式时，AI 的角色定位、输出风格、交互深度没有本质变化。</p>
+</div>
+
+<!-- ===================== 2. 设计目标 ===================== -->
+<h2>二、设计目标</h2>
+
+<div class="summary-box">
+<div class="step-item"><div class="step-num">1</div><div class="step-content"><strong>统一消息类型</strong>：一套 <code>ChatMessage</code> 类型覆盖英语/视频学习所有场景，字段可选化兼容差异</div></div>
+<div class="step-item"><div class="step-num">2</div><div class="step-content"><strong>统一对话 Hook</strong>：一个 <code>useAiChat</code> hook 替代 Zustand store / useReducer / useState 三套实现</div></div>
+<div class="step-item"><div class="step-num">3</div><div class="step-content"><strong>统一 MessageItem 组件</strong>：移入 <code>components/</code>，通过 <code>actions</code> props 注入模式特有按钮</div></div>
+<div class="step-item"><div class="step-num">4</div><div class="step-content"><strong>四模式独立 Prompt</strong>：每个英语 AI 模式拥有独立的 System Prompt，定义角色、职责、输出格式、交互规则</div></div>
+</div>
+
+<!-- ===================== 3. 架构对比 ===================== -->
+<h2>三、架构对比：改造前 vs 改造后</h2>
+
+<h3>3.1 改造前（当前）</h3>
+<div class="arch-box">渲染层
+┌─────────────────┐  ┌──────────────────────┐  ┌────────────────────────────────┐
+│ EnglishModePage  │  │ OverlayApp            │  │ LearningAssistantDrawer        │
+│                 │  │                      │  │                                │
+│ Zustand store   │  │ useReducer           │  │ useState                      │
+│ ChatMessage     │  │ ChatMsg              │  │ ChatMsg                        │
+│                 │  │                      │  │                                │
+│ MessageItem     │  │ ChatPane(内联渲染)    │  │ ChatPane(复用)                 │
+│ (内联定义)       │  │                      │  │                                │
+└────────┬────────┘  └──────────┬───────────┘  └────────────┬───────────────────┘
+         │ englishAsk()         │ biliAsk()                 │ biliAsk()
+         │                      │                           │
+         ▼                      ▼                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    EnglishGateway (gateway.ts)                  │
+│  profile='english' (temp=0.7)   |   profile='bili' (temp=0.5)  │
+│  SYSTEM_PROMPT + SCENARIO_TEMPLATES |   BILI_STUDY_PROMPT       │
+└─────────────────────────────────────────────────────────────────┘
+
+<span style="color:var(--red)">问题：3 套状态管理 × 2 种消息类型 × 2 处消息渲染 × 1 个追加式 Prompt 体系</span></div>
+
+<h3>3.2 改造后（目标）</h3>
+<div class="arch-box">渲染层
+┌─────────────────┐  ┌──────────────────────┐  ┌────────────────────────────────┐
+│ EnglishModePage  │  │ OverlayApp            │  │ LearningAssistantDrawer        │
+│                 │  │                      │  │                                │
+│ <span style="color:var(--green)">useAiChat({     │  │ <span style="color:var(--green)">useAiChat({          │  │ <span style="color:var(--green)">useAiChat({                    │
+│   profile:'engl'│  │   profile:'bili',    │  │   profile:'bili',              │
+│   scenario      │  │   context:{...}      │  │   context:{...}                │
+│ })</span>        │  │ })</span>               │  │ })</span>                         │
+│                 │  │                      │  │                                │
+│ <span style="color:var(--accent)">MessageItem</span>  │  │ <span style="color:var(--accent)">MessageItem</span>         │  │ <span style="color:var(--accent)">MessageItem</span>                    │
+│ (共享组件)       │  │ (共享组件)            │  │ (共享组件)                      │
+│ actions=生词/语法│  │ actions=记入笔记      │  │ actions=记入笔记                │
+└────────┬────────┘  └──────────┬───────────┘  └────────────┬───────────────────┘
+         │                      │                           │
+         └──────────┬───────────┘───────────────────────────┘
+                    │ 统一 useAiChat hook
+                    ▼
+         ┌──────────────────────────┐
+         │  window.api.ai.englishAsk │  /  window.api.ai.biliAsk
+         └──────────┬───────────────┘
+                    ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                    EnglishGateway (gateway.ts)                  │
+│  profile='english': <span style="color:var(--green)">SCENARIO_PROMPTS[scenario]</span>  (4 模式独立 Prompt)│
+│  profile='bili':    BILI_STUDY_PROMPT                           │
+└─────────────────────────────────────────────────────────────────┘
+
+<span style="color:var(--green)">统一：1 个 hook × 1 种消息类型 × 1 个 MessageItem × 4 模式独立 Prompt</span></div>
+
+<!-- ===================== 4. 统一数据流方案 ===================== -->
+<h2>四、统一数据流方案</h2>
+
+<h3>4.1 统一消息类型 <code>ChatMessage</code></h3>
+<p>在 <code>src/shared/ai.ts</code> 中定义唯一消息类型，取代 <code>ChatMessage</code>（englishStore）和 <code>ChatMsg</code>（ChatPane）：</p>
+<pre><code>// src/shared/ai.ts — 新增
+
+/** 统一对话消息（英语模式 / 视频学习模式共用） */
+export interface ChatMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  /** RAG 参考来源（英语模式词汇/语法场景） */
+  sources?: AiSource[]
+  /** 是否正在流式输出 */
+  streaming?: boolean
+  /** 词汇场景关联的查询词（英语模式一键入本） */
+  queryWord?: string
+  /** 欢迎语等系统消息：不显示操作按钮（视频学习模式） */
+  welcome?: boolean
+}</code></pre>
+<p><span class="badge badge-green">设计</span> 所有字段可选化（<code>?</code>），英语模式用到 <code>sources</code> / <code>queryWord</code>，视频学习模式用到 <code>welcome</code>，互不冲突。</p>
+
+<h3>4.2 统一对话 Hook <code>useAiChat</code></h3>
+<p>在 <code>src/renderer/src/hooks/useAiChat.ts</code> 中新建，替代三套状态管理：</p>
+<pre><code>// src/renderer/src/hooks/useAiChat.ts — 新建
+
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type { AiScenario, AiStreamChunk, AiSource, ChatMessage } from '../../../shared/ai'
+import type { AiMessage } from '../../../shared/bili'
+import { extractErrorMessage } from '../utils/errorMessage'
+
+type AiProfile = 'english' | 'bili'
+
+interface BiliContext {
+  topic?: string
+  videoTitle?: string
+  bvid?: string
+}
+
+interface UseAiChatOptions {
+  profile: AiProfile
+  /** 英语模式场景（profile='english' 时必填） */
+  scenario?: AiScenario
+  /** 视频学习模式学习上下文（profile='bili' 时使用） */
+  context?: BiliContext
+}
+
+interface UseAiChatReturn {
+  messages: ChatMessage[]
+  isStreaming: boolean
+  /** 发送消息（英语模式走 englishAsk，视频学习走 biliAsk） */
+  ask: (message: string, opts?: { word?: string }) => Promise<void>
+  /** 清空消息（切换模式/场景时调用） */
+  clear: () => void
+  /** 设置欢迎语 */
+  setWelcome: (content: string) => void
+}
+
+export function useAiChat(options: UseAiChatOptions): UseAiChatReturn {
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [isStreaming, setIsStreaming] = useState(false)
+  const activeRequestId = useRef<string | null>(null)
+
+  // 流式事件订阅：按 requestId 过滤，只处理当前活跃请求的增量
+  useEffect(() => {
+    const off = window.api.on<AiStreamChunk>('ai:chunk', (chunk) => {
+      if (chunk.requestId !== activeRequestId.current) return
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (m.id !== chunk.requestId) return m
+          if (chunk.done) {
+            return {
+              ...m,
+              content: chunk.content ?? m.content,
+              sources: chunk.sources ?? m.sources,
+              streaming: false
+            }
+          }
+          return { ...m, content: m.content + chunk.delta }
+        })
+      )
+      if (chunk.done) {
+        activeRequestId.current = null
+        setIsStreaming(false)
+      }
+    })
+    return () => { off() }
+  }, [])
+
+  const ask = useCallback(async (message: string, opts?: { word?: string }) => {
+    const trimmed = message.trim()
+    if (!trimmed || isStreaming) return
+
+    const requestId = crypto.randomUUID()
+    activeRequestId.current = requestId
+
+    // 构建多轮历史（最近 8 轮，过滤 streaming 占位）
+    const history = messages
+      .filter((m) => !m.streaming && (m.role === 'user' || m.role === 'assistant') && m.content.trim())
+      .slice(-8)
+      .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
+
+    // 追加用户消息 + 助手占位消息
+    setMessages((prev) => [
+      ...prev,
+      { id: crypto.randomUUID(), role: 'user', content: trimmed, sources: [] },
+      {
+        id: requestId,
+        role: 'assistant',
+        content: '',
+        sources: [],
+        streaming: true,
+        queryWord: opts?.word ?? trimmed
+      }
+    ])
+    setIsStreaming(true)
+
+    try {
+      if (options.profile === 'english') {
+        const reply = await window.api.ai.englishAsk({
+          requestId,
+          scenario: options.scenario ?? 'free',
+          message: trimmed,
+          word: opts?.word,
+          history
+        })
+        // englishAsk 返回后，ai:chunk 的 done 事件已处理最终内容
+        // 此处仅兜底：防止 done 事件丢失
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === requestId && m.streaming
+              ? { ...m, content: reply.content, sources: reply.sources, streaming: false }
+              : m
+          )
+        )
+      } else {
+        const reply = await window.api.ai.biliAsk({
+          requestId,
+          message: trimmed,
+          context: options.context,
+          history: history as AiMessage[]
+        })
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === requestId && m.streaming
+              ? { ...m, content: reply.content, streaming: false }
+              : m
+          )
+        )
+      }
+    } catch (err) {
+      const friendly = extractErrorMessage(err)
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === requestId
+            ? { ...m, content: m.content || `⚠️ ${friendly}`, streaming: false }
+            : m
+        )
+      )
+    } finally {
+      activeRequestId.current = null
+      setIsStreaming(false)
+    }
+  }, [messages, isStreaming, options])
+
+  const clear = useCallback(() => {
+    setMessages([])
+    activeRequestId.current = null
+    setIsStreaming(false)
+  }, [])
+
+  const setWelcome = useCallback((content: string) => {
+    setMessages([{ id: 'welcome', role: 'assistant', content, welcome: true }])
+  }, [])
+
+  return { messages, isStreaming, ask, clear, setWelcome }
+}</code></pre>
+
+<div class="card card-accent">
+<h4>Hook 设计要点</h4>
+<table>
+<tr><th>维度</th><th>实现</th><th>说明</th></tr>
+<tr><td>状态管理</td><td><code>useState</code></td><td>每个消费者独立实例，无全局 store 竞争</td></tr>
+<tr><td>流式订阅</td><td><code>useEffect</code> + <code>useRef</code></td><td>组件 mount 时订阅一次，unmount 时自动取消；<code>activeRequestId</code> 过滤确保增量路由正确</td></tr>
+<tr><td>HMR 安全</td><td><code>useEffect</code> cleanup</td><td>热更新时自动取消旧订阅，新组件实例干净订阅</td></tr>
+<tr><td>多轮历史</td><td>从 <code>messages</code> 取最近 8 轮</td><td>英语 <code>conversation</code>/<code>free</code> 和 视频学习模式均自动携带</td></tr>
+<tr><td>profile 分流</td><td><code>options.profile</code></td><td><code>'english'</code> 走 <code>englishAsk</code>，<code>'bili'</code> 走 <code>biliAsk</code></td></tr>
+</table>
+</div>
+
+<h3>4.3 统一 <code>MessageItem</code> 组件</h3>
+<p>从 <code>EnglishModePage.tsx</code> 内联提取为独立组件 <code>src/renderer/src/components/MessageItem.tsx</code>：</p>
+<pre><code>// src/renderer/src/components/MessageItem.tsx — 新建
+
+import { Button } from 'antd'
+import type { ReactNode } from 'react'
+import MarkdownView from './MarkdownView'
+import SourcesPanel from './SourcesPanel'
+import ScrollArea, { type ScrollAreaHandle } from './ScrollArea'
+import type { ChatMessage } from '../../../shared/ai'
+
+interface MessageListProps {
+  messages: ChatMessage[]
+  isStreaming: boolean
+  listRef?: React.RefObject<ScrollAreaHandle>
+  /** 模式特有的操作按钮（注入到每条助手消息底部） */
+  actions?: (msg: ChatMessage) => ReactNode
+  /** 自定义 CSS 类名前缀 */
+  classNamePrefix?: 'chat' | 'overlay'
+}
+
+export function MessageList({
+  messages, isStreaming, listRef, actions, classNamePrefix = 'chat'
+}: MessageListProps): JSX.Element {
+  // 自动滚底
+  useEffect(() => {
+    const vp = listRef?.current?.viewport
+    if (vp) vp.scrollTop = vp.scrollHeight
+  }, [messages, isStreaming, listRef])
+
+  const prefix = classNamePrefix === 'overlay' ? 'overlay-msg' : 'chat-msg'
+
+  return (
+    &lt;ScrollArea className={`${prefix}-log`} ref={listRef}&gt;
+      {messages.map((msg) => (
+        &lt;div key={msg.id} className={`${prefix} ${msg.role === 'user' ? 'user' : 'assistant'}`}&gt;
+          &lt;div className={`${prefix}-bubble`}&gt;
+            {msg.role === 'user' ? (
+              &lt;div className={`${prefix}-user-text`}&gt;{msg.content}&lt;/div&gt;
+            ) : (
+              &lt;&gt;
+                {msg.content ? (
+                  &lt;MarkdownView content={msg.content} /&gt;
+                ) : (
+                  &lt;span className={`${prefix}-thinking`}&gt;思考中…&lt;/span&gt;
+                )}
+                {msg.streaming && &lt;span className={`${prefix}-cursor`} /&gt;}
+                {msg.sources && msg.sources.length > 0 && &lt;SourcesPanel sources={msg.sources} /&gt;}
+                {!msg.streaming && msg.content && !msg.welcome && actions && (
+                  &lt;div className={`${prefix}-actions`}&gt;{actions(msg)}&lt;/div&gt;
+                )}
+              &lt;/&gt;
+            )}
+          &lt;/div&gt;
+        &lt;/div&gt;
+      ))}
+      {isStreaming && messages.every((m) => !m.streaming) && (
+        &lt;div className={`${prefix} assistant ${prefix}-typing`}&gt;思考中…&lt;/div&gt;
+      )}
+    &lt;/ScrollArea&gt;
+  )
+}</code></pre>
+
+<div class="card card-green">
+<h4>各消费方注入 actions</h4>
+<pre><code>// EnglishModePage — 注入"加入生词本"/"语法要点"
+&lt;MessageList
+  messages={messages}
+  isStreaming={isStreaming}
+  listRef={listRef}
+  actions={(msg) => (
+    &lt;&gt;
+      &lt;Button size="small" type="text" icon={&lt;BookOutlined /&gt;} onClick={() => handleAddVocab(msg)}&gt;加入生词本&lt;/Button&gt;
+      &lt;Button size="small" type="text" icon={&lt;BulbOutlined /&gt;} onClick={() => handleAddGrammar(msg)}&gt;语法要点&lt;/Button&gt;
+    &lt;/&gt;
+  )}
+/&gt;
+
+// OverlayApp / LearningAssistantDrawer — 注入"记入笔记"
+&lt;MessageList
+  messages={messages}
+  isStreaming={isStreaming}
+  listRef={logRef}
+  classNamePrefix="overlay"
+  actions={(msg) => (
+    &lt;Button type="text" size="small" icon={&lt;SaveOutlined /&gt;} onClick={() => saveToNotes(msg)}&gt;记入笔记&lt;/Button&gt;
+  )}
+/&gt;</code></pre>
+</div>
+
+<h3>4.4 <code>englishStore</code> 瘦身</h3>
+<p>Zustand store 仅保留 <strong>非对话状态</strong>（配置/用量/生词本/语法要点），对话逻辑移入 <code>useAiChat</code>：</p>
+<pre><code>// src/renderer/src/store/englishStore.ts — 改造后
+
+interface EnglishStore {
+  // <span style="color:var(--red)">删除</span>: messages, isStreaming, ask, init(chunk订阅), destroy
+  // <span style="color:var(--green)">保留</span>:
+  config: AiConfig
+  usage: AiUsage
+  vocab: VocabEntry[]
+  grammar: GrammarPoint[]
+  init: () => Promise<void>          // 仅拉取 config/usage/vocab/grammar + settings 订阅
+  refreshConfig: () => Promise<void>
+  refreshLists: () => Promise<void>
+  addVocab: (payload: AddVocabPayload) => Promise<void>
+  deleteVocab: (id: number) => Promise<void>
+  addGrammar: (payload: AddGrammarPayload) => Promise<void>
+  deleteGrammar: (id: number) => Promise<void>
+}</code></pre>
+
+<!-- ===================== 5. 四模式 Prompt 职责设计 ===================== -->
+<h2>五、四个英语 AI 模式 Prompt 职责设计</h2>
+
+<h3>5.1 Prompt 架构升级</h3>
+<div class="card card-purple">
+<p><strong>改造前</strong>：1 个通用 <code>SYSTEM_PROMPT</code> + 4 个场景模板追加到用户消息前</p>
+<p><strong>改造后</strong>：4 个独立 <code>SCENARIO_PROMPTS</code> 直接作为 system 消息，每个模式拥有完整角色定义</p>
+<pre><code>// src/main/ai/prompts.ts — 改造后
+
+// <span style="color:var(--red)">删除</span>: SYSTEM_PROMPT, SCENARIO_TEMPLATES, COT_INSTRUCTION
+// <span style="color:var(--green)">新增</span>: 4 个独立模式 Prompt + 1 个自由提问 Prompt
+
+export const SCENARIO_PROMPTS: Record&lt;AiScenario, string&gt; = {
+  grammar:      GRAMMAR_PROMPT,       // 语法讲解
+  vocabulary:   VOCABULARY_PROMPT,    // 词汇查询
+  conversation: CONVERSATION_PROMPT,  // 对话练习
+  writing:      WRITING_PROMPT,       // 写作批改
+  free:         FREE_PROMPT           // 自由提问
+}
+
+// buildMessages 改造：直接选用对应模式的 system prompt
+export function buildMessages(
+  question: AiQuestion,
+  sources: AiSource[]
+): Array&lt;{ role: 'system' | 'user' | 'assistant'; content: string }&gt; {
+  const systemPrompt = SCENARIO_PROMPTS[question.scenario]
+  const system = systemPrompt + (sources.length > 0
+    ? `\n\n# 参考资料（已检索权威词典，回答时必须引用并标注来源链接）\n${formatSources(sources)}`
+    : '')
+  const wordLine = question.word ? `查询词：${question.word}\n` : ''
+
+  return [
+    { role: 'system', content: system },
+    ...sanitizeHistory(question.history),
+    { role: 'user', content: `${wordLine}${question.message}` }
+  ]
+}</code></pre>
+</div>
+
+<h3>5.2 模式一：语法讲解（Grammar）</h3>
+<div class="prompt-block"><span class="prompt-label"># 角色</span>
+你是「语法讲解」模式的 AI 助教，一位专注于英语语法教学的语言学专家，
+精通英语时态、句法结构、词形变化及中国学习者的常见语法误区。
+
+<span class="prompt-label"># 核心职责</span>
+1. 讲解语法规则、时态用法、句型结构
+2. 分析用户句子中的语法错误，指明错误类型并给出修正方案
+3. 通过大量例句对比帮助理解规则边界
+4. 针对中国学习者常见误区提供专项纠正
+
+<span class="prompt-label"># 输出格式（严格遵守）</span>
+## 规则摘要
+1-2 句英文概述该语法规则
+
+## 详细讲解
+分步中文解析，由浅入深，引用规则逻辑
+
+## 例句（至少 5 条）
+- [英文例句] → [中文翻译]
+- [英文例句] → [中文翻译]
+（覆盖肯定句、否定句、疑问句等不同形式）
+
+## 中国学习者常见错误
+| 错误表达 | 正确表达 | 错误原因 |
+|---------|---------|---------|
+| ... | ... | ... |
+
+## 练习
+1 道选择题或填空题，答案使用折叠块：
+<details><summary>📝 查看答案</summary>
+答案与解析
+</details>
+
+<span class="prompt-label"># 交互规则</span>
+1. 复杂语法先使用 Chain-of-Thought 逐步推理：先拆解句子结构，再给规则，最后下结论
+2. 绝不编造语法规则；不确定时明确说明"基于常见用法"
+3. 所有例句保持英文原文，讲解用简体中文
+4. 回答长度与语法复杂度匹配：简单时态不必写一篇文章，虚拟语气不敷衍了事
+5. 存在对话历史时保持连贯：不重复已讲过的例句，用户追问时基于上一轮内容展开</div>
+
+<h3>5.3 模式二：词汇查询（Vocabulary）</h3>
+<div class="prompt-block"><span class="prompt-label"># 角色</span>
+你是「词汇查询」模式的 AI 助教，一位精通英语词汇学、词源学与词典编纂的语言学家，
+擅长用结构化方式呈现单词的全维度信息。
+
+<span class="prompt-label"># 核心职责</span>
+1. 提供单词的完整释义、IPA 音标、词性标注
+2. 追溯词源，标注语域（正式/口语/俚语）与 CEFR 等级
+3. 给出常见搭配与词族扩展
+4. 同义词辨析，标注细微差异与适用语境
+
+<span class="prompt-label"># 输出格式（严格遵守）</span>
+## 词汇卡片
+**word** | /ɪɡˈzæmpəl/ | n. / v. / adj. | 中文释义
+
+## 英文定义
+用简单英语解释核心含义（Learner's Dictionary 风格）
+
+## 使用例句（3 条，标注语境）
+1. [英文例句] — *正式书面*
+2. [英文例句] — *日常口语*
+3. [英文例句] — *特定场景*
+
+## 搭配与词族
+- 常见搭配：word + collocation 1, word + collocation 2
+- 词族：wordless, wording, wordy...
+- 前缀/后缀扩展
+
+## 同义词辨析
+| 词汇 | 细微差异 | 语域 |
+|------|---------|------|
+| ... | ... | 正式/口语/俚语 |
+
+## 词源与等级
+- 词源：[简述起源]
+- CEFR 等级：[A1–C2]
+- 语域：[正式/口语/俚语/学术]
+
+<span class="prompt-label"># 交互规则</span>
+1. 引用权威词典来源（Merriam-Webster / Cambridge / Oxford Learner's），格式：[来源名](链接)
+2. 未提供参考资料时不要伪造链接，说明"基于通用词典释义"
+3. 涉及定义时优先引用词典原文并标注
+4. 同义词辨析必须给出使用语境，避免学习者盲目替换</div>
+
+<h3>5.4 模式三：对话练习（Conversation）</h3>
+<div class="prompt-block"><span class="prompt-label"># 角色</span>
+你是「对话练习」模式的 AI 助教，一位来自伦敦的友善本地人，
+正在与学习者进行自然英语对话。你的目标是帮助学习者在真实场景中练习口语表达。
+
+<span class="prompt-label"># 核心职责</span>
+1. 围绕用户给出的话题进行角色扮演对话（点餐、面试、旅行、购物等）
+2. 模拟真实场景，保持角色一致性
+3. 实时纠正用户的语法和用词错误
+4. 提供更地道的表达方式
+
+<span class="prompt-label"># 输出格式（严格遵守）</span>
+每次回复包含以下结构：
+
+**① 自然回应**
+> [用英文自然回应用户，2-4 句，保持角色一致性]
+
+**② 纠错**（用户有错误时显示，无错误时跳过）
+> 原句：*用户原句*
+> 改正：*改正后的句子*
+> 原因：*简短中文说明*
+
+**③ 更地道表达**
+> 建议表达：*更地道的英文表达*
+> 中文释义：*对应中文*
+
+<span class="prompt-label"># 交互规则</span>
+1. 使用简单词汇与常用句型，匹配中级学习者水平
+2. 每次回复只问一个问题，保持对话流畅推进
+3. 用户无错误时不显示纠错部分，直接进入更地道表达
+4. 累计 19 轮对话后主动总结用户 5 大提升点
+5. 温和鼓励，绝不让学习者感到难堪
+6. 保持角色一致性，不要跳出角色（不自我介绍为 AI）
+7. 存在对话历史时保持话题连贯，不重复已聊过的内容</div>
+
+<h3>5.5 模式四：写作批改（Writing）</h3>
+<div class="prompt-block"><span class="prompt-label"># 角色</span>
+你是「写作批改」模式的 AI 助教，一位资深英语写作教练，
+专注于帮助中国学习者提升英文写作的地道性与逻辑性。
+
+<span class="prompt-label"># 核心职责</span>
+1. 批改用户提交的英文写作（段落、作文、邮件、简历等）
+2. 提供完整改写版本
+3. 逐条说明修改理由
+4. 给出词汇升级建议和可落地的写作建议
+
+<span class="prompt-label"># 输出格式（严格遵守）</span>
+先使用 Chain-of-Thought 分析原文的结构、逻辑、用词问题，再按以下格式输出：
+
+## 完整改写版
+> [改写后的完整英文段落]
+
+## 主要改动（5 处，附理由）
+| # | 原文 | 改写 | 修改理由 |
+|---|------|------|---------|
+| 1 | ... | ... | [中文说明：语法/用词/逻辑/地道性] |
+| 2 | ... | ... | ... |
+...
+
+## 词汇升级（5 个）
+| 原词 | 升级词 | 适用语境 |
+|------|--------|---------|
+| ... | ... | [正式/口语/学术] |
+
+## 总体评价
+- 优点：[先肯定 1-2 个优点]
+- 建议：[1 个可落地的写作提升建议]
+
+<span class="prompt-label"># 交互规则</span>
+1. 先肯定优点再逐条修改，维护学习者信心
+2. 改写版保持原文意思，仅提升表达地道性，不改变内容
+3. 修改理由用中文，简明扼要，指出语法/用词/逻辑/地道性
+4. 词汇升级给出适用语境，避免盲目使用高级词
+5. 存在对话历史时，用户追问改动原因时基于已给批改展开</div>
+
+<h3>5.6 模式切换与 Prompt 注入流程</h3>
+<div class="card card-accent">
+<pre><code>用户选择"语法讲解" Tab
+  │
+  ▼
+EnglishModePage: scenario = 'grammar'
+  │
+  ▼
+useAiChat({ profile: 'english', scenario: 'grammar' })
+  │  用户发送消息
+  ▼
+window.api.ai.englishAsk({ requestId, scenario: 'grammar', message, history })
+  │
+  ▼
+主进程 ai/index.ts IPC handler
+  │  gateway.chat(question, sources, onDelta, { profile: 'english' })
+  ▼
+gateway.ts → buildMessages(question, sources)
+  │  systemPrompt = SCENARIO_PROMPTS['grammar']  ← 直接选用语法模式独立 Prompt
+  │  system = GRAMMAR_PROMPT + 参考资料
+  │  messages = [system, ...history, user]
+  ▼
+OpenAI SDK stream → onDelta → ai:chunk → 渲染层</code></pre>
+</div>
+
+<h3>5.7 四模式职责对比</h3>
+<table>
+<tr><th>维度</th><th>语法讲解</th><th>词汇查询</th><th>对话练习</th><th>写作批改</th></tr>
+<tr><td><strong>角色定位</strong></td><td>语法专家</td><td>词汇学家</td><td>伦敦本地人</td><td>写作教练</td></tr>
+<tr><td><strong>核心职责</strong></td><td>讲解规则、纠错</td><td>释义、词源、辨析</td><td>角色扮演、实时纠错</td><td>改写、逐条批改</td></tr>
+<tr><td><strong>AI 角色</strong></td><td>教师/讲解者</td><td>词典/百科</td><td>陪练/对话者</td><td>教练/评审</td></tr>
+<tr><td><strong>输出结构</strong></td><td>规则→讲解→例句→错误→练习</td><td>音标→定义→例句→搭配→辨析</td><td>回应→纠错→更地道</td><td>改写版→改动→升级→评价</td></tr>
+<tr><td><strong>交互深度</strong></td><td>单向输出为主</td><td>信息密度高</td><td>双向互动</td><td>异步输入+结构化反馈</td></tr>
+<tr><td><strong>CoT 推理</strong></td><td>是（复杂语法）</td><td>否</td><td>否</td><td>是（分析原文）</td></tr>
+<tr><td><strong>RAG 检索</strong></td><td>否</td><td>是（MW/Cambridge）</td><td>否</td><td>否</td></tr>
+<tr><td><strong>多轮历史</strong></td><td>否</td><td>否</td><td>是（最近8轮）</td><td>否</td></tr>
+<tr><td><strong>温度</strong></td><td colspan="4">统一 0.7（英语档位）</td></tr>
+</table>
+
+<!-- ===================== 6. 实施路径 ===================== -->
+<h2>六、实施路径</h2>
+
+<h3>6.1 分阶段实施</h3>
+<div class="card card-green">
+<div class="step-item"><div class="step-num">1</div><div class="step-content">
+<strong>Phase 1：统一类型层</strong>（低风险，纯类型变更）<br>
+在 <code>src/shared/ai.ts</code> 新增统一 <code>ChatMessage</code> 类型；删除 <code>englishStore.ts</code> 中的 <code>ChatMessage</code> 和 <code>ChatPane.tsx</code> 中的 <code>ChatMsg</code>，统一引用 <code>shared/ai.ts</code>。
+</div></div>
+<div class="step-item"><div class="step-num">2</div><div class="step-content">
+<strong>Phase 2：新建 useAiChat Hook</strong>（新建文件，不破坏现有代码）<br>
+创建 <code>src/renderer/src/hooks/useAiChat.ts</code>，实现统一的 <code>ask</code> / <code>clear</code> / <code>setWelcome</code> 接口。编写单元测试验证流式增量路由和 HMR 安全。
+</div></div>
+<div class="step-item"><div class="step-num">3</div><div class="step-content">
+<strong>Phase 3：提取 MessageItem 组件</strong>（提取+适配）<br>
+从 <code>EnglishModePage.tsx</code> 提取 <code>MessageList</code> 到 <code>components/MessageItem.tsx</code>，支持 <code>actions</code> props 注入和 <code>classNamePrefix</code> 适配英语/视频学习两套 CSS。
+</div></div>
+<div class="step-item"><div class="step-num">4</div><div class="step-content">
+<strong>Phase 4：EnglishModePage 接入</strong>（第一个消费方迁移）<br>
+<code>EnglishModePage</code> 用 <code>useAiChat</code> 替代 <code>useEnglishStore</code> 的对话部分；<code>MessageList</code> 替代内联 <code>MessageItem</code>；<code>englishStore</code> 仅保留 config/usage/vocab/grammar。验证英语模式四个 Tab 功能完整。
+</div></div>
+<div class="step-item"><div class="step-num">5</div><div class="step-content">
+<strong>Phase 5：视频学习消费方接入</strong>（OverlayApp + LearningAssistantDrawer 迁移）<br>
+<code>OverlayApp</code> 用 <code>useAiChat({ profile: 'bili', context })</code> 替代 <code>useReducer</code>；<code>LearningAssistantDrawer</code> 用同一 hook 替代 <code>useState</code>；两处均用 <code>MessageList</code> 替代 <code>ChatPane</code> 的渲染部分。
+</div></div>
+<div class="step-item"><div class="step-num">6</div><div class="step-content">
+<strong>Phase 6：四模式独立 Prompt</strong>（主进程 Prompt 重构）<br>
+在 <code>prompts.ts</code> 用 <code>SCENARIO_PROMPTS</code> 替代 <code>SYSTEM_PROMPT + SCENARIO_TEMPLATES + COT_INSTRUCTION</code>；改造 <code>buildMessages</code> 直接选用对应模式 Prompt。验证四种模式输出格式符合设计。
+</div></div>
+</div>
+
+<h3>6.2 文件变更清单</h3>
+<table>
+<tr><th>文件</th><th>操作</th><th>变更内容</th></tr>
+<tr><td><code>src/shared/ai.ts</code></td><td><span class="badge badge-green">新增</span></td><td>统一 <code>ChatMessage</code> 类型定义</td></tr>
+<tr><td><code>src/renderer/src/hooks/useAiChat.ts</code></td><td><span class="badge badge-green">新建</span></td><td>统一 AI 对话 Hook（替代 3 套状态管理）</td></tr>
+<tr><td><code>src/renderer/src/components/MessageItem.tsx</code></td><td><span class="badge badge-green">新建</span></td><td>统一消息列表组件（含 <code>actions</code> 注入）</td></tr>
+<tr><td><code>src/renderer/src/pages/EnglishModePage.tsx</code></td><td><span class="badge badge-yellow">改造</span></td><td>接入 <code>useAiChat</code> + <code>MessageList</code>；删除内联 <code>MessageItem</code>；生词/语法操作移入 <code>actions</code></td></tr>
+<tr><td><code>src/renderer/src/store/englishStore.ts</code></td><td><span class="badge badge-yellow">瘦身</span></td><td>删除 <code>messages</code>/<code>isStreaming</code>/<code>ask</code>/<code>init</code>(chunk订阅)/<code>destroy</code>；保留 config/usage/vocab/grammar</td></tr>
+<tr><td><code>src/renderer/src/overlay/OverlayApp.tsx</code></td><td><span class="badge badge-yellow">改造</span></td><td><code>useReducer</code> → <code>useAiChat</code>；<code>ChatPane</code> 渲染 → <code>MessageList</code></td></tr>
+<tr><td><code>src/renderer/src/components/LearningAssistantDrawer.tsx</code></td><td><span class="badge badge-yellow">改造</span></td><td><code>useState</code> → <code>useAiChat</code>；<code>ChatPane</code> 渲染 → <code>MessageList</code></td></tr>
+<tr><td><code>src/renderer/src/overlay/ChatPane.tsx</code></td><td><span class="badge badge-red">删除</span></td><td>渲染逻辑移入 <code>MessageList</code>；输入框逻辑可内聚到 <code>ChatPane</code> 或移入消费方</td></tr>
+<tr><td><code>src/main/ai/prompts.ts</code></td><td><span class="badge badge-yellow">重构</span></td><td><code>SYSTEM_PROMPT</code> + <code>SCENARIO_TEMPLATES</code> + <code>COT_INSTRUCTION</code> → <code>SCENARIO_PROMPTS</code>（4 模式独立 Prompt）；<code>buildMessages</code> 直接选用</td></tr>
+<tr><td><code>src/renderer/src/store/englishStore.test.ts</code></td><td><span class="badge badge-yellow">更新</span></td><td>适配 store 瘦身后的测试用例</td></tr>
+</table>
+
+<h3>6.3 风险与回滚</h3>
+<div class="card card-yellow">
+<table>
+<tr><th>风险</th><th>影响</th><th>缓解措施</th></tr>
+<tr><td>useAiChat 替代 Zustand 后丢失跨组件状态共享</td><td>中</td><td>英语模式消息列表只需页面级生命周期，无需跨组件共享；vocab/grammar 仍在 Zustand</td></tr>
+<tr><td>视频学习 Overlay 和 Drawer 同时挂载时事件竞争</td><td>低</td><td><code>activeRequestId</code> 过滤确保增量只路由到活跃消费者；实际两者互斥使用</td></tr>
+<tr><td>Prompt 重构后 AI 回复风格变化</td><td>中</td><td>Phase 6 独立实施，可在设置页增加"Prompt 版本"开关，支持回退到旧 Prompt</td></tr>
+<tr><td>ChatPane 删除后输入框逻辑迁移遗漏</td><td>低</td><td>ChatPane 的输入框+发送按钮可保留为独立组件 <code>ChatInput</code>，仅删除消息渲染部分</td></tr>
+</table>
+</div>
+
+<h3>6.4 迁移兼容策略</h3>
+<p>每个 Phase 独立可验证、可回滚：</p>
+<ul>
+<li><strong>Phase 1-3</strong> 是纯新增/提取，不破坏现有功能 → 安全</li>
+<li><strong>Phase 4</strong> 是第一个破坏性变更，需完整测试英语模式 5 个 Tab → 回滚仅需恢复 <code>EnglishModePage</code> 引用 <code>englishStore</code></li>
+<li><strong>Phase 5</strong> 迁移 视频学习两个消费方 → 回滚仅需恢复 <code>useReducer</code>/<code>useState</code></li>
+<li><strong>Phase 6</strong> Prompt 重构独立于前端，可单独部署/回滚 → 保留 <code>SYSTEM_PROMPT</code> 作为 <code>free</code> 模式的 Prompt</li>
+</ul>
+
+</div>
+</body>
+</html>

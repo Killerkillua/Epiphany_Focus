@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { extractErrorMessage } from '../utils/errorMessage'
 import type {
   AddGrammarPayload,
   AddVocabPayload,
@@ -29,7 +30,7 @@ export interface ChatMessage {
 
 /**
  * 渲染层 AI 配置初始占位（仅 init() 完成前的类型默认值）。
- * 真实配置（含默认 API Key）由 init() 从主进程 electron-store 拉取后覆盖，
+ * 真实配置（由用户在设置中配置的 API Key）由 init() 从主进程 electron-store 拉取后覆盖，
  * 此处 apiKey 保持空字符串，避免在渲染层 bundle 中明文携带密钥。
  */
 const DEFAULT_CONFIG: AiConfig = {
@@ -51,6 +52,8 @@ interface EnglishStore {
   vocab: VocabEntry[]
   grammar: GrammarPoint[]
   init: () => Promise<void>
+  /** 取消全部 IPC 事件订阅（HMR 热替换 / 窗口销毁时清理） */
+  destroy: () => void
   ask: (scenario: AiScenario, message: string, word?: string) => Promise<void>
   refreshConfig: () => Promise<void>
   refreshLists: () => Promise<void>
@@ -60,8 +63,29 @@ interface EnglishStore {
   deleteGrammar: (id: number) => Promise<void>
 }
 
-let chunkSubscribed = false
-let settingsSubscribed = false
+/**
+ * CR-07：订阅生命周期管理（同 focusStore / sessionStore）。
+ * chunkSubscribed / settingsSubscribed 拆分为两个 globalThis 持久标志防 HMR 重复订阅；
+ * 订阅句柄统一收进 unsubscribeFns，destroy() 一次性取消——
+ * ai:chunk 为流式高频事件，泄漏会在多次热更新后放大。
+ */
+const g = globalThis as unknown as {
+  __pomodoroEnglishChunkSubscribed?: boolean
+  __pomodoroEnglishSettingsSubscribed?: boolean
+}
+let unsubscribeFns: Array<() => void> = []
+
+function unsubscribeAll(): void {
+  for (const fn of unsubscribeFns) fn()
+  unsubscribeFns = []
+  g.__pomodoroEnglishChunkSubscribed = false
+  g.__pomodoroEnglishSettingsSubscribed = false
+}
+
+// HMR：模块被热替换前先取消订阅 + 复位标志，新模块实例可干净地重新订阅
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => unsubscribeAll())
+}
 
 export const useEnglishStore = create<EnglishStore>((set, get) => ({
   messages: [],
@@ -72,42 +96,44 @@ export const useEnglishStore = create<EnglishStore>((set, get) => ({
   grammar: [],
 
   init: async () => {
-    if (!chunkSubscribed) {
-      chunkSubscribed = true
-      window.api.on<{
-        requestId: string
-        delta: string
-        done: boolean
-        content?: string
-        sources?: AiSource[]
-      }>('ai:chunk', (chunk) => {
-        if (!chunk.requestId || !get().isStreaming) return
-        set((state) => {
-          const messages = state.messages.map((m) => {
-            if (m.id !== chunk.requestId) return m
-            if (chunk.done) {
-              return {
-                ...m,
-                content: chunk.content ?? m.content,
-                sources: chunk.sources ?? m.sources,
-                streaming: false
+    if (!g.__pomodoroEnglishChunkSubscribed) {
+      g.__pomodoroEnglishChunkSubscribed = true
+      unsubscribeFns.push(
+        window.api.on<{
+          requestId: string
+          delta: string
+          done: boolean
+          content?: string
+          sources?: AiSource[]
+        }>('ai:chunk', (chunk) => {
+          if (!chunk.requestId || !get().isStreaming) return
+          set((state) => {
+            const messages = state.messages.map((m) => {
+              if (m.id !== chunk.requestId) return m
+              if (chunk.done) {
+                return {
+                  ...m,
+                  content: chunk.content ?? m.content,
+                  sources: chunk.sources ?? m.sources,
+                  streaming: false
+                }
               }
-            }
-            return { ...m, content: m.content + chunk.delta }
+              return { ...m, content: m.content + chunk.delta }
+            })
+            const isStreaming = chunk.done ? false : messages.some((m) => m.streaming)
+            return { messages, isStreaming }
           })
-          const isStreaming = chunk.done
-            ? false
-            : messages.some((m) => m.streaming)
-          return { messages, isStreaming }
         })
-      })
+      )
     }
     // 设置变更广播：设置页（或主进程任何 ai 配置写入）保存后实时刷新，无需重进页面
-    if (!settingsSubscribed) {
-      settingsSubscribed = true
-      window.api.on(window.api.events.settings.changed, () => {
-        void get().refreshConfig()
-      })
+    if (!g.__pomodoroEnglishSettingsSubscribed) {
+      g.__pomodoroEnglishSettingsSubscribed = true
+      unsubscribeFns.push(
+        window.api.on(window.api.events.settings.changed, () => {
+          void get().refreshConfig()
+        })
+      )
     }
     const [config, usage, vocab, grammar] = await Promise.all([
       window.api.ai.getConfig(),
@@ -118,22 +144,30 @@ export const useEnglishStore = create<EnglishStore>((set, get) => ({
     set({ config, usage, vocab, grammar })
   },
 
+  destroy: unsubscribeAll,
+
   ask: async (scenario, message, word) => {
     const trimmed = message.trim()
     if (!trimmed || get().isStreaming) return
 
     const requestId = crypto.randomUUID()
     // 需要多轮上下文的场景：从已完成消息取最近 8 轮（过滤 streaming 中的本轮占位）
-    const history =
-      HISTORY_SCENARIOS.includes(scenario)
-        ? get()
-            .messages.filter((m) => !m.streaming && (m.role === 'user' || m.role === 'assistant') && m.content.trim())
-            .slice(-8)
-            .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
-        : undefined
+    const history = HISTORY_SCENARIOS.includes(scenario)
+      ? get()
+          .messages.filter(
+            (m) => !m.streaming && (m.role === 'user' || m.role === 'assistant') && m.content.trim()
+          )
+          .slice(-8)
+          .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
+      : undefined
     const question: AiQuestion = { requestId, scenario, message: trimmed, word, history }
 
-    const userMsg: ChatMessage = { id: crypto.randomUUID(), role: 'user', content: trimmed, sources: [] }
+    const userMsg: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: 'user',
+      content: trimmed,
+      sources: []
+    }
     const assistantMsg: ChatMessage = {
       id: requestId,
       role: 'assistant',
@@ -161,15 +195,17 @@ export const useEnglishStore = create<EnglishStore>((set, get) => ({
       const usage = await window.api.ai.usage()
       set({ usage })
     } catch (err) {
+      // 提取主进程中文错误（401 等），写入气泡并向上抛友好错误供 Toast 展示
+      const friendly = extractErrorMessage(err)
       set((state) => ({
         messages: state.messages.map((m) =>
           m.id === requestId
-            ? { ...m, content: m.content || '⚠️ 请求失败', streaming: false }
+            ? { ...m, content: m.content || `⚠️ ${friendly}`, streaming: false }
             : m
         ),
         isStreaming: false
       }))
-      throw err instanceof Error ? err : new Error(String(err))
+      throw new Error(friendly)
     }
   },
 

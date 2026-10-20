@@ -20,8 +20,7 @@ function EnglishModePageWithNoise(): JSX.Element {
   const observerRef = useRef<MutationObserver | null>(null)
 
   useEffect(() => {
-    const findSidebar = (): Element | null =>
-      document.querySelector('.english-side')
+    const findSidebar = (): Element | null => document.querySelector('.english-side')
 
     // 首次尝试（EnglishModePage 可能已渲染）
     const el = findSidebar()
