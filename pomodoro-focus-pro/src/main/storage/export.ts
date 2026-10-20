@@ -2,7 +2,6 @@ import { createHash, randomBytes } from 'node:crypto'
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import ExcelJS from 'exceljs'
 import JSZip from 'jszip'
 import type { VocabEntry } from '../../shared/ai'
 import type { NoteEntry } from '../../shared/bili'
@@ -102,19 +101,80 @@ export async function buildStatsCsvZip(
   return zip.generateAsync({ type: 'nodebuffer' })
 }
 
+type XlsxCell = string | number | null | undefined
+
+function xmlText(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    // XML 1.0 不允许的控制字符（保留 \t \n \r）
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, '')
+}
+
+function columnRef(index: number): string {
+  let ref = ''
+  let n = index + 1
+  while (n > 0) {
+    ref = String.fromCharCode(65 + ((n - 1) % 26)) + ref
+    n = Math.floor((n - 1) / 26)
+  }
+  return ref
+}
+
+function sheetXml(rows: XlsxCell[][]): string {
+  const body = rows
+    .map((row, r) => {
+      const cells = row
+        .map((value, c) => {
+          const ref = `${columnRef(c)}${r + 1}`
+          if (value == null || value === '') return `<c r="${ref}"/>`
+          if (typeof value === 'number' && Number.isFinite(value))
+            return `<c r="${ref}"><v>${value}</v></c>`
+          const text = String(value)
+          const preserve = /^\s|\s$/.test(text) ? ' xml:space="preserve"' : ''
+          return `<c r="${ref}" t="inlineStr"><is><t${preserve}>${xmlText(text)}</t></is></c>`
+        })
+        .join('')
+      return `<row r="${r + 1}">${cells}</row>`
+    })
+    .join('')
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>${body}</sheetData></worksheet>`
+}
+
+/**
+ * 最小 XLSX 写入（inlineStr + 数值），用已有的 JSZip 打包 OOXML。
+ * 不再依赖 exceljs：其 unzipper→binary→chainsaw→traverse→dunder-proto 链在
+ * electron-builder 打包后因 call-bind-apply-helpers 未提升到顶层而启动崩溃。
+ */
 export async function buildStatsXlsx(
   stats: StudyStatExportRow[],
   sessions: FocusSessionExportRow[]
 ): Promise<Buffer> {
-  const book = new ExcelJS.Workbook()
-  const statSheet = book.addWorksheet('会话统计')
-  statSheet.addRow(STATS_HEADERS)
-  for (const row of statsRows(stats)) statSheet.addRow(row)
-  const sessionSheet = book.addWorksheet('番茄历史')
-  sessionSheet.addRow(SESSION_HEADERS)
-  for (const row of sessionRows(sessions)) sessionSheet.addRow(row)
-  const out = await book.xlsx.writeBuffer()
-  return Buffer.from(out)
+  const sheets = [
+    { name: '会话统计', rows: [STATS_HEADERS, ...statsRows(stats)] as XlsxCell[][] },
+    { name: '番茄历史', rows: [SESSION_HEADERS, ...sessionRows(sessions)] as XlsxCell[][] }
+  ]
+  const zip = new JSZip()
+  zip.file(
+    '[Content_Types].xml',
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>${sheets.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}</Types>`
+  )
+  zip.file(
+    '_rels/.rels',
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>`
+  )
+  zip.file(
+    'xl/workbook.xml',
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheets.map((s, i) => `<sheet name="${xmlText(s.name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets></workbook>`
+  )
+  zip.file(
+    'xl/_rels/workbook.xml.rels',
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${sheets.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')}</Relationships>`
+  )
+  sheets.forEach((s, i) => zip.file(`xl/worksheets/sheet${i + 1}.xml`, sheetXml(s.rows)))
+  return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' })
 }
 
 function yamlString(value: string): string {
