@@ -23,6 +23,7 @@
     "build:win": "npm run build && electron-builder --win --config electron-builder.yml",
     "build:mac": "npm run build && electron-builder --mac --config electron-builder.yml",
     "build:linux": "npm run build && electron-builder --linux --config electron-builder.yml",
+    "update:latest-yml": "node scripts/regen-latest-yml.mjs",
     "release:win": "npm run build && electron-builder --win --publish always",
     "release:mac": "npm run build && electron-builder --mac --publish always",
     "release:linux": "npm run build && electron-builder --linux --publish always"

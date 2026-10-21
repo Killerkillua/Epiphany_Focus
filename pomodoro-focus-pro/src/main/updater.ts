@@ -9,6 +9,8 @@ import { showAppNotification } from './notify'
 export interface AutoUpdaterLike extends EventEmitter {
   autoDownload: boolean
   autoInstallOnAppQuit: boolean
+  allowDowngrade: boolean
+  channel: string
   checkForUpdates(): Promise<unknown>
   downloadUpdate(): Promise<string[]>
   quitAndInstall(isSilent?: boolean, isForceRunAfter?: boolean): void
@@ -22,6 +24,8 @@ export interface UpdaterDeps {
   platform?: string
   showNotification?: (title: string, body: string) => void
   log?: Pick<typeof logger, 'info' | 'warn' | 'error'>
+  /** 更新通道，默认 latest */
+  channel?: string
 }
 
 export interface UpdaterController {
@@ -48,6 +52,9 @@ function darwinManualMessage(): string {
 }
 
 export function createUpdater(deps: UpdaterDeps, autoUpdater: AutoUpdaterLike): UpdaterController {
+  autoUpdater.allowDowngrade = false
+  autoUpdater.channel = deps.channel ?? 'latest'
+
   const platform = deps.platform ?? process.platform
   const log = deps.log ?? logger
   const notify = deps.showNotification ?? showAppNotification
@@ -261,7 +268,8 @@ export function registerUpdater(deps: UpdaterDeps): UpdaterController {
   autoUpdater.autoDownload = false
   autoUpdater.autoInstallOnAppQuit = false
 
-  const controller = createUpdater(deps, autoUpdater as unknown as AutoUpdaterLike)
+  const channel = process.env.UPDATE_CHANNEL === 'beta' ? 'beta' : 'latest'
+  const controller = createUpdater({ ...deps, channel }, autoUpdater as unknown as AutoUpdaterLike)
 
   const events = [
     'checking-for-update',

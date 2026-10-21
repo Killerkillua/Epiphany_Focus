@@ -15,6 +15,8 @@ function makeFakeUpdater(): AutoUpdaterLike & {
   return Object.assign(emitter, {
     autoDownload: true,
     autoInstallOnAppQuit: true,
+    allowDowngrade: true,
+    channel: '',
     checkForUpdates,
     downloadUpdate,
     quitAndInstall
@@ -57,6 +59,16 @@ describe('createUpdater', () => {
       showNotification: showNotificationMock as (title: string, body: string) => void
     }
   }
+
+  it('createUpdater 强制 allowDowngrade=false 且设置 channel', () => {
+    createUpdater(deps(), fake)
+    expect(fake.allowDowngrade).toBe(false)
+    expect(fake.channel).toBe('latest')
+    const fakeBeta = makeFakeUpdater()
+    createUpdater({ ...deps(), channel: 'beta' }, fakeBeta)
+    expect(fakeBeta.allowDowngrade).toBe(false)
+    expect(fakeBeta.channel).toBe('beta')
+  })
 
   it('update-available 更新状态并广播', () => {
     const ctrl = createUpdater(deps(), fake)

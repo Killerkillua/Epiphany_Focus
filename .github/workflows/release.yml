@@ -45,8 +45,88 @@ jobs:
       - run: npm ci
       - run: npm run build
 
+      - name: 发布检查清单（Summary）
+        shell: bash
+        run: |
+          {
+            echo '## 发布检查清单'
+            echo ''
+            echo '- [ ] 系统托盘正常（最小化、右键菜单）'
+            echo '- [ ] 开机自启 launchAtLogin 行为符合预期'
+            echo '- [ ] 单实例锁：二次启动聚焦已有窗口'
+            echo '- [ ] 专注会话进行中时更新安装被拦截，会话结束后可安装'
+            echo '- [ ] 旧数据库 / 存储升级路径 smoke test'
+            echo '- [ ] 覆盖安装后用户设置与账号数据保留'
+            echo '- [ ] Windows SmartScreen / 未签名提示已在 Release 说明中告知'
+            echo '- [ ] Beta → 正式：通道、tag、Pre-release 与 CHANGELOG 已对齐'
+            echo ''
+            echo "UPDATE_CHANNEL: ${{ contains(github.ref_name, '-beta') && 'beta' || 'latest' }}"
+            echo ''
+            echo '详见 \`pomodoro-focus-pro/docs/release-runbook.md\`'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # 未启用 SignPath（或非 Windows）时维持原路径：直接 publish 未签名包。
       - name: 打包发布
+        if: ${{ !(matrix.os == 'windows-latest' && vars.SIGNPATH_ENABLED == 'true') }}
         run: npx electron-builder ${{ matrix.builder-args }} --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          UPDATE_CHANNEL: ${{ contains(github.ref_name, '-beta') && 'beta' || 'latest' }}
+
+      # ---- SignPath 第二档（P0-3）：Windows 两段式签名 ----
+      # 前置（仓库外人工完成，缺一不可）：仓库已转公开、SignPath Foundation
+      # 申请已通过、已配置 vars.SIGNPATH_ORGANIZATION_ID / SIGNPATH_PROJECT_SLUG /
+      # SIGNPATH_SIGNING_POLICY_SLUG 与 secrets.SIGNPATH_API_TOKEN，且
+      # vars.SIGNPATH_ENABLED=true。未配置时本节全部跳过，不阻塞未签名发版。
+      - name: 打包未签名安装包（SignPath）
+        if: ${{ matrix.os == 'windows-latest' && vars.SIGNPATH_ENABLED == 'true' }}
+        run: npx electron-builder --win --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+          UPDATE_CHANNEL: ${{ contains(github.ref_name, '-beta') && 'beta' || 'latest' }}
+
+      - name: 上传未签名安装包（SignPath）
+        if: ${{ matrix.os == 'windows-latest' && vars.SIGNPATH_ENABLED == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-windows-installer
+          path: pomodoro-focus-pro/dist/*.exe
+          if-no-files-found: error
+
+      - name: 提交 SignPath 签名
+        if: ${{ matrix.os == 'windows-latest' && vars.SIGNPATH_ENABLED == 'true' }}
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          github-artifact-name: unsigned-windows-installer
+          wait-for-completion: true
+          output-artifact-directory: signed-windows-installer
+
+      - name: 以签名后安装包重算 latest.yml
+        if: ${{ matrix.os == 'windows-latest' && vars.SIGNPATH_ENABLED == 'true' }}
+        shell: bash
+        run: |
+          SIGNED_EXE=$(ls signed-windows-installer/*.exe | head -1)
+          if [ -z "$SIGNED_EXE" ]; then echo "::error::SignPath 未返回已签名安装包"; exit 1; fi
+          cp "$SIGNED_EXE" "dist/$(basename "$SIGNED_EXE")"
+          # 签名改变文件字节，原 .blockmap 已失效：删除以免 electron-updater 差分更新校验失败（将走全量下载）
+          rm -f dist/*.exe.blockmap
+          node scripts/regen-latest-yml.mjs dist
+          node scripts/regen-latest-yml.mjs dist --check
+          ls dist/*.exe | while read -r f; do echo "SHA256 $(sha256sum "$f")"; done >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 上传签名后产物到 Release
+        if: ${{ matrix.os == 'windows-latest' && vars.SIGNPATH_ENABLED == 'true' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+                 --title "$GITHUB_REF_NAME" --generate-notes
+          gh release upload "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+            dist/*.exe dist/latest.yml --clobber
