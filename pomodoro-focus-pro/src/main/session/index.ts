@@ -148,14 +148,15 @@ export function registerSessionModule(getWindow: () => BrowserWindow | null): Se
     const result = sessionTimer.stop()
     // 手动结束：已学习 ≥1 分钟计入统计
     if (before.status === 'running' || before.status === 'paused') {
-      // 已学习时长是否计入统计由 recordStudyStats 统一判定（≥1 分钟才记录）
-      recordStudyStats(todayLocal(), currentMode, result.elapsedMs, 1)
+      // stop() 会把 elapsed 清零；记账必须用停止前的快照
+      const studiedMs = before.elapsedMs
+      recordStudyStats(todayLocal(), currentMode, studiedMs, 1)
       if (sessionId) {
         recordSessionEnd(sessionId, {
-          durationActual: result.elapsedMs,
-          pomosCompleted: result.elapsedMs >= 60_000 ? 1 : 0,
+          durationActual: studiedMs,
+          pomosCompleted: studiedMs >= 60_000 ? 1 : 0,
           interruptions: 0,
-          status: result.elapsedMs >= 60_000 ? 'done' : 'abandoned'
+          status: studiedMs >= 60_000 ? 'done' : 'abandoned'
         })
         sessionId = null
       }
