@@ -63,8 +63,13 @@ export class TimerService {
    */
   restore(options: TimerOptions & { elapsedMs: number }): TimerSnapshot {
     this.mode = options.mode
-    this.durationMs = Math.max(1000, options.durationMs)
-    this.baseElapsedMs = Math.min(Math.max(0, options.elapsedMs), this.durationMs)
+    this.durationMs = Math.max(
+      1000,
+      Number.isFinite(options.durationMs) ? options.durationMs : 25 * 60 * 1000
+    )
+    // 损坏/非法持久化 elapsed（NaN、Infinity）钳到 0，避免 remaining 变成 NaN
+    const safeElapsed = Number.isFinite(options.elapsedMs) ? options.elapsedMs : 0
+    this.baseElapsedMs = Math.min(Math.max(0, safeElapsed), this.durationMs)
     this.status = 'running'
     this.runStartMs = TimerService.nowMs()
     this.ensureLoop()

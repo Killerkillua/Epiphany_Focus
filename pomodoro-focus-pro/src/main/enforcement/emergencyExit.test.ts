@@ -276,6 +276,15 @@ describe('isSessionExpired（会话上限，默认 4h）', () => {
     expect(exit.isSessionExpired(now() - 2 * 3_600_000)).toBe(true)
     expect(exit.isSessionExpired(now() - 30 * 60_000)).toBe(false)
   })
+
+  it('sessionMaxHours 非法（NaN）时上限视为 0，任何已开始会话立即过期', () => {
+    // 输入：sessionMaxHours=NaN → sessionMaxMs=0
+    // 预期：startedAt=now 仍过期（Date.now()-startedAt > 0 在微差下可能 false；用 startedAt-1）
+    mockSettings.state.sessionMaxHours = Number.NaN
+    expect(exit.sessionMaxMs()).toBe(0)
+    expect(exit.isSessionExpired(now() - 1)).toBe(true)
+    expect(exit.capToSessionMax(25 * 60_000)).toBe(0)
+  })
 })
 
 describe('capToSessionMax / msUntilSessionExpiry', () => {

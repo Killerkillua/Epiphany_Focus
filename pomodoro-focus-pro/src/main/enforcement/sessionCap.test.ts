@@ -71,4 +71,31 @@ describe('createSessionCapWatch', () => {
     expect(onExpire).toHaveBeenCalledTimes(1)
     watch.clear()
   })
+
+  it('重复 arm 取消旧定时器，只按最新 startedAt 触发一次', () => {
+    // 输入：先 arm(t0)，再 arm(t0+30min)；推进到第一次本应到期
+    // 预期：旧定时器已 clear，onExpire 尚未触发；再推进 30min+1ms 才触发一次
+    const onExpire = vi.fn()
+    const watch = createSessionCapWatch(onExpire)
+    const t0 = Date.now()
+    watch.arm(t0)
+    watch.arm(t0 + 30 * 60_000)
+
+    vi.advanceTimersByTime(3_600_000 + 1)
+    expect(onExpire).not.toHaveBeenCalled()
+
+    vi.advanceTimersByTime(30 * 60_000)
+    expect(onExpire).toHaveBeenCalledTimes(1)
+    watch.clear()
+  })
+
+  it('clear 幂等；未 arm 直接 clear 不抛错', () => {
+    const onExpire = vi.fn()
+    const watch = createSessionCapWatch(onExpire)
+    expect(() => {
+      watch.clear()
+      watch.clear()
+    }).not.toThrow()
+    expect(onExpire).not.toHaveBeenCalled()
+  })
 })

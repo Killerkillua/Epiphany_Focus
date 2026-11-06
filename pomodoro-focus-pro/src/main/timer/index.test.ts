@@ -75,6 +75,20 @@ describe('start（倒计时开始）', () => {
     timer.stop()
   })
 
+  it('非法时长：Infinity/-Infinity/负数 → 非有限回退 25min，负有限值钳到 1s', () => {
+    // 输入：Infinity / -Infinity（!Number.isFinite）→ 预期：25*60_000（与 NaN 同路径）
+    // 输入：-500（有限但 <1s）→ 预期：1_000（Math.max 下限）
+    const { timer } = makeService()
+    expect(timer.start({ mode: 'countdown', durationMs: Number.POSITIVE_INFINITY }).durationMs).toBe(
+      25 * 60_000
+    )
+    expect(timer.start({ mode: 'countdown', durationMs: Number.NEGATIVE_INFINITY }).durationMs).toBe(
+      25 * 60_000
+    )
+    expect(timer.start({ mode: 'countdown', durationMs: -500 }).durationMs).toBe(1_000)
+    timer.stop()
+  })
+
   it('start 新会话保留已完成番茄计数（跨轮不丢失）', () => {
     const { timer } = makeService()
     timer.start({ mode: 'countdown', durationMs: 1_000 })
@@ -83,6 +97,20 @@ describe('start（倒计时开始）', () => {
 
     timer.start({ mode: 'countdown', durationMs: 10_000 })
     expect(timer.getSnapshot().completedPomodoros).toBe(1)
+    timer.stop()
+  })
+
+  it('中途重新 start：elapsed 归零，番茄计数保留（回归：防跨轮污染）', () => {
+    // 输入：先跑 3s，再 start 新一轮 10s
+    // 预期：elapsed=0、remaining=10s、completedPomodoros 不变
+    const { timer } = makeService()
+    timer.start({ mode: 'countdown', durationMs: 10_000 })
+    advance(3_000)
+    timer.start({ mode: 'countdown', durationMs: 10_000 })
+    const snap = timer.getSnapshot()
+    expect(snap.elapsedMs).toBe(0)
+    expect(snap.remainingMs).toBe(10_000)
+    expect(snap.completedPomodoros).toBe(0)
     timer.stop()
   })
 })
@@ -133,6 +161,44 @@ describe('倒计时推进 / 暂停 / 恢复', () => {
     expect(timer.pause().status).toBe('paused') // 重复 pause 幂等
     // start + pause 各一次推送；重复 pause 不重复推送（按秒去重）
     expect(onTick).toHaveBeenCalledTimes(2)
+  })
+
+  it('paused 态手动 stop：倒计时放弃，不计番茄', () => {
+    // 输入：跑 4s → pause → stop
+    // 预期：idle、completedPomodoros=0、不触发 onComplete（异常路径：暂停中放弃）
+    const { timer, onComplete } = makeService()
+    timer.start({ mode: 'countdown', durationMs: 60_000 })
+    advance(4_000)
+    timer.pause()
+    const snap = timer.stop()
+    expect(snap.status).toBe('idle')
+    expect(snap.completedPomodoros).toBe(0)
+    expect(onComplete).not.toHaveBeenCalled()
+  })
+})
+
+describe('countup（正序）推进与边界', () => {
+  it('running 时 elapsed 递增，remaining 钳到 0（正序无到点）', () => {
+    // 输入：countup duration=5s，推进 7s
+    // 预期：elapsed=7000、remaining=0、status 仍 running（不自动 finish）
+    const { timer, onComplete } = makeService()
+    timer.start({ mode: 'countup', durationMs: 5_000 })
+    advance(7_000)
+    const snap = timer.getSnapshot()
+    expect(snap.status).toBe('running')
+    expect(snap.elapsedMs).toBe(7_000)
+    expect(snap.remainingMs).toBe(0)
+    expect(onComplete).not.toHaveBeenCalled()
+    timer.stop()
+  })
+
+  it('countup 边界：恰 5s stop 不计番茄（实现为 elapsed > 5000）', () => {
+    // 输入：elapsed 恰为 5000ms
+    // 预期：不计番茄（严格大于，回归防 off-by-one）
+    const { timer } = makeService()
+    timer.start({ mode: 'countup', durationMs: 0 })
+    advance(5_000)
+    expect(timer.stop().completedPomodoros).toBe(0)
   })
 })
 
@@ -277,6 +343,16 @@ describe('restore（重启恢复，方案 2.5 防绕过）', () => {
     expect(timer.restore({ mode: 'countdown', durationMs: 100, elapsedMs: 0 }).durationMs).toBe(
       1_000
     )
+    timer.stop()
+  })
+
+  it('restore 非法 elapsed（NaN）钳到 0，不抛错', () => {
+    // 输入：elapsedMs=NaN
+    // 预期：elapsed=0、remaining=duration（异常路径：损坏持久化）
+    const { timer } = makeService()
+    const snap = timer.restore({ mode: 'countdown', durationMs: 10_000, elapsedMs: Number.NaN })
+    expect(snap.elapsedMs).toBe(0)
+    expect(snap.remainingMs).toBe(10_000)
     timer.stop()
   })
 
