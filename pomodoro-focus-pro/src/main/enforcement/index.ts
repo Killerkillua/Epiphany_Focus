@@ -258,7 +258,9 @@ export function registerEnforcementModule(
 
   function endEnforcement(
     reason: 'manual' | 'completed' | 'emergency' | 'expired',
-    target?: BrowserWindow
+    target?: BrowserWindow,
+    /** timer.stop() 之后快照会把 elapsed 清零，调用方可传入停止前的时长 */
+    elapsedBeforeStop?: number
   ): void {
     sessionCap.clear()
     const win = target ?? getWindow()
@@ -266,9 +268,10 @@ export function registerEnforcementModule(
     const level = active ? active.level : getSettings().lockLevel
     if (active) {
       const after = timer.getSnapshot()
+      const durationActual = elapsedBeforeStop ?? after.elapsedMs
       // 正序学习不会自己到点；上限到达时按已学习时长记完成一段
       const expiredCountup =
-        reason === 'expired' && after.mode === 'countup' && after.elapsedMs > 5000
+        reason === 'expired' && after.mode === 'countup' && durationActual > 5000
       const pomosCompleted = expiredCountup
         ? Math.max(1, after.completedPomodoros - lastPomos)
         : Math.max(0, after.completedPomodoros - lastPomos)
@@ -279,14 +282,14 @@ export function registerEnforcementModule(
             ? 'done'
             : 'abandoned'
       recordSessionEnd(active.sessionId, {
-        durationActual: after.elapsedMs,
+        durationActual,
         pomosCompleted,
         interruptions: 0,
         status
       })
       // 倒计时自然到点已记过统计；这里只补上限打断、遮罩仍在的情况
       if (reason === 'expired' && after.status !== 'finished') {
-        recordStudyStats(todayLocal(), active.mode, after.elapsedMs, expiredCountup ? 1 : 0)
+        recordStudyStats(todayLocal(), active.mode, durationActual, expiredCountup ? 1 : 0)
       }
       active = null
     }
@@ -553,10 +556,11 @@ export function registerEnforcementModule(
     }
     const result = timer.stop()
     // 正序手动结束计数的一段，补记统计（逆序到点已由 complete 记录）
+    // stop() 返回值里的 elapsed 已清零，时长用停止前的快照
     if (result.completedPomodoros > before.completedPomodoros) {
-      recordStudyStats(todayLocal(), 'focus', result.elapsedMs, 1)
+      recordStudyStats(todayLocal(), 'focus', before.elapsedMs, 1)
     }
-    endEnforcement('manual')
+    endEnforcement('manual', undefined, before.elapsedMs)
     return enrich(result)
   })
 
